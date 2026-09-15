@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'auth_api.dart';
+
 const _navy = Color(0xFF192B50);
 const _ink = Color(0xFF101B33);
 const _orange = Color(0xFFFF8200);
@@ -21,14 +23,67 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
   _AuthMode _mode = _AuthMode.login;
   _AccountRole _role = _AccountRole.user;
   bool _obscurePassword = true;
+  bool _loading = false;
+  final _api = AuthApi();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
-  void _showComingSoon(String provider) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$provider sign in will be connected soon.'),
-        backgroundColor: _navy,
-      ),
-    );
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+    if (!email.contains('@') || password.length < 8) {
+      _showMessage(
+        'Enter a valid email and a password with at least 8 characters.',
+      );
+      return;
+    }
+    if (_mode == _AuthMode.register &&
+        password != _confirmPasswordController.text) {
+      _showMessage('Passwords do not match.');
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final response = _mode == _AuthMode.login
+          ? await _api.login(email: email, password: password)
+          : await _api.register(
+              email: email,
+              password: password,
+              role: _role == _AccountRole.merchant ? 'merchant' : 'user',
+            );
+      if (!mounted) return;
+      if (_mode == _AuthMode.register) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationPage(email: email, api: _api),
+          ),
+        );
+      } else {
+        final user = response['user'] as Map<String, dynamic>?;
+        _showMessage(
+          'Welcome back${user?['email'] == null ? '' : ', ${user!['email']}'}!',
+        );
+      }
+    } on AuthApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -122,6 +177,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                 hint: 'you@example.com',
                 icon: Icons.mail_outline_rounded,
                 keyboardType: TextInputType.emailAddress,
+                controller: _emailController,
               ),
               const SizedBox(height: 14),
               _AuthField(
@@ -129,6 +185,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                 hint: 'Enter your password',
                 icon: Icons.lock_outline_rounded,
                 obscureText: _obscurePassword,
+                controller: _passwordController,
                 suffix: IconButton(
                   onPressed: () =>
                       setState(() => _obscurePassword = !_obscurePassword),
@@ -141,18 +198,21 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               ),
               if (!isLogin) ...[
                 const SizedBox(height: 14),
-                const _AuthField(
+                _AuthField(
                   label: 'Confirm password',
                   hint: 'Repeat your password',
                   icon: Icons.verified_user_outlined,
                   obscureText: true,
+                  controller: _confirmPasswordController,
                 ),
               ],
               if (isLogin)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => _showComingSoon('Password recovery'),
+                    onPressed: () => _showMessage(
+                      'Password recovery will be available soon.',
+                    ),
                     child: const Text('Forgot password?'),
                   ),
                 )
@@ -161,11 +221,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: () => _showComingSoon(
-                    isLogin
-                        ? 'Email login'
-                        : '${_role == _AccountRole.merchant ? 'Merchant' : 'Player'} registration',
-                  ),
+                  onPressed: _loading ? null : _submit,
                   style: FilledButton.styleFrom(
                     backgroundColor: _orange,
                     foregroundColor: Colors.white,
@@ -175,7 +231,16 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                     ),
                     textStyle: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  child: Text(isLogin ? 'Sign in' : 'Create account'),
+                  child: _loading
+                      ? const SizedBox(
+                          width: 21,
+                          height: 21,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(isLogin ? 'Sign in' : 'Create account'),
                 ),
               ),
               const SizedBox(height: 22),
@@ -184,13 +249,17 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               _SocialButton(
                 label: 'Continue with Google',
                 logoAsset: 'assets/google_logo.png',
-                onTap: () => _showComingSoon('Google'),
+                onTap: () => _showMessage(
+                  'Google sign in requires OAuth configuration.',
+                ),
               ),
               const SizedBox(height: 11),
               _SocialButton(
                 label: 'Continue with Facebook',
                 logoAsset: 'assets/facebook_logo.jpg',
-                onTap: () => _showComingSoon('Facebook'),
+                onTap: () => _showMessage(
+                  'Facebook sign in requires OAuth configuration.',
+                ),
               ),
               const SizedBox(height: 24),
               Center(
@@ -213,6 +282,156 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class EmailVerificationPage extends StatefulWidget {
+  const EmailVerificationPage({
+    super.key,
+    required this.email,
+    required this.api,
+  });
+
+  final String email;
+  final AuthApi api;
+
+  @override
+  State<EmailVerificationPage> createState() => _EmailVerificationPageState();
+}
+
+class _EmailVerificationPageState extends State<EmailVerificationPage> {
+  final _codeController = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final code = _codeController.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      _message('Enter the 6-digit code from your email.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await widget.api.verifyEmail(email: widget.email, code: code);
+      if (!mounted) return;
+      _message('Email verified. Your account is ready.');
+      Navigator.of(context).pop();
+    } on AuthApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _resend() async {
+    setState(() => _loading = true);
+    try {
+      final response = await widget.api.resendVerification(widget.email);
+      if (mounted) {
+        _message(response['message'] as String? ?? 'A new code was sent.');
+      }
+    } on AuthApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _message(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _page,
+      appBar: AppBar(
+        backgroundColor: _page,
+        foregroundColor: _navy,
+        elevation: 0,
+        title: const Text(
+          'Verify email',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 26),
+            Center(
+              child: Image.asset(
+                'assets/tinker_logo.png',
+                width: 82,
+                height: 62,
+              ),
+            ),
+            const SizedBox(height: 25),
+            const Text(
+              'Check your inbox',
+              style: TextStyle(
+                color: _ink,
+                fontSize: 27,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              'We sent a 6-digit verification code to ${widget.email}.',
+              style: const TextStyle(color: _muted, fontSize: 14, height: 1.45),
+            ),
+            const SizedBox(height: 28),
+            _AuthField(
+              label: 'Verification code',
+              hint: '000000',
+              icon: Icons.mark_email_read_outlined,
+              keyboardType: TextInputType.number,
+              controller: _codeController,
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _loading ? null : _verify,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _orange,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(53),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                child: _loading
+                    ? const SizedBox(
+                        width: 21,
+                        height: 21,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Verify email'),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Center(
+              child: TextButton(
+                onPressed: _loading ? null : _resend,
+                child: const Text('Resend code'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -359,6 +578,7 @@ class _AuthField extends StatelessWidget {
     this.keyboardType,
     this.obscureText = false,
     this.suffix,
+    this.controller,
   });
 
   final String label;
@@ -367,6 +587,7 @@ class _AuthField extends StatelessWidget {
   final TextInputType? keyboardType;
   final bool obscureText;
   final Widget? suffix;
+  final TextEditingController? controller;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -382,6 +603,7 @@ class _AuthField extends StatelessWidget {
       ),
       const SizedBox(height: 8),
       TextField(
+        controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
         decoration: InputDecoration(

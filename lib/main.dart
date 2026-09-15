@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -11,10 +13,13 @@ const _orange = Color(0xFFFF8200);
 const _page = Color(0xFFF7F9FC);
 const _muted = Color(0xFF68748A);
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(const MyApp()); // Replace MyApp with your root widget name if different
 }
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 

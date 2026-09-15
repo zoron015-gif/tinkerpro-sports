@@ -2,9 +2,11 @@ require('dotenv').config();
 
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
+const crypto = require('crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
+const { sendVerificationCode } = require('./mailer');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -41,6 +43,14 @@ function publicUser(user) {
     role: user.role,
     status: user.status,
   };
+}
+
+function createVerificationCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashVerificationCode(code) {
+  return crypto.createHash('sha256').update(code).digest('hex');
 }
 
 function requireAuth(req, res, next) {
@@ -82,23 +92,132 @@ app.post('/api/auth/register', async (req, res, next) => {
     return res.status(400).json({ error: 'Role must be user or merchant.' });
   }
 
+  let connection;
   try {
-    const [existing] = await pool.execute('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [existing] = await connection.execute('SELECT id, status FROM users WHERE email = ? LIMIT 1', [email]);
     if (existing.length > 0) {
+      await connection.rollback();
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const [result] = await pool.execute(
+    const [result] = await connection.execute(
       `INSERT INTO users
        (email, password_hash, first_name, last_name, role, status, email_verified_at)
-       VALUES (?, ?, ?, ?, ?, 'active', NULL)`,
+       VALUES (?, ?, ?, ?, ?, 'pending', NULL)`,
       [email, passwordHash, firstName, lastName, role],
     );
-    const user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role, status: 'active' };
-    return res.status(201).json({ user: publicUser(user), token: createToken(user) });
+    const code = createVerificationCode();
+    await connection.execute(
+      `INSERT INTO email_verification_tokens
+       (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+      [result.insertId, hashVerificationCode(code)],
+    );
+    await sendVerificationCode(email, code);
+    await connection.commit();
+
+    const user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role, status: 'pending' };
+    return res.status(201).json({
+      message: 'Registration successful. Check your email for the verification code.',
+      user: publicUser(user),
+    });
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
+app.post('/api/auth/verify-email', async (req, res, next) => {
+  const email = normalizeEmail(req.body.email);
+  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+
+  if (!email || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: 'A valid email and 6-digit verification code are required.' });
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `SELECT t.id AS token_id, t.token_hash, u.id, u.email, u.first_name, u.last_name, u.role
+       FROM email_verification_tokens t
+       INNER JOIN users u ON u.id = t.user_id
+       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+       ORDER BY t.created_at DESC LIMIT 1`,
+      [email],
+    );
+    const token = rows[0];
+    if (!token || token.token_hash !== hashVerificationCode(code)) {
+      return res.status(400).json({ error: 'The verification code is invalid or expired.' });
+    }
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', token.id]);
+      await connection.execute('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [token.token_id]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    const user = { ...token, status: 'active' };
+    return res.json({ message: 'Email verified successfully.', user: publicUser(user), token: createToken(user) });
   } catch (error) {
     return next(error);
+  }
+});
+
+app.post('/api/auth/resend-verification', async (req, res, next) => {
+  const email = normalizeEmail(req.body.email);
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [users] = await connection.execute(
+      `SELECT id FROM users
+       WHERE email = ? AND status = 'pending' AND email_verified_at IS NULL
+       LIMIT 1`,
+      [email],
+    );
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'No pending account was found for this email.' });
+    }
+
+    const code = createVerificationCode();
+    await connection.beginTransaction();
+    await connection.execute(
+      `UPDATE email_verification_tokens
+       SET used_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND used_at IS NULL`,
+      [users[0].id],
+    );
+    await connection.execute(
+      `INSERT INTO email_verification_tokens
+       (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+      [users[0].id, hashVerificationCode(code)],
+    );
+    await sendVerificationCode(email, code);
+    await connection.commit();
+    return res.json({ message: 'A new verification code was sent.' });
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+    return next(error);
+  } finally {
+    connection?.release();
   }
 });
 
@@ -151,8 +270,88 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   }
 });
 
+// Google OAuth: verify ID token from client and create or find user
+app.post('/api/auth/oauth/google', async (req, res, next) => {
+  const idToken = req.body.idToken || req.body.id_token;
+  if (!idToken || typeof idToken !== 'string') {
+    return res.status(400).json({ error: 'idToken is required.' });
+  }
+
+  try {
+    // Use Google's tokeninfo endpoint to validate the ID token. This avoids adding a new dependency.
+    const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    const resp = await fetch(verifyUrl);
+    if (!resp.ok) {
+      return res.status(400).json({ error: 'Invalid Google ID token.' });
+    }
+    const payload = await resp.json();
+
+    // If GOOGLE_CLIENT_ID is set, enforce that the token was issued for that client
+    if (process.env.GOOGLE_CLIENT_ID && payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+      return res.status(400).json({ error: 'Google ID token was not issued for this application.' });
+    }
+
+    // Require verified email
+    const emailVerified = payload.email_verified === true || payload.email_verified === 'true';
+    if (!payload.email || !emailVerified) {
+      return res.status(400).json({ error: 'Google account email is not verified.' });
+    }
+
+    const email = normalizeEmail(payload.email);
+    const firstName = payload.given_name || null;
+    const lastName = payload.family_name || null;
+
+    // Find or create the user
+    const [rows] = await pool.execute(
+      `SELECT id, email, first_name, last_name, role, status
+       FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
+
+    let user;
+    if (rows.length === 0) {
+      // Create a new user with active status and no password
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [result] = await connection.execute(
+          `INSERT INTO users
+           (email, password_hash, first_name, last_name, role, status, email_verified_at)
+           VALUES (?, NULL, ?, ?, 'user', 'active', CURRENT_TIMESTAMP)`,
+          [email, firstName, lastName],
+        );
+        await connection.commit();
+        user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role: 'user', status: 'active' };
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
+    } else {
+      user = rows[0];
+      // If account exists but is not active, activate it (social sign-ins typically verify email)
+      if (user.status !== 'active') {
+        await pool.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', user.id]);
+        user.status = 'active';
+      }
+    }
+
+    await pool.execute('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+    return res.json({ user: publicUser(user), token: createToken(user) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.use((error, req, res, next) => {
   console.error(error);
+  if (error.code === 'EAUTH' || error.responseCode === 535) {
+    return res.status(503).json({
+      error:
+        'Email delivery is not configured correctly. Check SMTP_USER and SMTP_APP_PASSWORD in backend/.env.',
+    });
+  }
   return res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
