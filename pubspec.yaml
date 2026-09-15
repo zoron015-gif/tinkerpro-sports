@@ -60,6 +60,9 @@ flutter:
 
   assets:
     - assets/tinker_logo.png
+    - assets/google_logo.png
+    - assets/facebook_logo.jpg
+    - assets/court/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
