@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'auth_api.dart';
 
@@ -7,6 +10,10 @@ const _ink = Color(0xFF101B33);
 const _orange = Color(0xFFFF8200);
 const _page = Color(0xFFF7F9FC);
 const _muted = Color(0xFF68748A);
+const _googleServerClientId = String.fromEnvironment(
+  'GOOGLE_SERVER_CLIENT_ID',
+  defaultValue: '451592121635-f7hgfk7plbi3mngvor1eenrup21mlbg5.apps.googleusercontent.com',
+);
 
 enum _AuthMode { login, register }
 
@@ -51,6 +58,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       );
       return;
     }
+
     if (_mode == _AuthMode.register &&
         password != _confirmPasswordController.text) {
       _showMessage('Passwords do not match.');
@@ -81,6 +89,51 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       }
     } on AuthApiException catch (error) {
       if (mounted) _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_loading) return;
+    if (_googleServerClientId.isEmpty) {
+      _showMessage(
+        'Google sign-in is not configured. Add GOOGLE_SERVER_CLIENT_ID.',
+      );
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await GoogleSignIn.instance.initialize(
+        serverClientId: _googleServerClientId,
+      );
+      final account = await GoogleSignIn.instance.authenticate();
+      final authentication = account.authentication;
+      final credential = GoogleAuthProvider.credential(
+        idToken: authentication.idToken,
+      );
+      final result = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      final firebaseUser = result.user;
+      if (firebaseUser == null) {
+        throw StateError('Google sign-in did not return a user account.');
+      }
+      final idToken = authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('Google sign-in did not return an ID token.');
+      }
+      final apiResult = await _api.loginWithGoogle(idToken);
+      if (mounted) {
+        final user = apiResult['user'] as Map<String, dynamic>?;
+        _showMessage(
+          'Welcome back, ${user?['email'] ?? firebaseUser.email ?? account.email}!',
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      if (mounted) _showMessage(error.message ?? 'Google sign-in failed.');
+    } on Exception catch (error) {
+      if (mounted) _showMessage('Google sign-in failed: $error');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -125,9 +178,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               Center(
                 child: Text(
                   isLogin
-                      ? 'Sign in to continue your game.'
-                      : 'Join TinkerPro and get in the game.',
+                      ? 'Sign in to book sports, events, and local experiences.'
+                      : 'Join the marketplace for sports, events, and local businesses.',
                   style: const TextStyle(color: _muted, fontSize: 13),
+                  textAlign: TextAlign.center,
                 ),
               ),
               const SizedBox(height: 26),
@@ -138,7 +192,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               const SizedBox(height: 24),
               if (!isLogin) ...[
                 const Text(
-                  'I am joining as',
+                  'How will you use TinkerPro?',
                   style: TextStyle(
                     color: _ink,
                     fontSize: 13,
@@ -151,8 +205,8 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                     Expanded(
                       child: _RoleCard(
                         icon: Icons.person_rounded,
-                        title: 'Player',
-                        subtitle: 'Book and play',
+                        title: 'Client',
+                        subtitle: 'Discover and book',
                         selected: _role == _AccountRole.user,
                         onTap: () => setState(() => _role = _AccountRole.user),
                       ),
@@ -162,7 +216,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                       child: _RoleCard(
                         icon: Icons.storefront_rounded,
                         title: 'Merchant',
-                        subtitle: 'Manage facilities',
+                        subtitle: 'List and grow your business',
                         selected: _role == _AccountRole.merchant,
                         onTap: () =>
                             setState(() => _role = _AccountRole.merchant),
@@ -182,7 +236,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               const SizedBox(height: 14),
               _AuthField(
                 label: 'Password',
-                hint: 'Enter your password',
+                hint: isLogin ? 'Enter your password' : 'At least 8 characters',
                 icon: Icons.lock_outline_rounded,
                 obscureText: _obscurePassword,
                 controller: _passwordController,
@@ -197,6 +251,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                 ),
               ),
               if (!isLogin) ...[
+                const Padding(
+                  padding: EdgeInsets.only(top: 7, left: 3),
+                  child: Text(
+                    'Use a strong password to protect your bookings and business details.',
+                    style: TextStyle(color: _muted, fontSize: 11, height: 1.3),
+                  ),
+                ),
                 const SizedBox(height: 14),
                 _AuthField(
                   label: 'Confirm password',
@@ -210,9 +271,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => _showMessage(
-                      'Password recovery will be available soon.',
-                    ),
+                    onPressed: _loading
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PasswordResetPage(api: _api),
+                            ),
+                          ),
                     child: const Text('Forgot password?'),
                   ),
                 )
@@ -246,21 +311,22 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               const SizedBox(height: 22),
               const _OrDivider(),
               const SizedBox(height: 18),
+              if (isLogin)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Center(
+                    child: Text(
+                      'or sign in securely with',
+                      style: TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ),
+                ),
               _SocialButton(
                 label: 'Continue with Google',
                 logoAsset: 'assets/google_logo.png',
-                onTap: () => _showMessage(
-                  'Google sign in requires OAuth configuration.',
-                ),
+                onTap: _signInWithGoogle,
               ),
               const SizedBox(height: 11),
-              _SocialButton(
-                label: 'Continue with Facebook',
-                logoAsset: 'assets/facebook_logo.jpg',
-                onTap: () => _showMessage(
-                  'Facebook sign in requires OAuth configuration.',
-                ),
-              ),
               const SizedBox(height: 24),
               Center(
                 child: TextButton(
@@ -283,6 +349,262 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class PasswordResetPage extends StatefulWidget {
+  const PasswordResetPage({super.key, required this.api});
+
+  final AuthApi api;
+
+  @override
+  State<PasswordResetPage> createState() => _PasswordResetPageState();
+}
+
+class _PasswordResetPageState extends State<PasswordResetPage> {
+  final _emailController = TextEditingController();
+  final _codeController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  bool _codeRequested = false;
+  bool _codeVerified = false;
+  bool _loading = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _codeController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  void _message(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+  }
+
+  Future<void> _requestCode() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (!email.contains('@')) {
+      _message('Enter the email address linked to your account.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+    });
+    try {
+      final response = await widget.api.requestPasswordReset(email);
+      if (mounted) {
+        setState(() {
+          _codeRequested = true;
+          _codeVerified = false;
+          _codeController.clear();
+          _passwordController.clear();
+          _confirmController.clear();
+        });
+        _message(response['message'] as String? ?? 'Verification code sent.');
+      }
+    } on AuthApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    final email = _emailController.text.trim().toLowerCase();
+    final code = _codeController.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      _message('Enter the 6-digit verification code from your email.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await widget.api.verifyPasswordResetCode(email: email, code: code);
+      if (mounted) {
+        setState(() => _codeVerified = true);
+        _message('Code verified. You can now choose a new password.');
+      }
+    } on AuthApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim().toLowerCase();
+    final code = _codeController.text.trim();
+    final password = _passwordController.text;
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      _message('Enter the 6-digit verification code from your email.');
+      return;
+    }
+    if (password.length < 8) {
+      _message('Your new password must be at least 8 characters.');
+      return;
+    }
+    if (password != _confirmController.text) {
+      _message('Passwords do not match.');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final response = await widget.api.resetPassword(
+        email: email,
+        code: code,
+        password: password,
+      );
+      if (mounted) {
+        _message(response['message'] as String? ?? 'Password changed.');
+        Navigator.of(context).pop();
+      }
+    } on AuthApiException catch (error) {
+      if (mounted) _message(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _page,
+      appBar: AppBar(
+        backgroundColor: _page,
+        foregroundColor: _navy,
+        elevation: 0,
+        title: const Text('Reset password'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Forgot your password?',
+              style: TextStyle(
+                color: _ink,
+                fontSize: 27,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Enter your email to receive a verification code, then choose a new password.',
+              style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
+            ),
+            const SizedBox(height: 26),
+            _AuthField(
+              label: 'Account email',
+              hint: 'you@example.com',
+              icon: Icons.mail_outline_rounded,
+              keyboardType: TextInputType.emailAddress,
+              controller: _emailController,
+            ),
+            const SizedBox(height: 16),
+            if (!_codeRequested)
+              _ResetButton(
+                label: 'Send verification code',
+                loading: _loading,
+                onPressed: _requestCode,
+              )
+            else ...[
+              _AuthField(
+                label: 'Verification code',
+                hint: '000000',
+                icon: Icons.verified_outlined,
+                keyboardType: TextInputType.number,
+                controller: _codeController,
+                maxLength: 6,
+              ),
+              if (!_codeVerified) ...[
+                const SizedBox(height: 22),
+                _ResetButton(
+                  label: 'Verify code',
+                  loading: _loading,
+                  onPressed: _verifyCode,
+                ),
+              ] else ...[
+                const SizedBox(height: 14),
+                _AuthField(
+                  label: 'New password',
+                  hint: 'At least 8 characters',
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscurePassword,
+                  controller: _passwordController,
+                  suffix: IconButton(
+                    onPressed: () => setState(
+                      () => _obscurePassword = !_obscurePassword,
+                    ),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _AuthField(
+                  label: 'Confirm new password',
+                  hint: 'Repeat your new password',
+                  icon: Icons.verified_user_outlined,
+                  obscureText: true,
+                  controller: _confirmController,
+                ),
+                const SizedBox(height: 22),
+                _ResetButton(
+                  label: 'Change password',
+                  loading: _loading,
+                  onPressed: _resetPassword,
+                ),
+              ],
+              Center(
+                child: TextButton(
+                  onPressed: _loading ? null : _requestCode,
+                  child: const Text('Send code again'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResetButton extends StatelessWidget {
+  const _ResetButton({
+    required this.label,
+    required this.loading,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: loading ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: _orange,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(53),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        child: loading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Text(label),
       ),
     );
   }
@@ -579,6 +901,7 @@ class _AuthField extends StatelessWidget {
     this.obscureText = false,
     this.suffix,
     this.controller,
+    this.maxLength,
   });
 
   final String label;
@@ -588,6 +911,7 @@ class _AuthField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffix;
   final TextEditingController? controller;
+  final int? maxLength;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -606,10 +930,12 @@ class _AuthField extends StatelessWidget {
         controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
+        maxLength: maxLength,
         decoration: InputDecoration(
           hintText: hint,
           prefixIcon: Icon(icon, color: _muted, size: 20),
           suffixIcon: suffix,
+          counterText: maxLength == null ? null : '',
           filled: true,
           fillColor: Colors.white,
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),

@@ -10,14 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/main.dart';
 
 void main() {
-  testWidgets('Sports overview renders the booking experience', (
+  testWidgets('Marketplace overview renders the booking experience', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('Your game.\nYour court.\nYour time.'), findsOneWidget);
+    expect(find.text('Your sport.\nYour event.\nYour place.'), findsOneWidget);
     expect(find.text('Everything in one place'), findsOneWidget);
-    await tester.tap(find.text('Explore courts'));
+    await tester.tap(find.text('Explore bookings'));
     await tester.pumpAndSettle();
     expect(find.text('Choose your sport'), findsOneWidget);
     expect(find.text('Basketball'), findsOneWidget);
@@ -25,7 +25,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
     await tester.pumpAndSettle();
-    expect(find.text('Multi-sport booking'), findsOneWidget);
+    expect(find.text('Sports and events'), findsOneWidget);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 800));
     await tester.pumpAndSettle();
     await tester.tap(find.text('LOG IN'));

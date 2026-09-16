@@ -37,6 +37,8 @@ dependencies:
   google_fonts: ^8.2.1
   firebase_core: ^4.15.0
   http: ^1.6.0
+  firebase_auth: ^6.7.0
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
@@ -63,7 +65,7 @@ flutter:
   assets:
     - assets/tinker_logo.png
     - assets/google_logo.png
-    - assets/facebook_logo.jpg
+
     - assets/court/
 
   # To add assets to your application, add an assets section, like this:

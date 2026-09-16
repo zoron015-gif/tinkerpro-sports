@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
@@ -45,6 +46,30 @@ class AuthApi {
     required String password,
   }) => _post('/api/auth/login', {'email': email, 'password': password});
 
+  Future<Map<String, dynamic>> requestPasswordReset(String email) =>
+      _post('/api/auth/forgot-password', {'email': email});
+
+  Future<Map<String, dynamic>> verifyPasswordResetCode({
+    required String email,
+    required String code,
+  }) => _post('/api/auth/verify-password-reset-code', {
+    'email': email,
+    'code': code,
+  });
+
+  Future<Map<String, dynamic>> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) => _post('/api/auth/reset-password', {
+    'email': email,
+    'code': code,
+    'password': password,
+  });
+
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken) =>
+      _post('/api/auth/oauth/google', {'idToken': idToken});
+
   Future<Map<String, dynamic>> me(String token) => _request(
     'GET',
     '/api/auth/me',
@@ -69,8 +94,17 @@ class AuthApi {
     late final http.Response response;
     try {
       response = method == 'GET'
-          ? await _client.get(uri, headers: headers)
-          : await _client.post(uri, headers: headers, body: jsonEncode(body));
+          ? await _client
+                .get(uri, headers: headers)
+                .timeout(const Duration(seconds: 15))
+          : await _client
+                .post(uri, headers: headers, body: jsonEncode(body))
+                .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw const AuthApiException(
+        'The server took too long to respond. Check that the backend is running and try again.',
+        408,
+      );
     } on Exception {
       throw const AuthApiException(
         'Could not connect to the server. Check that the backend is running and the API URL is correct.',

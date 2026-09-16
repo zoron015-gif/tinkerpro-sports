@@ -1,5 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
+
 import 'firebase_options.dart';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -15,18 +17,19 @@ const _muted = Color(0xFF68748A);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(const MyApp()); // Replace MyApp with your root widget name if different
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(
+    const MyApp(),
+  ); // Replace MyApp with your root widget name if different
 }
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TinkerPro Sports',
+      title: 'TinkerPro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: _orange),
@@ -334,13 +337,6 @@ class _AuthPageState extends State<AuthPage> {
                 mark: 'G',
                 onTap: () => _showComingSoon('Google'),
               ),
-              const SizedBox(height: 11),
-              _SocialButton(
-                label: 'Continue with Facebook',
-                mark: 'f',
-                facebook: true,
-                onTap: () => _showComingSoon('Facebook'),
-              ),
               const SizedBox(height: 24),
               Center(
                 child: Text.rich(
@@ -609,13 +605,11 @@ class _SocialButton extends StatelessWidget {
     required this.label,
     required this.mark,
     required this.onTap,
-    this.facebook = false,
   });
 
   final String label;
   final String mark;
   final VoidCallback onTap;
-  final bool facebook;
 
   @override
   Widget build(BuildContext context) => OutlinedButton(
@@ -633,7 +627,7 @@ class _SocialButton extends StatelessWidget {
         Text(
           mark,
           style: TextStyle(
-            color: facebook ? const Color(0xFF1877F2) : _navy,
+            color: _navy,
             fontSize: 21,
             fontWeight: FontWeight.w900,
           ),
@@ -709,7 +703,7 @@ class _Hero extends StatelessWidget {
               ),
               const SizedBox(height: 22),
               const Text(
-                'Your game.\nYour court.\nYour time.',
+                'Your sport.\nYour event.\nYour place.',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 35,
@@ -719,7 +713,7 @@ class _Hero extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'TinkerPro Sports makes it simple to discover facilities, book courts, and keep every game moving.',
+                'TinkerPro brings sports and events together in one marketplace. Discover local businesses, compare what they offer, and book in a few taps.',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: .75),
                   fontSize: 15,
@@ -730,7 +724,7 @@ class _Hero extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onExplore,
                 icon: const Icon(Icons.arrow_forward_rounded, size: 19),
-                label: const Text('Explore courts'),
+                label: const Text('Explore bookings'),
                 style: FilledButton.styleFrom(
                   backgroundColor: _orange,
                   foregroundColor: Colors.white,
@@ -1216,7 +1210,7 @@ class _HowItWorks extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           const Text(
-            'A smarter way to manage every match, session, and facility.',
+            'A simple marketplace for clients to book and merchants to grow.',
             style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 20),
@@ -1226,21 +1220,21 @@ class _HowItWorks extends StatelessWidget {
                 number: '01',
                 icon: Icons.search_rounded,
                 title: 'Discover',
-                text: 'Find the right sport and facility.',
+                text: 'Find sports, events, and local businesses.',
               ),
               SizedBox(width: 10),
               _Step(
                 number: '02',
                 icon: Icons.calendar_month_rounded,
                 title: 'Book',
-                text: 'Choose a time that works for you.',
+                text: 'Choose a service, slot, or event.',
               ),
               SizedBox(width: 10),
               _Step(
                 number: '03',
                 icon: Icons.sports_score_rounded,
-                title: 'Play',
-                text: 'Show up and enjoy the game.',
+                title: 'Enjoy',
+                text: 'Arrive ready and let your plans happen.',
               ),
             ],
           ),
@@ -1318,23 +1312,23 @@ class _Features extends StatelessWidget {
     const features = [
       (
         Icons.sports_tennis_rounded,
-        'Multi-sport booking',
-        'One simple system for every court and activity.',
+        'Sports and events',
+        'Book courts, activities, venues, and experiences in one place.',
       ),
       (
         Icons.schedule_rounded,
-        'Live availability',
-        'See open slots and avoid double bookings.',
+        'Merchant marketplace',
+        'Businesses can showcase their services, spaces, and schedules.',
       ),
       (
         Icons.groups_rounded,
-        'Built for teams',
-        'Keep players, coaches, and staff aligned.',
+        'Easy discovery',
+        'Compare listings, details, and availability before you book.',
       ),
       (
         Icons.insights_rounded,
-        'Clear operations',
-        'Make better decisions with a view of your facility.',
+        'Simple bookings',
+        'Keep every sports or event reservation organized in one app.',
       ),
     ];
     return Padding(
@@ -1428,7 +1422,7 @@ class _BottomCallout extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Ready to get in the game?',
+                  'Ready to make a plan?',
                   style: TextStyle(
                     color: _navy,
                     fontSize: 19,
@@ -1437,7 +1431,7 @@ class _BottomCallout extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Start your next booking with TinkerPro.',
+                  'Book a sport or event from a local business today.',
                   style: TextStyle(
                     color: _navy.withValues(alpha: .7),
                     fontSize: 13,

@@ -31,7 +31,7 @@ CREATE TABLE users (
 CREATE TABLE user_identities (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
-  provider ENUM('google', 'facebook') NOT NULL,
+  provider ENUM('google') NOT NULL,
   provider_user_id VARCHAR(255) NOT NULL,
   provider_email VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

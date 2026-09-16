@@ -6,10 +6,12 @@ const crypto = require('crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
-const { sendVerificationCode } = require('./mailer');
+const { sendPasswordResetCode, sendVerificationCode } = require('./mailer');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const googleClientId = process.env.GOOGLE_CLIENT_ID ||
+  '451592121635-f7hgfk7plbi3mngvor1eenrup21mlbg5.apps.googleusercontent.com';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set in the backend .env file.');
@@ -96,10 +98,52 @@ app.post('/api/auth/register', async (req, res, next) => {
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
-    const [existing] = await connection.execute('SELECT id, status FROM users WHERE email = ? LIMIT 1', [email]);
+    const [existing] = await connection.execute(
+      'SELECT id, status FROM users WHERE email = ? LIMIT 1',
+      [email],
+    );
     if (existing.length > 0) {
-      await connection.rollback();
-      return res.status(409).json({ error: 'An account with this email already exists.' });
+      if (existing[0].status !== 'pending') {
+        await connection.rollback();
+        return res.status(409).json({ error: 'An account with this email already exists.' });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      await connection.execute(
+        `UPDATE users
+         SET password_hash = ?, role = ?, status = 'pending',
+             email_verified_at = NULL
+         WHERE id = ?`,
+        [passwordHash, role, existing[0].id],
+      );
+      await connection.execute(
+        `UPDATE email_verification_tokens
+         SET used_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND used_at IS NULL`,
+        [existing[0].id],
+      );
+
+      const code = createVerificationCode();
+      await connection.execute(
+        `INSERT INTO email_verification_tokens
+         (user_id, token_hash, expires_at)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+        [existing[0].id, hashVerificationCode(code)],
+      );
+      await sendVerificationCode(email, code);
+      await connection.commit();
+
+      return res.status(200).json({
+        message: 'Registration restarted. Check your email for the new verification code.',
+        user: publicUser({
+          id: existing[0].id,
+          email,
+          first_name: null,
+          last_name: null,
+          role,
+          status: 'pending',
+        }),
+      });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
@@ -221,6 +265,125 @@ app.post('/api/auth/resend-verification', async (req, res, next) => {
   }
 });
 
+app.post('/api/auth/forgot-password', async (req, res, next) => {
+  const email = normalizeEmail(req.body.email);
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid email is required.' });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [users] = await connection.execute(
+      'SELECT id FROM users WHERE email = ? AND status != ? LIMIT 1',
+      [email, 'deleted'],
+    );
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'No account was found for this email.' });
+    }
+
+    const code = createVerificationCode();
+    await connection.beginTransaction();
+    await connection.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND used_at IS NULL`,
+      [users[0].id],
+    );
+    await connection.execute(
+      `INSERT INTO password_reset_tokens
+       (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+      [users[0].id, hashVerificationCode(code)],
+    );
+    await sendPasswordResetCode(email, code);
+    await connection.commit();
+    return res.json({ message: 'A password reset code was sent to your email.' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res, next) => {
+  const email = normalizeEmail(req.body.email);
+  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+  const password = req.body.password;
+  if (!email || !/^\d{6}$/.test(code) ||
+      typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({
+      error: 'Email, a 6-digit code, and a password of at least 8 characters are required.',
+    });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [tokens] = await connection.execute(
+      `SELECT t.id AS token_id, t.token_hash, u.id AS user_id
+       FROM password_reset_tokens t
+       INNER JOIN users u ON u.id = t.user_id
+       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+       ORDER BY t.created_at DESC LIMIT 1`,
+      [email],
+    );
+    const token = tokens[0];
+    if (!token || token.token_hash !== hashVerificationCode(code)) {
+      return res.status(400).json({ error: 'The password reset code is invalid or expired.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await connection.beginTransaction();
+    await connection.execute(
+      'UPDATE users SET password_hash = ?, status = ?, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP) WHERE id = ?',
+      [passwordHash, 'active', token.user_id],
+    );
+    await connection.execute(
+      'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [token.token_id],
+    );
+    await connection.commit();
+    return res.json({ message: 'Your password has been changed. You can now sign in.' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
+app.post('/api/auth/verify-password-reset-code', async (req, res, next) => {
+  const email = normalizeEmail(req.body.email);
+  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+  if (!email || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({
+      error: 'A valid email and 6-digit verification code are required.',
+    });
+  }
+
+  try {
+    const [tokens] = await pool.execute(
+      `SELECT t.token_hash
+       FROM password_reset_tokens t
+       INNER JOIN users u ON u.id = t.user_id
+       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+       ORDER BY t.created_at DESC LIMIT 1`,
+      [email],
+    );
+    const token = tokens[0];
+    if (!token || token.token_hash !== hashVerificationCode(code)) {
+      return res.status(400).json({
+        error: 'The password reset code is invalid or expired.',
+      });
+    }
+    return res.json({ message: 'Verification code accepted.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post('/api/auth/login', async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const password = req.body.password;
@@ -286,8 +449,7 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
     }
     const payload = await resp.json();
 
-    // If GOOGLE_CLIENT_ID is set, enforce that the token was issued for that client
-    if (process.env.GOOGLE_CLIENT_ID && payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+    if (payload.aud !== googleClientId) {
       return res.status(400).json({ error: 'Google ID token was not issued for this application.' });
     }
 
@@ -300,6 +462,10 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
     const email = normalizeEmail(payload.email);
     const firstName = payload.given_name || null;
     const lastName = payload.family_name || null;
+    const providerUserId = typeof payload.sub === 'string' ? payload.sub : '';
+    if (!providerUserId) {
+      return res.status(400).json({ error: 'Google ID token has no subject.' });
+    }
 
     // Find or create the user
     const [rows] = await pool.execute(
@@ -337,7 +503,30 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
       }
     }
 
-    await pool.execute('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute(
+        'UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [user.id],
+      );
+      await connection.execute(
+        `INSERT INTO user_identities
+         (user_id, provider, provider_user_id, provider_email, last_used_at)
+         VALUES (?, 'google', ?, ?, CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE
+           user_id = VALUES(user_id),
+           provider_email = VALUES(provider_email),
+           last_used_at = CURRENT_TIMESTAMP`,
+        [user.id, providerUserId, email],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
     return res.json({ user: publicUser(user), token: createToken(user) });
   } catch (error) {
     return next(error);
@@ -346,10 +535,15 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
-  if (error.code === 'EAUTH' || error.responseCode === 535) {
+  if (
+    error.code === 'EAUTH' ||
+    error.code === 'ESOCKET' ||
+    error.code === 'ECONNECTION' ||
+    error.responseCode === 535
+  ) {
     return res.status(503).json({
       error:
-        'Email delivery is not configured correctly. Check SMTP_USER and SMTP_APP_PASSWORD in backend/.env.',
+        'We could not send the verification email. Check that SMTP_USER is the Gmail sender address and SMTP_APP_PASSWORD is a valid 16-character Gmail app password.',
     });
   }
   return res.status(500).json({ error: 'An unexpected server error occurred.' });
