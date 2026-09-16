@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'auth_dashboard.dart';
+import 'reserve_dashboard.dart';
 
 import 'dart:async';
 
@@ -45,6 +46,16 @@ class MyApp extends StatelessWidget {
 class OverviewPage extends StatelessWidget {
   const OverviewPage({super.key});
 
+  Future<void> _openBookings(BuildContext context) async {
+    final authenticated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AuthDashboardPage()),
+    );
+    if (!context.mounted || authenticated != true) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ReserveDashboardPage()),
+    );
+  }
+
   void _showMessage(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -64,19 +75,11 @@ class OverviewPage extends StatelessWidget {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
-              child: _Header(
-                onLogin: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AuthDashboardPage()),
-                ),
-              ),
+              child: const _Header(),
             ),
             SliverToBoxAdapter(
               child: _Hero(
-                onExplore: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const SportsSelectionPage(),
-                  ),
-                ),
+                onExplore: () => _openBookings(context),
               ),
             ),
             SliverToBoxAdapter(child: _HowItWorks()),
@@ -96,9 +99,7 @@ class OverviewPage extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onLogin});
-
-  final VoidCallback onLogin;
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
@@ -141,15 +142,6 @@ class _Header extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: onLogin,
-            style: TextButton.styleFrom(foregroundColor: _navy),
-            child: const Text(
-              'LOG IN',
-              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .6),
-            ),
           ),
         ],
       ),
@@ -754,7 +746,8 @@ class SportsSelectionPage extends StatefulWidget {
 }
 
 class _SportsSelectionPageState extends State<SportsSelectionPage> {
-  String? _selectedSport;
+  String? _selectedBooking;
+  bool _showEvents = false;
 
   static const _sports = [
     (
@@ -780,6 +773,33 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
       Icons.sports_tennis_rounded,
       'Pickleball',
       'Social court play',
+    ),
+  ];
+
+  static const _events = [
+    (
+      'assets/court/basket-court.jpg',
+      Icons.celebration_rounded,
+      'Community events',
+      'Local activities',
+    ),
+    (
+      'assets/court/volley-court.jpg',
+      Icons.groups_rounded,
+      'Group experiences',
+      'Gather and connect',
+    ),
+    (
+      'assets/court/badminton-court.jpg',
+      Icons.event_rounded,
+      'Hosted events',
+      'Book an event',
+    ),
+    (
+      'assets/court/pickle-court.jpg',
+      Icons.local_activity_rounded,
+      'Special occasions',
+      'Plan your day',
     ),
   ];
 
@@ -815,15 +835,39 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
               ),
             ),
             SliverToBoxAdapter(child: _SelectionHero()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      label: Text('Sports'),
+                      icon: Icon(Icons.sports_score_rounded),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: Text('Events'),
+                      icon: Icon(Icons.event_rounded),
+                    ),
+                  ],
+                  selected: {_showEvents},
+                  onSelectionChanged: (selection) => setState(() {
+                    _showEvents = selection.first;
+                    _selectedBooking = null;
+                  }),
+                ),
+              ),
+            ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 26, 20, 10),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Choose your sport',
+                        _showEvents ? 'Choose an event' : 'Choose a sport',
                         style: TextStyle(
                           color: _ink,
                           fontSize: 25,
@@ -832,7 +876,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                       ),
                     ),
                     Text(
-                      '${_sports.length} available',
+                      '${(_showEvents ? _events : _sports).length} available',
                       style: const TextStyle(color: _muted, fontSize: 12),
                     ),
                   ],
@@ -843,17 +887,17 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverGrid(
                 delegate: SliverChildBuilderDelegate((context, index) {
-                  final sport = _sports[index];
-                  final selected = _selectedSport == sport.$3;
+                  final booking = (_showEvents ? _events : _sports)[index];
+                  final selected = _selectedBooking == booking.$3;
                   return _SportCard(
-                    imagePath: sport.$1,
-                    icon: sport.$2,
-                    title: sport.$3,
-                    subtitle: sport.$4,
+                    imagePath: booking.$1,
+                    icon: booking.$2,
+                    title: booking.$3,
+                    subtitle: booking.$4,
                     selected: selected,
-                    onTap: () => setState(() => _selectedSport = sport.$3),
+                    onTap: () => setState(() => _selectedBooking = booking.$3),
                   );
-                }, childCount: _sports.length),
+                }, childCount: (_showEvents ? _events : _sports).length),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 12,
@@ -866,12 +910,12 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
                 child: FilledButton(
-                  onPressed: _selectedSport == null
+                  onPressed: _selectedBooking == null
                       ? null
                       : () => ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              'Great choice! Let’s find $_selectedSport courts.',
+                              'Great choice! Let’s find $_selectedBooking listings.',
                             ),
                             backgroundColor: _navy,
                           ),
@@ -891,9 +935,11 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                     ),
                   ),
                   child: Text(
-                    _selectedSport == null
-                        ? 'Select a sport to continue'
-                        : 'Find $_selectedSport courts',
+                    _selectedBooking == null
+                        ? (_showEvents
+                            ? 'Select an event to continue'
+                            : 'Select a sport to continue')
+                        : 'Find $_selectedBooking',
                   ),
                 ),
               ),
@@ -1033,7 +1079,7 @@ class _SelectionHeroState extends State<_SelectionHero> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Tell us what you want to play and we’ll take care of the rest.',
+                  'Choose a sport or event and we’ll take care of the rest.',
                   style: TextStyle(
                     color: Color(0xD9FFFFFF),
                     fontSize: 13,

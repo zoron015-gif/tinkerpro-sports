@@ -81,11 +81,14 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
             builder: (_) => EmailVerificationPage(email: email, api: _api),
           ),
         );
+        if (mounted) {
+          Navigator.of(context).pop(true);
+        }
       } else {
         final user = response['user'] as Map<String, dynamic>?;
-        _showMessage(
-          'Welcome back${user?['email'] == null ? '' : ', ${user!['email']}'}!',
-        );
+        if (user != null) {
+          Navigator.of(context).pop(true);
+        }
       }
     } on AuthApiException catch (error) {
       if (mounted) _showMessage(error.message);
@@ -126,9 +129,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       final apiResult = await _api.loginWithGoogle(idToken);
       if (mounted) {
         final user = apiResult['user'] as Map<String, dynamic>?;
-        _showMessage(
-          'Welcome back, ${user?['email'] ?? firebaseUser.email ?? account.email}!',
-        );
+        if (user != null) {
+          Navigator.of(context).pop(true);
+        }
       }
     } on FirebaseAuthException catch (error) {
       if (mounted) _showMessage(error.message ?? 'Google sign-in failed.');

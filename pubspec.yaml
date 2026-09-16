@@ -67,6 +67,7 @@ flutter:
     - assets/google_logo.png
 
     - assets/court/
+    - assets/book-type/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
