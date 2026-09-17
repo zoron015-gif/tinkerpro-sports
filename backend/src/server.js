@@ -433,6 +433,87 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   }
 });
 
+app.get('/api/saved-items', requireAuth, async (req, res, next) => {
+  try {
+    const [items] = await pool.execute(
+      `SELECT id, item_type AS itemType, item_key AS itemKey,
+              title, subtitle, image_url AS imageUrl, created_at AS createdAt
+       FROM saved_items
+       WHERE user_id = ?
+       ORDER BY created_at DESC`,
+      [req.auth.sub],
+    );
+    return res.json({ items });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/saved-item-counts', requireAuth, async (req, res, next) => {
+  const itemType = req.query.itemType;
+  if (!['sports', 'event', 'fitness'].includes(itemType)) {
+    return res.status(400).json({ error: 'Invalid saved item type.' });
+  }
+  try {
+    const [rows] = await pool.execute(
+      `SELECT item_key AS itemKey, COUNT(*) AS saveCount
+       FROM saved_items
+       WHERE item_type = ?
+       GROUP BY item_key`,
+      [itemType],
+    );
+    return res.json({
+      counts: Object.fromEntries(
+        rows.map((row) => [row.itemKey, Number(row.saveCount)]),
+      ),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/saved-items', requireAuth, async (req, res, next) => {
+  const itemType = req.body.itemType;
+  const itemKey = typeof req.body.itemKey === 'string' ? req.body.itemKey.trim() : '';
+  const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+  const subtitle = typeof req.body.subtitle === 'string' ? req.body.subtitle.trim() : '';
+  const imageUrl = typeof req.body.imageUrl === 'string' ? req.body.imageUrl.trim() : null;
+
+  if (!['sports', 'event', 'fitness'].includes(itemType) ||
+      !itemKey || !title || itemKey.length > 255 || title.length > 255) {
+    return res.status(400).json({ error: 'A valid saved item is required.' });
+  }
+
+  try {
+    await pool.execute(
+      `INSERT INTO saved_items
+       (user_id, item_type, item_key, title, subtitle, image_url)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE title = VALUES(title), subtitle = VALUES(subtitle),
+                               image_url = VALUES(image_url)`,
+      [req.auth.sub, itemType, itemKey, title, subtitle || null, imageUrl],
+    );
+    return res.status(201).json({ message: 'Item saved.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete('/api/saved-items/:itemType/:itemKey', requireAuth, async (req, res, next) => {
+  if (!['sports', 'event', 'fitness'].includes(req.params.itemType)) {
+    return res.status(400).json({ error: 'Invalid saved item type.' });
+  }
+  try {
+    await pool.execute(
+      'DELETE FROM saved_items WHERE user_id = ? AND item_type = ? AND item_key = ?',
+      [req.auth.sub, req.params.itemType, req.params.itemKey],
+    );
+    return res.json({ message: 'Item removed.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // Google OAuth: verify ID token from client and create or find user
 app.post('/api/auth/oauth/google', async (req, res, next) => {
   const idToken = req.body.idToken || req.body.id_token;

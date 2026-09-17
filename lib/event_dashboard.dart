@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'profile_dashboard.dart';
+import 'saved_dashboard.dart';
+import 'saved_items.dart';
 
 const _eventNavy = Color(0xFF192B50);
 const _eventInk = Color(0xFF101B33);
@@ -12,7 +15,9 @@ const _eventPage = Color(0xFFF7F9FC);
 const _eventSoftOrange = Color(0xFFFFF1E4);
 
 class EventDashboardPage extends StatefulWidget {
-  const EventDashboardPage({super.key});
+  const EventDashboardPage({super.key, this.onLogout});
+
+  final Future<void> Function(BuildContext context)? onLogout;
   @override
   State<EventDashboardPage> createState() => _EventDashboardPageState();
 }
@@ -63,6 +68,8 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
   bool _filtersOpen = true;
   bool _locationLoading = false;
   Position? _position;
+  final Set<String> _savedKeys = <String>{};
+  final Map<String, int> _saveCounts = <String, int>{};
 
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
@@ -83,6 +90,29 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_refresh);
+    _loadSavedState();
+  }
+
+  Future<void> _loadSavedState() async {
+    try {
+      final saved = await SavedItemStore.list();
+      final counts = await SavedItemStore.counts('event');
+      if (!mounted) return;
+      setState(() {
+        _savedKeys
+          ..clear()
+          ..addAll(
+            saved
+                .where((item) => item['itemType'] == 'event')
+                .map((item) => item['itemKey'] as String),
+          );
+        _saveCounts
+          ..clear()
+          ..addAll(counts);
+      });
+    } on Exception {
+      // The card remains usable even when saved-state refresh is unavailable.
+    }
   }
 
   @override
@@ -120,34 +150,30 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           ),
           IconButton(
             tooltip: 'Filters',
-            onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
-            icon: Icon(
-              _filtersOpen
-                  ? Icons.filter_list_off_rounded
-                  : Icons.filter_list_rounded,
-            ),
+            onPressed: _openFilterDrawer,
+            icon: const Icon(Icons.tune_rounded),
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (wide && _filtersOpen)
-                SizedBox(width: 270, child: _filterPanel()),
-              Expanded(
-                child: Column(
+      body: Column(
+        children: [
+          _mainSearchBar(),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (!wide && _filtersOpen) _filterPanel(),
+                    if (wide && _filtersOpen)
+                      SizedBox(width: 270, child: _filterPanel()),
                     Expanded(child: _results(wide)),
                   ],
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
@@ -155,21 +181,42 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         indicatorColor: _eventSoftOrange,
         onDestinationSelected: (index) {
           if (index == 0) return;
-          _message(
-            index == 1
-                ? 'Booking history will appear here.'
-                : 'Profile will appear here.',
-          );
+          if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          if (index == 1) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          _message(switch (index) {
+            1 => 'Saved venues will appear here.',
+            2 => 'Booking history will appear here.',
+            _ => 'Profile will appear here.',
+          });
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on_rounded),
+            label: 'Explore',
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
+            icon: Icon(Icons.favorite_border_rounded),
+            selectedIcon: Icon(Icons.favorite_rounded),
+            label: 'Saved',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today_rounded),
             label: 'Bookings',
           ),
           NavigationDestination(
@@ -235,6 +282,44 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
       ],
     );
   }
+
+  Widget _mainSearchBar() => Container(
+    color: _eventPage,
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+    child: TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Search venues, areas, or event types...',
+        prefixIcon: const Icon(Icons.search, size: 20),
+        suffixIcon: _searchController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: _searchController.clear,
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
+        filled: true,
+        fillColor: Colors.white,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _eventLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _eventLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _eventOrange, width: 1.5),
+        ),
+      ),
+    ),
+  );
 
   Widget _filterPanel() {
     final mobile = MediaQuery.sizeOf(context).width < 900;
@@ -331,6 +416,161 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     );
   }
 
+  void _openFilterDrawer() {
+    showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'Filters',
+      barrierDismissible: true,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) => Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: Colors.white,
+              child: SizedBox(
+                width: MediaQuery.sizeOf(context).width < 600
+                    ? MediaQuery.sizeOf(context).width * .86
+                    : 370,
+                height: double.infinity,
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Filters',
+                                style: TextStyle(
+                                  color: _eventInk,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                _reset();
+                                dialogSetState(() {});
+                              },
+                              child: const Text('Reset all'),
+                            ),
+                            IconButton(
+                              tooltip: 'Close filters',
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(bottom: 32),
+                          child: _filterContent(dialogSetState),
+                        ),
+                      ),
+                      SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _eventNavy,
+                                minimumSize: const Size.fromHeight(48),
+                              ),
+                              child: Text(
+                                'Apply Filters (${_filteredVenues.length})',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final offset =
+            Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+        return SlideTransition(position: offset, child: child);
+      },
+    );
+  }
+
+  Widget _filterContent([StateSetter? dialogSetState]) {
+    void update(VoidCallback callback) {
+      setState(callback);
+      dialogSetState?.call(() {});
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _label('SEARCH'),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Name, area, keyword...',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: const BorderSide(color: _eventLine),
+              ),
+            ),
+          ),
+          _gap(),
+          _label('DISTANCE'),
+          OutlinedButton.icon(
+            onPressed: _useLocation,
+            icon: const Icon(Icons.my_location_rounded, size: 16),
+            label: const Text('Use my location'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _eventNavy,
+              side: const BorderSide(color: _eventNavy),
+              minimumSize: const Size(double.infinity, 40),
+            ),
+          ),
+          _gap(),
+          _label('AREA / CITY'),
+          _dropdown(
+            _area,
+            const ['All areas', 'Cebu City', 'Mandaue City', 'Talisay'],
+            (value) => update(() => _area = value),
+          ),
+          _gap(),
+          _label('VENUE TYPE'),
+          _chips(
+            const [
+              'All venues',
+              'Ballroom',
+              'Terrace',
+              'Private Dining',
+              'Garden',
+            ],
+            _type,
+            (value) => update(() => _type = value),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _venueCard(dynamic venue) => Card(
     elevation: 1,
     color: Colors.white,
@@ -341,10 +581,65 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
       children: [
         Expanded(
           flex: 8,
-          child: Image.asset(
-            'assets/book-type/event.jpg',
-            width: double.infinity,
-            fit: BoxFit.cover,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                'assets/book-type/event.jpg',
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton.filled(
+                      tooltip: _savedKeys.contains(venue.$1)
+                          ? 'Unsave venue'
+                          : 'Save venue',
+                      style: IconButton.styleFrom(
+                        backgroundColor: _savedKeys.contains(venue.$1)
+                            ? _eventOrange
+                            : Colors.white,
+                        foregroundColor: _savedKeys.contains(venue.$1)
+                            ? Colors.white
+                            : _eventNavy,
+                      ),
+                      onPressed: () => _toggleSaved(
+                        key: venue.$1,
+                        title: venue.$1,
+                        subtitle: venue.$3,
+                      ),
+                      icon: Icon(
+                        _savedKeys.contains(venue.$1)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                      ),
+                    ),
+                    _saveCount(_saveCounts[venue.$1] ?? 0),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      '♧ 3',
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -413,6 +708,56 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           ),
         ),
       ],
+    ),
+  );
+
+  Future<void> _toggleSaved({
+    required String key,
+    required String title,
+    required String subtitle,
+  }) async {
+    try {
+      if (_savedKeys.contains(key)) {
+        await SavedItemStore.remove('event', key);
+        setState(() {
+          _savedKeys.remove(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 1) - 1;
+        });
+        _message('$title removed from Saved.');
+      } else {
+        await SavedItemStore.save(
+          type: 'event',
+          key: key,
+          title: title,
+          subtitle: subtitle,
+        );
+        setState(() {
+          _savedKeys.add(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 0) + 1;
+        });
+        _message('$title saved.');
+      }
+
+    } on Exception catch (error) {
+      _message('Could not update Saved: $error');
+    }
+  }
+
+  Widget _saveCount(int count) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: _eventNavy,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     ),
   );
 
@@ -560,6 +905,13 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                       height: 52,
                       child: _mapPin(venue.$1),
                     ),
+                  if (_position != null)
+                    Marker(
+                      point: LatLng(_position!.latitude, _position!.longitude),
+                      width: 112,
+                      height: 76,
+                      child: _userLocationPin(),
+                    ),
                 ],
               ),
             ],
@@ -584,6 +936,54 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         ),
       ),
       const Icon(Icons.location_on, color: _eventNavy),
+    ],
+  );
+
+  Widget _userLocationPin() => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1769E0),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x331769E0),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Text(
+          'You are here',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: const Color(0x331769E0),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0x661769E0), width: 1),
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1769E0),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+            ),
+          ),
+        ),
+      ),
     ],
   );
 }

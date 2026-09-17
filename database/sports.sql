@@ -99,3 +99,21 @@ CREATE TABLE user_sessions (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE saved_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  item_type ENUM('sports', 'event', 'fitness') NOT NULL,
+  item_key VARCHAR(255) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  subtitle VARCHAR(255) NULL,
+  image_url VARCHAR(2048) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_saved_item_user (user_id, item_type, item_key),
+  KEY idx_saved_items_user_created (user_id, created_at),
+  CONSTRAINT fk_saved_items_user
+    FOREIGN KEY (user_id) REFERENCES users (id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;

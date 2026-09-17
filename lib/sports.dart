@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'profile_dashboard.dart';
+import 'saved_dashboard.dart';
+import 'saved_items.dart';
 
 const _sportsNavy = Color(0xFF192B50);
 const _sportsInk = Color(0xFF101B33);
@@ -13,7 +16,9 @@ const _sportsSurface = Colors.white;
 const _sportsSoftOrange = Color(0xFFFFF1E4);
 
 class SportsDashboardPage extends StatefulWidget {
-  const SportsDashboardPage({super.key});
+  const SportsDashboardPage({super.key, this.onLogout});
+
+  final Future<void> Function(BuildContext context)? onLogout;
 
   @override
   State<SportsDashboardPage> createState() => _SportsDashboardPageState();
@@ -90,9 +95,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   String _availability = 'Any';
   double _maxPrice = 700;
   final Set<String> _selectedAmenities = <String>{};
-  bool _filtersOpen = true;
   bool _locationLoading = false;
   Position? _position;
+  final Set<String> _savedKeys = <String>{};
+  final Map<String, int> _saveCounts = <String, int>{};
 
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
@@ -129,6 +135,29 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_refresh);
+    _loadSavedState();
+  }
+
+  Future<void> _loadSavedState() async {
+    try {
+      final saved = await SavedItemStore.list();
+      final counts = await SavedItemStore.counts('sports');
+      if (!mounted) return;
+      setState(() {
+        _savedKeys
+          ..clear()
+          ..addAll(
+            saved
+                .where((item) => item['itemType'] == 'sports')
+                .map((item) => item['itemKey'] as String),
+          );
+        _saveCounts
+          ..clear()
+          ..addAll(counts);
+      });
+    } on Exception {
+      // The card remains usable even when saved-state refresh is unavailable.
+    }
   }
 
   @override
@@ -163,36 +192,28 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             onPressed: _openMap,
             icon: const Icon(Icons.map_outlined),
           ),
-          if (MediaQuery.sizeOf(context).width < 900)
-            IconButton(
-              tooltip: 'Filters',
-              onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
-              icon: Icon(
-                _filtersOpen
-                    ? Icons.filter_list_off_rounded
-                    : Icons.filter_list_rounded,
-              ),
-            ),
+          IconButton(
+            tooltip: 'Open filters sidebar',
+            onPressed: _openFilterDrawer,
+            icon: const Icon(Icons.tune_rounded),
+          ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (wide) SizedBox(width: 270, child: _filterPanel()),
-              Expanded(
-                child: Column(
-                  children: [
-                    if (!wide && _filtersOpen) _filterPanel(),
-                    Expanded(child: _results(wide)),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
+      body: Column(
+        children: [
+          _mainSearchBar(),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [Expanded(child: _results(wide))],
+                );
+              },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
@@ -200,21 +221,44 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         indicatorColor: _sportsSoftOrange,
         onDestinationSelected: (index) {
           if (index == 0) return;
+          if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          if (index == 1) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
           _showMessage(
-            index == 1
-                ? 'Booking history will appear here.'
-                : 'Profile will appear here.',
+            switch (index) {
+              1 => 'Saved venues will appear here.',
+              2 => 'Booking history will appear here.',
+              _ => 'Profile will appear here.',
+            },
           );
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on_rounded),
+            label: 'Explore',
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
+            icon: Icon(Icons.favorite_border_rounded),
+            selectedIcon: Icon(Icons.favorite_rounded),
+            label: 'Saved',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today_rounded),
             label: 'Bookings',
           ),
           NavigationDestination(
@@ -290,6 +334,46 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     );
   }
 
+  Widget _mainSearchBar() => Container(
+    color: _sportsPage,
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+    child: TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Search courts, areas, or sports...',
+        prefixIcon: const Icon(Icons.search, size: 20),
+        suffixIcon: _searchController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: _searchController.clear,
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
+        filled: true,
+        fillColor: _sportsSurface,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _sportsLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _sportsLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _sportsOrange, width: 1.5),
+        ),
+      ),
+    ),
+  );
+
+  // Kept as a reusable desktop filter layout for future inline filter mode.
+  // ignore: unused_element
   Widget _filterPanel() {
     final mobile = MediaQuery.sizeOf(context).width < 900;
     final media = MediaQuery.of(context);
@@ -329,25 +413,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 ],
               ),
               const Divider(height: 16),
-              _label('SEARCH'),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Name, area, keyword...',
-                  hintStyle: const TextStyle(fontSize: 12, color: _sportsMuted),
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  isDense: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: const BorderSide(color: _sportsLine),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(22),
-                    borderSide: const BorderSide(color: _sportsLine),
-                  ),
-                ),
-              ),
-              _sectionGap(),
               _label('DISTANCE'),
               OutlinedButton.icon(
                 onPressed: _useLocation,
@@ -443,6 +508,225 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     );
   }
 
+  void _openFilterDrawer() {
+    showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'Filters',
+      barrierDismissible: true,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) => Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: _sportsSurface,
+              child: SizedBox(
+                width: MediaQuery.sizeOf(context).width < 600
+                    ? MediaQuery.sizeOf(context).width * .86
+                    : 370,
+                height: double.infinity,
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Filters',
+                                style: TextStyle(
+                                  color: _sportsInk,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _resetFilters,
+                              child: const Text('Reset all'),
+                            ),
+                            IconButton(
+                              tooltip: 'Close filters',
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(bottom: 32),
+                          child: _filterContent(dialogSetState),
+                        ),
+                      ),
+                      SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _sportsNavy,
+                                minimumSize: const Size.fromHeight(48),
+                              ),
+                              child: Text(
+                                'Apply Filters (${_filteredVenues.length})',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final offset =
+            Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+        return SlideTransition(position: offset, child: child);
+      },
+    );
+  }
+
+  Widget _filterContent([StateSetter? dialogSetState]) {
+    void update(VoidCallback callback) {
+      setState(callback);
+      dialogSetState?.call(() {});
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _label('DISTANCE'),
+          OutlinedButton.icon(
+            onPressed: _useLocation,
+            icon: const Icon(Icons.my_location_rounded, size: 16),
+            label: const Text('Use my location'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _sportsNavy,
+              side: const BorderSide(color: _sportsNavy),
+              minimumSize: const Size(double.infinity, 40),
+            ),
+          ),
+          _sectionGap(),
+          _label('AREA / CITY'),
+          _dropdown(
+            value: _area,
+            values: const ['All areas', 'Cebu City', 'Mandaue City', 'Talisay'],
+            onChanged: (value) => update(() => _area = value),
+          ),
+          _sectionGap(),
+          _label('SPORT'),
+          _dropdown(
+            value: _sport,
+            values: const [
+              'All sports',
+              'Basketball',
+              'Badminton',
+              'Tennis',
+              'Padel',
+              'Volleyball',
+              'Pickleball',
+            ],
+            onChanged: (value) => update(() => _sport = value),
+          ),
+          _sectionGap(),
+          _label('COURT TYPE'),
+          _chips(
+            const ['All', 'Indoor', 'Outdoor', 'Covered'],
+            _courtType,
+            (value) => update(() => _courtType = value),
+          ),
+          _sectionGap(),
+          _label('AMENITIES'),
+          _amenityChips(const [
+            'Parking',
+            'Pet-friendly',
+            'Restroom',
+            'Shower',
+            'Store',
+          ], dialogSetState),
+          _sectionGap(),
+          _label('AVAILABILITY'),
+          _chips(
+            const ['Any', 'Open 24 hours'],
+            _availability,
+            (value) => update(() => _availability = value),
+          ),
+          _sectionGap(),
+          _priceFilter(dialogSetState),
+        ],
+      ),
+    );
+  }
+
+  Widget _priceFilter([StateSetter? dialogSetState]) {
+    void update(VoidCallback callback) {
+      setState(callback);
+      dialogSetState?.call(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: Text('PRICE (₱ / HOUR)')),
+            Text(
+              _maxPrice >= 700 ? '₱0 - ₱700+' : '₱0 - ₱${_maxPrice.round()}',
+              style: const TextStyle(
+                color: _sportsNavy,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+            activeTrackColor: _sportsNavy,
+            inactiveTrackColor: _sportsLine,
+            thumbColor: _sportsOrange,
+            overlayColor: _sportsOrange.withValues(alpha: .14),
+            showValueIndicator: ShowValueIndicator.never,
+          ),
+          child: Slider(
+            value: _maxPrice,
+            min: 0,
+            max: 700,
+            divisions: 14,
+            onChanged: (value) => update(() => _maxPrice = value),
+          ),
+        ),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('₱0', style: TextStyle(color: _sportsMuted, fontSize: 11)),
+            Text('₱350', style: TextStyle(color: _sportsMuted, fontSize: 11)),
+            Text('₱700+', style: TextStyle(color: _sportsMuted, fontSize: 11)),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _courtCard(dynamic venue) => Card(
     elevation: 1,
     shadowColor: Colors.black12,
@@ -458,6 +742,40 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             fit: StackFit.expand,
             children: [
               Image.asset(venue.image, fit: BoxFit.cover),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton.filled(
+                      tooltip: _savedKeys.contains(venue.name)
+                          ? 'Unsave venue'
+                          : 'Save venue',
+                      style: IconButton.styleFrom(
+                        backgroundColor: _savedKeys.contains(venue.name)
+                            ? _sportsOrange
+                            : Colors.white,
+                        foregroundColor: _savedKeys.contains(venue.name)
+                            ? Colors.white
+                            : _sportsNavy,
+                      ),
+                      onPressed: () => _toggleSaved(
+                        type: 'sports',
+                        key: venue.name,
+                        title: venue.name,
+                        subtitle: venue.address,
+                      ),
+                      icon: Icon(
+                        _savedKeys.contains(venue.name)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                      ),
+                    ),
+                    _saveCount(_saveCounts[venue.name] ?? 0),
+                  ],
+                ),
+              ),
               Positioned(
                 right: 8,
                 bottom: 8,
@@ -544,6 +862,57 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ),
         ),
       ],
+    ),
+  );
+
+  Future<void> _toggleSaved({
+    required String type,
+    required String key,
+    required String title,
+    required String subtitle,
+  }) async {
+    try {
+      if (_savedKeys.contains(key)) {
+        await SavedItemStore.remove(type, key);
+        setState(() {
+          _savedKeys.remove(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 1) - 1;
+        });
+        _showMessage('$title removed from Saved.');
+      } else {
+        await SavedItemStore.save(
+          type: type,
+          key: key,
+          title: title,
+          subtitle: subtitle,
+        );
+        setState(() {
+          _savedKeys.add(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 0) + 1;
+        });
+        _showMessage('$title saved.');
+      }
+
+    } on Exception catch (error) {
+      _showMessage('Could not update Saved: $error');
+    }
+  }
+
+  Widget _saveCount(int count) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: _sportsNavy,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     ),
   );
 
@@ -690,34 +1059,36 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     ],
   );
 
-  Widget _amenityChips(List<String> values) => Wrap(
-    spacing: 6,
-    runSpacing: 6,
-    children: [
-      for (final value in values)
-        FilterChip(
-          label: Text(value, style: const TextStyle(fontSize: 10)),
-          selected: _selectedAmenities.contains(value),
-          showCheckmark: false,
-          side: BorderSide(
-            color: _selectedAmenities.contains(value)
-                ? _sportsOrange
-                : _sportsLine,
-          ),
-          selectedColor: _sportsSoftOrange,
-          checkmarkColor: _sportsOrange,
-          onSelected: (selected) {
-            setState(() {
-              if (selected) {
-                _selectedAmenities.add(value);
-              } else {
-                _selectedAmenities.remove(value);
-              }
-            });
-          },
-        ),
-    ],
-  );
+  Widget _amenityChips(List<String> values, [StateSetter? dialogSetState]) =>
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final value in values)
+            FilterChip(
+              label: Text(value, style: const TextStyle(fontSize: 10)),
+              selected: _selectedAmenities.contains(value),
+              showCheckmark: false,
+              side: BorderSide(
+                color: _selectedAmenities.contains(value)
+                    ? _sportsOrange
+                    : _sportsLine,
+              ),
+              selectedColor: _sportsSoftOrange,
+              checkmarkColor: _sportsOrange,
+              onSelected: (selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedAmenities.add(value);
+                  } else {
+                    _selectedAmenities.remove(value);
+                  }
+                });
+                dialogSetState?.call(() {});
+              },
+            ),
+        ],
+      );
 
   void _resetFilters() {
     _searchController.clear();
@@ -787,6 +1158,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       height: 50,
                       child: _mapPin(venue.name),
                     ),
+                  if (_position != null)
+                    Marker(
+                      point: LatLng(
+                        _position!.latitude,
+                        _position!.longitude,
+                      ),
+                      width: 112,
+                      height: 76,
+                      child: _userLocationPin(),
+                    ),
                 ],
               ),
             ],
@@ -811,6 +1192,54 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         ),
       ),
       const Icon(Icons.location_on, color: _sportsNavy),
+    ],
+  );
+
+  Widget _userLocationPin() => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1769E0),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x331769E0),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Text(
+          'You are here',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: const Color(0x331769E0),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0x661769E0), width: 1),
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1769E0),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+            ),
+          ),
+        ),
+      ),
     ],
   );
 

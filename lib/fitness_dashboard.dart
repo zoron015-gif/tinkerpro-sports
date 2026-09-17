@@ -3,6 +3,10 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'profile_dashboard.dart';
+import 'saved_dashboard.dart';
+import 'saved_items.dart';
+
 const _fitnessNavy = Color(0xFF192B50);
 const _fitnessInk = Color(0xFF101B33);
 const _fitnessOrange = Color(0xFFFF8200);
@@ -12,7 +16,9 @@ const _fitnessPage = Color(0xFFF7F9FC);
 const _fitnessSoftOrange = Color(0xFFFFF1E4);
 
 class FitnessDashboardPage extends StatefulWidget {
-  const FitnessDashboardPage({super.key});
+  const FitnessDashboardPage({super.key, this.onLogout});
+
+  final Future<void> Function(BuildContext context)? onLogout;
 
   @override
   State<FitnessDashboardPage> createState() => _FitnessDashboardPageState();
@@ -77,6 +83,8 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   bool _filtersOpen = true;
   bool _locationLoading = false;
   Position? _position;
+  final Set<String> _savedKeys = <String>{};
+  final Map<String, int> _saveCounts = <String, int>{};
   final Set<String> _selectedAmenities = <String>{};
 
   List<dynamic> get _filteredClasses {
@@ -111,6 +119,29 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_refresh);
+    _loadSavedState();
+  }
+
+  Future<void> _loadSavedState() async {
+    try {
+      final saved = await SavedItemStore.list();
+      final counts = await SavedItemStore.counts('fitness');
+      if (!mounted) return;
+      setState(() {
+        _savedKeys
+          ..clear()
+          ..addAll(
+            saved
+                .where((item) => item['itemType'] == 'fitness')
+                .map((item) => item['itemKey'] as String),
+          );
+        _saveCounts
+          ..clear()
+          ..addAll(counts);
+      });
+    } on Exception {
+      // The card remains usable even when saved-state refresh is unavailable.
+    }
   }
 
   @override
@@ -148,34 +179,30 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           ),
           IconButton(
             tooltip: 'Filters',
-            onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
-            icon: Icon(
-              _filtersOpen
-                  ? Icons.filter_list_off_rounded
-                  : Icons.filter_list_rounded,
-            ),
+            onPressed: _openFilterDrawer,
+            icon: const Icon(Icons.tune_rounded),
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (wide && _filtersOpen)
-                SizedBox(width: 270, child: _filterPanel()),
-              Expanded(
-                child: Column(
+      body: Column(
+        children: [
+          _mainSearchBar(),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (!wide && _filtersOpen) _filterPanel(),
+                    if (wide && _filtersOpen)
+                      SizedBox(width: 270, child: _filterPanel()),
                     Expanded(child: _results(wide)),
                   ],
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
@@ -183,21 +210,42 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
         indicatorColor: _fitnessSoftOrange,
         onDestinationSelected: (index) {
           if (index == 0) return;
-          _message(
-            index == 1
-                ? 'Booking history will appear here.'
-                : 'Profile will appear here.',
-          );
+          if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          if (index == 1) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          _message(switch (index) {
+            1 => 'Saved venues will appear here.',
+            2 => 'Booking history will appear here.',
+            _ => 'Profile will appear here.',
+          });
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on_rounded),
+            label: 'Explore',
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
+            icon: Icon(Icons.favorite_border_rounded),
+            selectedIcon: Icon(Icons.favorite_rounded),
+            label: 'Saved',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today_rounded),
             label: 'Bookings',
           ),
           NavigationDestination(
@@ -266,6 +314,44 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
       ],
     );
   }
+
+  Widget _mainSearchBar() => Container(
+    color: _fitnessPage,
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+    child: TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Search classes, areas, or fitness types...',
+        prefixIcon: const Icon(Icons.search, size: 20),
+        suffixIcon: _searchController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: _searchController.clear,
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
+        filled: true,
+        fillColor: Colors.white,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _fitnessLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _fitnessLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: _fitnessOrange, width: 1.5),
+        ),
+      ),
+    ),
+  );
 
   Widget _filterPanel() {
     final mobile = MediaQuery.sizeOf(context).width < 900;
@@ -381,6 +467,172 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     );
   }
 
+  void _openFilterDrawer() {
+    showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'Filters',
+      barrierDismissible: true,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 240),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) => Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: Colors.white,
+              child: SizedBox(
+                width: MediaQuery.sizeOf(context).width < 600
+                    ? MediaQuery.sizeOf(context).width * .86
+                    : 370,
+                height: double.infinity,
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Filters',
+                                style: TextStyle(
+                                  color: _fitnessInk,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                _resetFilters();
+                                dialogSetState(() {});
+                              },
+                              child: const Text('Reset all'),
+                            ),
+                            IconButton(
+                              tooltip: 'Close filters',
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(bottom: 32),
+                          child: _filterContent(dialogSetState),
+                        ),
+                      ),
+                      SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _fitnessNavy,
+                                minimumSize: const Size.fromHeight(48),
+                              ),
+                              child: Text(
+                                'Apply Filters (${_filteredClasses.length})',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final offset =
+            Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+        return SlideTransition(position: offset, child: child);
+      },
+    );
+  }
+
+  Widget _filterContent([StateSetter? dialogSetState]) {
+    void update(VoidCallback callback) {
+      setState(callback);
+      dialogSetState?.call(() {});
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _label('SEARCH'),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Name, area, keyword...',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: const BorderSide(color: _fitnessLine),
+              ),
+            ),
+          ),
+          _gap(),
+          _label('DISTANCE'),
+          OutlinedButton.icon(
+            onPressed: _useLocation,
+            icon: const Icon(Icons.my_location_rounded, size: 16),
+            label: const Text('Use my location'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _fitnessNavy,
+              side: const BorderSide(color: _fitnessNavy),
+              minimumSize: const Size(double.infinity, 40),
+            ),
+          ),
+          _gap(),
+          _label('AREA / CITY'),
+          _dropdown(
+            value: _area,
+            values: const ['All areas', 'Cebu City', 'Mandaue City', 'Talisay'],
+            onChanged: (value) => update(() => _area = value),
+          ),
+          _gap(),
+          _label('CLASS TYPE'),
+          _chips(
+            const ['All classes', 'CrossFit', 'Pilates', 'Boxing', 'Yoga'],
+            _classType,
+            (value) => update(() => _classType = value),
+          ),
+          _gap(),
+          _label('AMENITIES'),
+          _amenityChips(const [
+            'Showers',
+            'Coach',
+            'Parking',
+            'Mats',
+            'Locker room',
+            'Equipment',
+          ]),
+          _gap(),
+          _label('AVAILABILITY'),
+          _chips(
+            const ['Any', 'Open now'],
+            _availability,
+            (value) => update(() => _availability = value),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _classCard(dynamic item) => Card(
     elevation: 1,
     color: Colors.white,
@@ -391,10 +643,65 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
       children: [
         Expanded(
           flex: 8,
-          child: Image.asset(
-            item.image,
-            width: double.infinity,
-            fit: BoxFit.cover,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                item.image,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton.filled(
+                      tooltip: _savedKeys.contains(item.name)
+                          ? 'Unsave class'
+                          : 'Save class',
+                      style: IconButton.styleFrom(
+                        backgroundColor: _savedKeys.contains(item.name)
+                            ? _fitnessOrange
+                            : Colors.white,
+                        foregroundColor: _savedKeys.contains(item.name)
+                            ? Colors.white
+                            : _fitnessNavy,
+                      ),
+                      onPressed: () => _toggleSaved(
+                        key: item.name,
+                        title: item.name,
+                        subtitle: item.address,
+                      ),
+                      icon: Icon(
+                        _savedKeys.contains(item.name)
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                      ),
+                    ),
+                    _saveCount(_saveCounts[item.name] ?? 0),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      '♧ 3',
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -470,6 +777,55 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           ),
         ),
       ],
+    ),
+  );
+
+  Future<void> _toggleSaved({
+    required String key,
+    required String title,
+    required String subtitle,
+  }) async {
+    try {
+      if (_savedKeys.contains(key)) {
+        await SavedItemStore.remove('fitness', key);
+        setState(() {
+          _savedKeys.remove(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 1) - 1;
+        });
+        _message('$title removed from Saved.');
+      } else {
+        await SavedItemStore.save(
+          type: 'fitness',
+          key: key,
+          title: title,
+          subtitle: subtitle,
+        );
+        setState(() {
+          _savedKeys.add(key);
+          _saveCounts[key] = (_saveCounts[key] ?? 0) + 1;
+        });
+        _message('$title saved.');
+      }
+    } on Exception catch (error) {
+      _message('Could not update Saved: $error');
+    }
+  }
+
+  Widget _saveCount(int count) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: _fitnessNavy,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     ),
   );
 
@@ -664,6 +1020,13 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                       height: 52,
                       child: _mapPin(item.name),
                     ),
+                  if (_position != null)
+                    Marker(
+                      point: LatLng(_position!.latitude, _position!.longitude),
+                      width: 112,
+                      height: 76,
+                      child: _userLocationPin(),
+                    ),
                 ],
               ),
             ],
@@ -688,6 +1051,54 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
         ),
       ),
       const Icon(Icons.location_on, color: _fitnessNavy),
+    ],
+  );
+
+  Widget _userLocationPin() => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1769E0),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x331769E0),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: const Text(
+          'You are here',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+      Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: const Color(0x331769E0),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0x661769E0), width: 1),
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1769E0),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+            ),
+          ),
+        ),
+      ),
     ],
   );
 }

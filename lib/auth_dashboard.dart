@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'auth_api.dart';
+import 'app_session.dart';
 
 const _navy = Color(0xFF192B50);
 const _ink = Color(0xFF101B33);
@@ -138,17 +139,25 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       }
       if (!mounted) return;
       if (isRegistering) {
-        await Navigator.of(context).push(
+        final verificationResult = await Navigator.of(context).push<Map<String, dynamic>>(
           MaterialPageRoute(
             builder: (_) => EmailVerificationPage(email: email, api: _api),
           ),
         );
         if (mounted) {
+          final token = verificationResult?['token'] as String?;
+          final session = await AppSession.load();
+          if (token != null) await session.setApiToken(token);
+          await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }
       } else {
         final user = response['user'] as Map<String, dynamic>?;
         if (user != null) {
+          final session = await AppSession.load();
+          final token = response['token'] as String?;
+          if (token != null) await session.setApiToken(token);
+          await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }
       }
@@ -216,6 +225,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       if (mounted) {
         final user = apiResult['user'] as Map<String, dynamic>?;
         if (user != null) {
+          final session = await AppSession.load();
+          final token = apiResult['token'] as String?;
+          if (token != null) await session.setApiToken(token);
+          await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }
       }
@@ -778,10 +791,13 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     }
     setState(() => _loading = true);
     try {
-      await widget.api.verifyEmail(email: widget.email, code: code);
+      final response = await widget.api.verifyEmail(
+        email: widget.email,
+        code: code,
+      );
       if (!mounted) return;
       _message('Email verified. Your account is ready.');
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(response);
     } on AuthApiException catch (error) {
       if (mounted) _message(error.message);
     } finally {

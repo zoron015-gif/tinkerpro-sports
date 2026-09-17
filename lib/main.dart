@@ -4,9 +4,11 @@ import 'firebase_options.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
+import 'app_session.dart';
 
 import 'dart:async';
 
@@ -19,13 +21,13 @@ const _muted = Color(0xFF68748A);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(
-    const MyApp(),
-  ); // Replace MyApp with your root widget name if different
+  runApp(MyApp(session: await AppSession.load()));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.session});
+
+  final AppSession? session;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +40,22 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         textTheme: GoogleFonts.montserratTextTheme(),
       ),
-      home: const OverviewPage(),
+      home: session?.isAuthenticated == true && session?.apiToken != null
+          ? ReserveDashboardPage(
+              initialSelection: session?.lastBookingType,
+              onLogout: _logout,
+            )
+          : const OverviewPage(),
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    await session?.clear();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const OverviewPage()),
+      (_) => false,
     );
   }
 }
@@ -51,8 +68,24 @@ class OverviewPage extends StatelessWidget {
       MaterialPageRoute(builder: (_) => const AuthDashboardPage()),
     );
     if (!context.mounted || authenticated != true) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ReserveDashboardPage()),
+    final navigator = Navigator.of(context);
+    await navigator.pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ReserveDashboardPage(
+          onLogout: _logout,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    final session = await AppSession.load();
+    await session.clear();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const OverviewPage()),
+      (_) => false,
     );
   }
 

@@ -71,10 +71,64 @@ class AuthApi {
   Future<Map<String, dynamic>> loginWithGoogle(
     String idToken, {
     String? role,
-  }) => _post('/api/auth/oauth/google', {
-    'idToken': idToken,
-    if (role != null) 'role': role,
-  });
+  }) => _post('/api/auth/oauth/google', {'idToken': idToken, 'role': ?role});
+
+  Future<List<Map<String, dynamic>>> savedItems(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/saved-items',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return (response['items'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<Map<String, int>> savedItemCounts(String token, String type) async {
+    final response = await _request(
+      'GET',
+      '/api/saved-item-counts?itemType=${Uri.encodeQueryComponent(type)}',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final counts = response['counts'];
+    if (counts is! Map) return {};
+    return counts.map<String, int>(
+      (key, value) => MapEntry(key.toString(), (value as num?)?.toInt() ?? 0),
+    );
+  }
+
+  Future<void> saveItem({
+    required String token,
+    required String type,
+    required String key,
+    required String title,
+    required String subtitle,
+    String? imageUrl,
+  }) async {
+    await _request(
+      'POST',
+      '/api/saved-items',
+      body: {
+        'itemType': type,
+        'itemKey': key,
+        'title': title,
+        'subtitle': subtitle,
+        'imageUrl': imageUrl,
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+  }
+
+  Future<void> removeSavedItem(String token, String type, String key) async {
+    await _request(
+      'DELETE',
+      '/api/saved-items/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+  }
 
   Future<Map<String, dynamic>> me(String token) => _request(
     'GET',
@@ -103,6 +157,10 @@ class AuthApi {
           ? await _client
                 .get(uri, headers: headers)
                 .timeout(const Duration(seconds: 15))
+          : method == 'DELETE'
+          ? await _client
+                .delete(uri, headers: headers)
+                .timeout(const Duration(seconds: 15))
           : await _client
                 .post(uri, headers: headers, body: jsonEncode(body))
                 .timeout(const Duration(seconds: 15));
@@ -120,9 +178,18 @@ class AuthApi {
 
     Map<String, dynamic> decoded = {};
     if (response.body.isNotEmpty) {
-      final value = jsonDecode(response.body);
-      if (value is Map<String, dynamic>) {
-        decoded = value;
+      try {
+        final value = jsonDecode(response.body);
+        if (value is Map<String, dynamic>) {
+          decoded = value;
+        }
+      } on FormatException {
+        throw AuthApiException(
+          response.statusCode == 404
+              ? 'The saved-items API is unavailable. Restart the backend server and try again.'
+              : 'The server returned an invalid response.',
+          response.statusCode,
+        );
       }
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
