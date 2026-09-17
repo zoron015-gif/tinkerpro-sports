@@ -151,7 +151,7 @@ class _Header extends StatelessWidget {
 
 enum _AuthMode { login, register }
 
-enum _AccountRole { user, merchant }
+enum _AccountRole { customer, merchant }
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -162,7 +162,7 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   _AuthMode _mode = _AuthMode.login;
-  _AccountRole _role = _AccountRole.user;
+  _AccountRole _role = _AccountRole.customer;
   bool _obscurePassword = true;
 
   void _showComingSoon(String provider) {
@@ -241,8 +241,9 @@ class _AuthPageState extends State<AuthPage> {
                         icon: Icons.person_rounded,
                         title: 'Player',
                         subtitle: 'Book and play',
-                        selected: _role == _AccountRole.user,
-                        onTap: () => setState(() => _role = _AccountRole.user),
+                        selected: _role == _AccountRole.customer,
+                        onTap: () =>
+                            setState(() => _role = _AccountRole.customer),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -307,7 +308,7 @@ class _AuthPageState extends State<AuthPage> {
                   onPressed: () => _showComingSoon(
                     isLogin
                         ? 'Email login'
-                        : '${_role == _AccountRole.merchant ? 'Merchant' : 'Player'} registration',
+                        : '${_role == _AccountRole.merchant ? 'Merchant' : 'Customer'} registration',
                   ),
                   style: FilledButton.styleFrom(
                     backgroundColor: _orange,

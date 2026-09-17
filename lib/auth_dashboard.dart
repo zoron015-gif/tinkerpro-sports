@@ -17,7 +17,7 @@ const _googleServerClientId = String.fromEnvironment(
 
 enum _AuthMode { login, register }
 
-enum _AccountRole { user, merchant }
+enum _AccountRole { customer, merchant }
 
 class AuthDashboardPage extends StatefulWidget {
   const AuthDashboardPage({super.key});
@@ -28,7 +28,7 @@ class AuthDashboardPage extends StatefulWidget {
 
 class _AuthDashboardPageState extends State<AuthDashboardPage> {
   _AuthMode _mode = _AuthMode.login;
-  _AccountRole _role = _AccountRole.user;
+  _AccountRole _role = _AccountRole.customer;
   bool _obscurePassword = true;
   bool _loading = false;
   final _api = AuthApi();
@@ -49,6 +49,52 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
   }
 
+  Future<void> _syncEmailPasswordWithFirebase({
+    required String email,
+    required String password,
+    required bool create,
+  }) async {
+    final auth = FirebaseAuth.instance;
+    if (create) {
+      try {
+        await auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        return;
+      } on FirebaseAuthException catch (error) {
+        if (error.code != 'email-already-in-use') rethrow;
+      }
+    }
+    try {
+      await auth.signInWithEmailAndPassword(email: email, password: password);
+    } on FirebaseAuthException catch (error) {
+      // Migrate accounts created before Firebase email/password sync was added.
+      if (error.code == 'user-not-found') {
+        await auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  String _firebaseAuthMessage(FirebaseAuthException error) {
+    if (error.code == 'operation-not-allowed') {
+      return 'Enable Email/Password sign-in in Firebase Console > Authentication > Sign-in method.';
+    }
+    if (error.code == 'weak-password') {
+      return 'Firebase rejected the password. Use at least 6 characters.';
+    }
+    if (error.code == 'invalid-credential' ||
+        error.code == 'wrong-password') {
+      return 'The email or password is incorrect.';
+    }
+    return error.message ?? 'Firebase authentication failed.';
+  }
+
   Future<void> _submit() async {
     final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
@@ -67,15 +113,31 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
 
     setState(() => _loading = true);
     try {
-      final response = _mode == _AuthMode.login
-          ? await _api.login(email: email, password: password)
-          : await _api.register(
-              email: email,
-              password: password,
-              role: _role == _AccountRole.merchant ? 'merchant' : 'user',
-            );
+      final isRegistering = _mode == _AuthMode.register;
+      late final Map<String, dynamic> response;
+      if (isRegistering) {
+        // Create Firebase first so a successful registration always exists in
+        // both authentication systems.
+        await _syncEmailPasswordWithFirebase(
+          email: email,
+          password: password,
+          create: true,
+        );
+        response = await _api.register(
+          email: email,
+          password: password,
+          role: _role == _AccountRole.merchant ? 'merchant' : 'customer',
+        );
+      } else {
+        response = await _api.login(email: email, password: password);
+        await _syncEmailPasswordWithFirebase(
+          email: email,
+          password: password,
+          create: false,
+        );
+      }
       if (!mounted) return;
-      if (_mode == _AuthMode.register) {
+      if (isRegistering) {
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => EmailVerificationPage(email: email, api: _api),
@@ -92,6 +154,8 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       }
     } on AuthApiException catch (error) {
       if (mounted) _showMessage(error.message);
+    } on FirebaseAuthException catch (error) {
+      if (mounted) _showMessage(_firebaseAuthMessage(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -112,8 +176,12 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       );
       final account = await GoogleSignIn.instance.authenticate();
       final authentication = account.authentication;
+      final idToken = authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('Google sign-in did not return an ID token.');
+      }
       final credential = GoogleAuthProvider.credential(
-        idToken: authentication.idToken,
+        idToken: idToken,
       );
       final result = await FirebaseAuth.instance.signInWithCredential(
         credential,
@@ -122,11 +190,29 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       if (firebaseUser == null) {
         throw StateError('Google sign-in did not return a user account.');
       }
-      final idToken = authentication.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw StateError('Google sign-in did not return an ID token.');
+      Map<String, dynamic> apiResult;
+      try {
+        apiResult = await _api.loginWithGoogle(idToken);
+      } on AuthApiException catch (error) {
+        final roleIsRequired =
+            error.data['code'] == 'role_required' ||
+            (error.statusCode == 400 &&
+                error.message.contains('Role must be customer or merchant'));
+        if (!roleIsRequired) rethrow;
+
+        final selectedRole = await _chooseGoogleRole();
+        if (selectedRole == null) {
+          await FirebaseAuth.instance.signOut();
+          await GoogleSignIn.instance.signOut();
+          return;
+        }
+        apiResult = await _api.loginWithGoogle(
+          idToken,
+          role: selectedRole == _AccountRole.merchant
+              ? 'merchant'
+              : 'customer',
+        );
       }
-      final apiResult = await _api.loginWithGoogle(idToken);
       if (mounted) {
         final user = apiResult['user'] as Map<String, dynamic>?;
         if (user != null) {
@@ -140,6 +226,52 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<_AccountRole?> _chooseGoogleRole() {
+    var selectedRole = _AccountRole.customer;
+    return showDialog<_AccountRole>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choose your TinkerPro account type'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<_AccountRole>(
+                value: _AccountRole.customer,
+                groupValue: selectedRole,
+                title: const Text('Customer'),
+                subtitle: const Text('Discover and book experiences'),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedRole = value);
+                },
+              ),
+              RadioListTile<_AccountRole>(
+                value: _AccountRole.merchant,
+                groupValue: selectedRole,
+                title: const Text('Merchant'),
+                subtitle: const Text('List and manage your business'),
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => selectedRole = value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(selectedRole),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -210,8 +342,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         icon: Icons.person_rounded,
                         title: 'Client',
                         subtitle: 'Discover and book',
-                        selected: _role == _AccountRole.user,
-                        onTap: () => setState(() => _role = _AccountRole.user),
+                        selected: _role == _AccountRole.customer,
+                        onTap: () =>
+                            setState(() => _role = _AccountRole.customer),
                       ),
                     ),
                     const SizedBox(width: 12),

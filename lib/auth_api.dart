@@ -9,10 +9,11 @@ const apiBaseUrl = String.fromEnvironment(
 );
 
 class AuthApiException implements Exception {
-  const AuthApiException(this.message, this.statusCode);
+  const AuthApiException(this.message, this.statusCode, [this.data = const {}]);
 
   final String message;
   final int statusCode;
+  final Map<String, dynamic> data;
 
   @override
   String toString() => message;
@@ -67,8 +68,13 @@ class AuthApi {
     'password': password,
   });
 
-  Future<Map<String, dynamic>> loginWithGoogle(String idToken) =>
-      _post('/api/auth/oauth/google', {'idToken': idToken});
+  Future<Map<String, dynamic>> loginWithGoogle(
+    String idToken, {
+    String? role,
+  }) => _post('/api/auth/oauth/google', {
+    'idToken': idToken,
+    if (role != null) 'role': role,
+  });
 
   Future<Map<String, dynamic>> me(String token) => _request(
     'GET',
@@ -123,6 +129,7 @@ class AuthApi {
       throw AuthApiException(
         decoded['error'] as String? ?? 'The server returned an error.',
         response.statusCode,
+        decoded,
       );
     }
     return decoded;

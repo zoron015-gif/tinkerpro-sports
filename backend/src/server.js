@@ -25,7 +25,7 @@ function normalizeEmail(value) {
 }
 
 function isValidRole(role) {
-  return role === 'user' || role === 'merchant';
+  return role === 'customer' || role === 'merchant';
 }
 
 function createToken(user) {
@@ -83,15 +83,15 @@ app.get('/health', async (req, res, next) => {
 app.post('/api/auth/register', async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const password = req.body.password;
-  const role = req.body.role || 'user';
+  const role = req.body.role || 'customer';
   const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim() : null;
   const lastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim() : null;
 
   if (!email || !email.includes('@') || typeof password !== 'string' || password.length < 8) {
     return res.status(400).json({ error: 'A valid email and password of at least 8 characters are required.' });
   }
-  if (!isValidRole(role)) {
-    return res.status(400).json({ error: 'Role must be user or merchant.' });
+  if (role !== undefined && !isValidRole(role)) {
+    return res.status(400).json({ error: 'Role must be customer or merchant.' });
   }
 
   let connection;
@@ -436,8 +436,14 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
 // Google OAuth: verify ID token from client and create or find user
 app.post('/api/auth/oauth/google', async (req, res, next) => {
   const idToken = req.body.idToken || req.body.id_token;
+  const role = typeof req.body.role === 'string'
+    ? req.body.role.trim().toLowerCase()
+    : undefined;
   if (!idToken || typeof idToken !== 'string') {
     return res.status(400).json({ error: 'idToken is required.' });
+  }
+  if (role !== undefined && !isValidRole(role)) {
+    return res.status(400).json({ error: 'Role must be customer or merchant.' });
   }
 
   try {
@@ -476,6 +482,12 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
 
     let user;
     if (rows.length === 0) {
+      if (!role) {
+        return res.status(409).json({
+          code: 'role_required',
+          error: 'Choose customer or merchant for this Google account.',
+        });
+      }
       // Create a new user with active status and no password
       const connection = await pool.getConnection();
       try {
@@ -483,11 +495,11 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
         const [result] = await connection.execute(
           `INSERT INTO users
            (email, password_hash, first_name, last_name, role, status, email_verified_at)
-           VALUES (?, NULL, ?, ?, 'user', 'active', CURRENT_TIMESTAMP)`,
-          [email, firstName, lastName],
+           VALUES (?, NULL, ?, ?, ?, 'active', CURRENT_TIMESTAMP)`,
+          [email, firstName, lastName, role],
         );
         await connection.commit();
-        user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role: 'user', status: 'active' };
+        user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role, status: 'active' };
       } catch (err) {
         await connection.rollback();
         throw err;
@@ -496,6 +508,21 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
       }
     } else {
       user = rows[0];
+      if (!isValidRole(user.role)) {
+        if (!role) {
+          return res.status(409).json({
+            code: 'role_required',
+            error: 'Choose customer or merchant for this Google account.',
+          });
+        }
+        await pool.execute('UPDATE users SET role = ? WHERE id = ?', [
+          role,
+          user.id,
+        ]);
+        user.role = role;
+      }
+      // A Google account keeps the role chosen when it was first created.
+      // The role sent by a later login is intentionally ignored.
       // If account exists but is not active, activate it (social sign-ins typically verify email)
       if (user.status !== 'active') {
         await pool.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', user.id]);

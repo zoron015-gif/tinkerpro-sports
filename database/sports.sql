@@ -15,7 +15,7 @@ CREATE TABLE users (
   last_name VARCHAR(100) NULL,
   phone VARCHAR(30) NULL,
   avatar_url VARCHAR(2048) NULL,
-  role ENUM('user', 'merchant') NOT NULL DEFAULT 'user',
+  role ENUM('customer', 'merchant') NOT NULL DEFAULT 'customer',
   status ENUM('pending', 'active', 'suspended', 'deleted') NOT NULL DEFAULT 'pending',
   email_verified_at DATETIME NULL,
   last_login_at DATETIME NULL,
