@@ -18,7 +18,7 @@ if (!process.env.JWT_SECRET) {
 }
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || true }));
-app.use(express.json({ limit: '20kb' }));
+app.use(express.json({ limit: '12mb' }));
 
 function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -42,6 +42,8 @@ function publicUser(user) {
     email: user.email,
     firstName: user.first_name,
     lastName: user.last_name,
+    phone: user.phone || null,
+    avatarUrl: user.avatar_url || null,
     role: user.role,
     status: user.status,
   };
@@ -420,7 +422,7 @@ app.post('/api/auth/login', async (req, res, next) => {
 app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, email, first_name, last_name, role, status
+      `SELECT id, email, first_name, last_name, phone, avatar_url, role, status
        FROM users WHERE id = ? LIMIT 1`,
       [req.auth.sub],
     );
@@ -428,6 +430,238 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: 'User account not found.' });
     }
     return res.json({ user: publicUser(rows[0]) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/merchant/profile', requireAuth, async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.id, u.email, u.first_name AS firstName, u.last_name AS lastName,
+              u.phone, u.avatar_url AS avatarUrl, u.role, u.status,
+              mp.business_name AS businessName, mp.business_type AS businessType,
+              mp.registration_number AS registrationNumber,
+              mp.categories_json AS categoriesJson, mp.facility_type AS facilityType,
+              mp.address, mp.contact_email AS contactEmail,
+              mp.owner_designation AS ownerDesignation,
+              mp.business_image AS businessImage,
+              CASE WHEN mp.user_id IS NULL THEN 0 ELSE 1 END AS profileExists
+       FROM users u
+       LEFT JOIN merchant_profiles mp ON mp.user_id = u.id
+       WHERE u.id = ? AND u.role = 'merchant'
+       LIMIT 1`,
+      [req.auth.sub],
+    );
+    if (rows.length === 0) {
+      return res.status(403).json({ error: 'Only merchant accounts can access this profile.' });
+    }
+    const profile = rows[0];
+    let categories = [];
+    if (profile.categoriesJson) {
+      try {
+        const parsedCategories = JSON.parse(profile.categoriesJson);
+        if (Array.isArray(parsedCategories)) {
+          categories = parsedCategories.filter(
+            (category) => typeof category === 'string',
+          );
+        }
+      } catch (error) {
+        // Keep the saved merchant profile usable when older data contains
+        // invalid category JSON. Categories can be edited and saved again.
+        categories = [];
+      }
+    }
+    delete profile.categoriesJson;
+    return res.json({
+      profile: {
+        ...profile,
+        categories,
+        profileExists: Boolean(profile.profileExists),
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put('/api/merchant/profile', requireAuth, async (req, res, next) => {
+  const text = (value, max = 255) =>
+    typeof value === 'string' ? value.trim().slice(0, max) : '';
+  const businessName = text(req.body.businessName);
+  const businessType = text(req.body.businessType);
+  const registrationNumber = text(req.body.registrationNumber);
+  const facilityType = text(req.body.facilityType);
+  const address = text(req.body.address, 500);
+  const contactEmail = text(req.body.contactEmail);
+  const ownerDesignation = text(req.body.ownerDesignation);
+  const firstName = text(req.body.firstName, 100);
+  const lastName = text(req.body.lastName, 100);
+  const phone = text(req.body.phone, 30);
+  const profileImage = text(req.body.profileImage, 10 * 1024 * 1024);
+  const businessImage = text(req.body.businessImage, 10 * 1024 * 1024);
+  const categories = Array.isArray(req.body.categories)
+    ? req.body.categories.filter((value) => typeof value === 'string').slice(0, 12)
+    : [];
+
+  try {
+    const [users] = await pool.execute(
+      'SELECT id FROM users WHERE id = ? AND role = \'merchant\' LIMIT 1',
+      [req.auth.sub],
+    );
+    if (users.length === 0) {
+      return res.status(403).json({ error: 'Only merchant accounts can save this profile.' });
+    }
+    await pool.execute(
+      `UPDATE users SET first_name = ?, last_name = ?, phone = ?, avatar_url = ?
+       WHERE id = ?`,
+      [firstName || null, lastName || null, phone || null, profileImage || null, req.auth.sub],
+    );
+    await pool.execute(
+      `INSERT INTO merchant_profiles
+       (user_id, business_name, business_type, registration_number,
+        categories_json, facility_type, address, contact_email, owner_designation,
+        business_image)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE business_name = VALUES(business_name),
+         business_type = VALUES(business_type),
+         registration_number = VALUES(registration_number),
+         categories_json = VALUES(categories_json),
+         facility_type = VALUES(facility_type),
+         address = VALUES(address),
+         contact_email = VALUES(contact_email),
+         owner_designation = VALUES(owner_designation),
+         business_image = VALUES(business_image)`,
+      [
+        req.auth.sub,
+        businessName,
+        businessType,
+        registrationNumber || null,
+        JSON.stringify(categories),
+        facilityType,
+        address,
+        contactEmail,
+        ownerDesignation || null,
+        businessImage || null,
+      ],
+    );
+    return res.json({ message: 'Merchant profile saved.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+  try {
+    const [merchants] = await pool.execute(
+      'SELECT id FROM users WHERE id = ? AND role = \'merchant\' LIMIT 1',
+      [req.auth.sub],
+    );
+    if (merchants.length === 0) {
+      return res.status(403).json({ error: 'Only merchant accounts can access businesses.' });
+    }
+    const [businesses] = await pool.execute(
+      `SELECT id, business_type AS businessType, name, category, address,
+              facility_type AS facilityType, price_per_hour AS pricePerHour,
+              opening_hours AS hours, availability,
+              amenities_json AS tags, details, image_url AS imageUrl,
+              created_at AS createdAt
+       FROM merchant_businesses
+       WHERE merchant_id = ?
+       ORDER BY created_at DESC`,
+      [req.auth.sub],
+    );
+    return res.json({ businesses });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isSafeInteger(id)) {
+    return res.status(400).json({ error: 'Invalid business id.' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'DELETE FROM merchant_businesses WHERE id = ? AND merchant_id = ?',
+      [id, req.auth.sub],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Business not found.' });
+    }
+    return res.json({ message: 'Business deleted.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+  const text = (value, max = 255) =>
+    typeof value === 'string' ? value.trim().slice(0, max) : '';
+  const businessType = text(req.body.businessType, 50);
+  const name = text(req.body.name);
+  const category = text(req.body.category, 100);
+  const address = text(req.body.address, 500);
+  const facilityType = text(req.body.facilityType, 50);
+  const pricePerHour = Number(req.body.pricePerHour);
+  const hours = text(req.body.hours, 100);
+  const availability = text(req.body.availability, 50);
+  const amenities = Array.isArray(req.body.tags)
+    ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
+    : [];
+  const details = text(req.body.details, 1000);
+  const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024);
+  const allowedBusinessTypes = new Set([
+    'Sports',
+    'Event',
+    'Fitness & Wellness',
+  ]);
+  if (
+    !allowedBusinessTypes.has(businessType) ||
+    !name ||
+    !category ||
+    !address ||
+    !facilityType ||
+    !hours ||
+    !Number.isFinite(pricePerHour) ||
+    pricePerHour <= 0
+  ) {
+    return res.status(400).json({
+      error:
+        'Booking type, business name, category, address, and facility type are required.',
+    });
+  }
+  try {
+    const [merchants] = await pool.execute(
+      'SELECT id FROM users WHERE id = ? AND role = \'merchant\' LIMIT 1',
+      [req.auth.sub],
+    );
+    if (merchants.length === 0) {
+      return res.status(403).json({ error: 'Only merchant accounts can add businesses.' });
+    }
+    await pool.execute(
+      `INSERT INTO merchant_businesses
+       (merchant_id, business_type, name, category, address, facility_type,
+        price_per_hour, opening_hours, availability, amenities_json,
+        details, image_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.auth.sub,
+        businessType,
+        name,
+        category,
+        address,
+        facilityType,
+        pricePerHour,
+        hours,
+        availability || 'Any',
+        JSON.stringify(amenities),
+        details || null,
+        imageUrl || null,
+      ],
+    );
+    return res.status(201).json({ message: 'Business added.' });
   } catch (error) {
     return next(error);
   }
@@ -657,6 +891,57 @@ app.use((error, req, res, next) => {
   return res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-app.listen(port, () => {
-  console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
-});
+async function ensureMerchantBusinessesSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS merchant_businesses (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      merchant_id BIGINT UNSIGNED NOT NULL,
+      business_type VARCHAR(50) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      category VARCHAR(100) NOT NULL,
+      address VARCHAR(500) NOT NULL,
+      facility_type VARCHAR(50) NOT NULL,
+      price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours',
+      availability VARCHAR(50) NOT NULL DEFAULT 'Any',
+      amenities_json JSON NULL,
+      details VARCHAR(1000) NULL,
+      image_url LONGTEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_merchant_businesses_merchant (merchant_id, created_at),
+      CONSTRAINT fk_merchant_businesses_user
+        FOREIGN KEY (merchant_id) REFERENCES users (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+
+  const columns = [
+    ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
+    ['opening_hours', "VARCHAR(100) NOT NULL DEFAULT 'Open hours'"],
+    ['availability', "VARCHAR(50) NOT NULL DEFAULT 'Any'"],
+    ['amenities_json', 'JSON NULL'],
+  ];
+
+  for (const [name, definition] of columns) {
+    try {
+      await pool.execute(
+        `ALTER TABLE merchant_businesses ADD COLUMN ${name} ${definition}`,
+      );
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
+ensureMerchantBusinessesSchema()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Could not initialize merchant business schema.', error);
+    process.exitCode = 1;
+  });

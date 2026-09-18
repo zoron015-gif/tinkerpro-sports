@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'profile_dashboard.dart';
+import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
 
@@ -99,10 +100,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   Position? _position;
   final Set<String> _savedKeys = <String>{};
   final Map<String, int> _saveCounts = <String, int>{};
+  String _sortBy = 'Featured';
 
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
-    return _venues.where((venue) {
+    final venues = _venues.where((venue) {
       final matchesQuery =
           query.isEmpty ||
           venue.name.toLowerCase().contains(query) ||
@@ -129,6 +131,34 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           matchesPrice &&
           matchesAmenities;
     }).toList();
+    venues.sort((a, b) {
+      switch (_sortBy) {
+        case 'Name A-Z':
+          return a.name.compareTo(b.name);
+        case 'Price: low to high':
+          return a.maxPrice.compareTo(b.maxPrice);
+        case 'Price: high to low':
+          return b.maxPrice.compareTo(a.maxPrice);
+        case 'Nearest':
+          if (_position == null) return 0;
+          return _distanceSquared(
+            _position!.latitude,
+            _position!.longitude,
+            a.latitude,
+            a.longitude,
+          ).compareTo(
+            _distanceSquared(
+              _position!.latitude,
+              _position!.longitude,
+              b.latitude,
+              b.longitude,
+            ),
+          );
+        default:
+          return 0;
+      }
+    });
+    return venues;
   }
 
   @override
@@ -179,7 +209,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         foregroundColor: _sportsInk,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(
+            context,
+            rootNavigator: true,
+          ).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => ReserveDashboardPage(
+                onLogout: widget.onLogout,
+              ),
+            ),
+            (_) => false,
+          ),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
         ),
         title: const Text(
@@ -232,7 +272,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           if (index == 1) {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+                builder: (_) => SavedDashboardPage(
+                  onLogout: widget.onLogout,
+                  itemType: 'sports',
+                ),
               ),
             );
             return;
@@ -273,8 +316,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
 
   Widget _results(bool wide) {
     final venues = _filteredVenues;
-    return CustomScrollView(
-      slivers: [
+    return RefreshIndicator(
+      onRefresh: _loadSavedState,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
         SliverPadding(
           padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
           sliver: SliverToBoxAdapter(
@@ -296,7 +342,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 ),
                 const SizedBox(width: 8),
                 DropdownButton<String>(
-                  value: 'Featured',
+                  value: _sortBy,
                   underline: const SizedBox.shrink(),
                   items: const [
                     DropdownMenuItem(
@@ -304,8 +350,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       child: Text('Featured'),
                     ),
                     DropdownMenuItem(value: 'Nearest', child: Text('Nearest')),
+                    DropdownMenuItem(value: 'Name A-Z', child: Text('Name A-Z')),
+                    DropdownMenuItem(
+                      value: 'Price: low to high',
+                      child: Text('Price: low to high'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Price: high to low',
+                      child: Text('Price: high to low'),
+                    ),
                   ],
-                  onChanged: (_) {},
+                  onChanged: (value) {
+                    if (value != null) setState(() => _sortBy = value);
+                  },
                 ),
               ],
             ),
@@ -330,7 +387,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               itemBuilder: (context, index) => _courtCard(venues[index]),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -764,7 +822,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         type: 'sports',
                         key: venue.name,
                         title: venue.name,
-                        subtitle: venue.address,
+                        subtitle: 'Sport: ${venue.sport}\n${venue.address}',
                       ),
                       icon: Icon(
                         _savedKeys.contains(venue.name)
@@ -915,6 +973,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       ),
     ),
   );
+
+  double _distanceSquared(
+    double latitude,
+    double longitude,
+    double otherLatitude,
+    double otherLongitude,
+  ) {
+    final latitudeDelta = latitude - otherLatitude;
+    final longitudeDelta = longitude - otherLongitude;
+    return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
+  }
 
   Widget _detail(IconData icon, String text) => Padding(
     padding: const EdgeInsets.only(bottom: 3),

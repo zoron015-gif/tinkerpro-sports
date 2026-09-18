@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+
 import 'profile_dashboard.dart';
+import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
 
@@ -70,10 +72,11 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
   Position? _position;
   final Set<String> _savedKeys = <String>{};
   final Map<String, int> _saveCounts = <String, int>{};
+  String _sortBy = 'Featured';
 
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
-    return _venues.where((venue) {
+    final venues = _venues.where((venue) {
       final search =
           query.isEmpty ||
           venue.$1.toLowerCase().contains(query) ||
@@ -84,6 +87,34 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
       final type = _type == 'All venues' || venue.$2 == _type;
       return search && area && type;
     }).toList();
+    venues.sort((a, b) {
+      switch (_sortBy) {
+        case 'Name A-Z':
+          return a.$1.compareTo(b.$1);
+        case 'Price: low to high':
+          return _eventPrice(a.$4).compareTo(_eventPrice(b.$4));
+        case 'Price: high to low':
+          return _eventPrice(b.$4).compareTo(_eventPrice(a.$4));
+        case 'Nearest':
+          if (_position == null) return 0;
+          return _distanceSquared(
+            _position!.latitude,
+            _position!.longitude,
+            a.$6,
+            a.$7,
+          ).compareTo(
+            _distanceSquared(
+              _position!.latitude,
+              _position!.longitude,
+              b.$6,
+              b.$7,
+            ),
+          );
+        default:
+          return 0;
+      }
+    });
+    return venues;
   }
 
   @override
@@ -134,7 +165,15 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         foregroundColor: _eventInk,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(
+            context,
+            rootNavigator: true,
+          ).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => ReserveDashboardPage(onLogout: widget.onLogout),
+            ),
+            (_) => false,
+          ),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
           color: _eventNavy,
         ),
@@ -192,7 +231,10 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           if (index == 1) {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+                builder: (_) => SavedDashboardPage(
+                  onLogout: widget.onLogout,
+                  itemType: 'event',
+                ),
               ),
             );
             return;
@@ -231,55 +273,88 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
 
   Widget _results(bool wide) {
     final venues = _filteredVenues;
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${venues.length} of ${_venues.length} venues',
-                    style: const TextStyle(
-                      color: _eventMuted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+    return RefreshIndicator(
+      onRefresh: _loadSavedState,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${venues.length} of ${_venues.length} venues',
+                      style: const TextStyle(
+                        color: _eventMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                const Text('Sort by ', style: TextStyle(color: _eventMuted)),
-                const Text(
-                  'Featured ▾',
-                  style: TextStyle(
-                    color: _eventInk,
-                    fontWeight: FontWeight.w700,
+                  const Text('Sort by ', style: TextStyle(color: _eventMuted)),
+                  DropdownButton<String>(
+                    value: _sortBy,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Featured',
+                        child: Text('Featured'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Nearest',
+                        child: Text('Nearest'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Name A-Z',
+                        child: Text('Name A-Z'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: low to high',
+                        child: Text('Price: low to high'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: high to low',
+                        child: Text('Price: high to low'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _sortBy = value);
+                    },
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (venues.isEmpty)
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(child: Text('No event venues match these filters.')),
-          )
-        else
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 4, wide ? 28 : 16, 28),
-            sliver: SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: wide ? 2 : 1,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: wide ? .77 : .78,
+                ],
               ),
-              itemCount: venues.length,
-              itemBuilder: (_, index) => _venueCard(venues[index]),
             ),
           ),
-      ],
+          if (venues.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text('No event venues match these filters.'),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                wide ? 22 : 16,
+                4,
+                wide ? 28 : 16,
+                28,
+              ),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: wide ? 2 : 1,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: wide ? .77 : .78,
+                ),
+                itemCount: venues.length,
+                itemBuilder: (_, index) => _venueCard(venues[index]),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -548,11 +623,12 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           ),
           _gap(),
           _label('AREA / CITY'),
-          _dropdown(
-            _area,
-            const ['All areas', 'Cebu City', 'Mandaue City', 'Talisay'],
-            (value) => update(() => _area = value),
-          ),
+          _dropdown(_area, const [
+            'All areas',
+            'Cebu City',
+            'Mandaue City',
+            'Talisay',
+          ], (value) => update(() => _area = value)),
           _gap(),
           _label('VENUE TYPE'),
           _chips(
@@ -610,7 +686,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                       onPressed: () => _toggleSaved(
                         key: venue.$1,
                         title: venue.$1,
-                        subtitle: venue.$3,
+                        subtitle: 'Venue: ${venue.$2}\n${venue.$3}',
                       ),
                       icon: Icon(
                         _savedKeys.contains(venue.$1)
@@ -737,7 +813,6 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         });
         _message('$title saved.');
       }
-
     } on Exception catch (error) {
       _message('Could not update Saved: $error');
     }
@@ -760,6 +835,20 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
       ),
     ),
   );
+
+  int _eventPrice(String value) =>
+      int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  double _distanceSquared(
+    double latitude,
+    double longitude,
+    double otherLatitude,
+    double otherLongitude,
+  ) {
+    final latitudeDelta = latitude - otherLatitude;
+    final longitudeDelta = longitude - otherLongitude;
+    return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
+  }
 
   Widget _detail(IconData icon, String text) => Padding(
     padding: const EdgeInsets.only(bottom: 3),

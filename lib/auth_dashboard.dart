@@ -97,6 +97,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
   }
 
   Future<void> _submit() async {
+    final existingSession = await AppSession.load();
+    if (existingSession.isAuthenticated &&
+        existingSession.apiToken?.isNotEmpty == true) {
+      if (mounted) Navigator.of(context).pop(true);
+      return;
+    }
+
     final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
     if (!email.contains('@') || password.length < 8) {
@@ -147,7 +154,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         if (mounted) {
           final token = verificationResult?['token'] as String?;
           final session = await AppSession.load();
+          await session.setAccountEmail(email);
           if (token != null) await session.setApiToken(token);
+          final user = verificationResult?['user'] as Map<String, dynamic>?;
+          final role = user?['role'] as String?;
+          if (role != null) await session.setRole(role);
           await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }
@@ -155,8 +166,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         final user = response['user'] as Map<String, dynamic>?;
         if (user != null) {
           final session = await AppSession.load();
+          await session.setAccountEmail(email);
           final token = response['token'] as String?;
           if (token != null) await session.setApiToken(token);
+          final role = user['role'] as String?;
+          if (role != null) await session.setRole(role);
           await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }
@@ -226,8 +240,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         final user = apiResult['user'] as Map<String, dynamic>?;
         if (user != null) {
           final session = await AppSession.load();
+          await session.setAccountEmail(firebaseUser.email ?? '');
           final token = apiResult['token'] as String?;
           if (token != null) await session.setApiToken(token);
+          final role = user['role'] as String?;
+          if (role != null) await session.setRole(role);
           await session.markAuthenticated();
           Navigator.of(context).pop(true);
         }

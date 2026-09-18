@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'profile_dashboard.dart';
+import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
 
@@ -86,10 +87,11 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   final Set<String> _savedKeys = <String>{};
   final Map<String, int> _saveCounts = <String, int>{};
   final Set<String> _selectedAmenities = <String>{};
+  String _sortBy = 'Featured';
 
   List<dynamic> get _filteredClasses {
     final query = _searchController.text.trim().toLowerCase();
-    return _classes.where((item) {
+    final classes = _classes.where((item) {
       final matchesSearch =
           query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
@@ -113,6 +115,34 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           matchesAvailability &&
           matchesAmenities;
     }).toList();
+    classes.sort((a, b) {
+      switch (_sortBy) {
+        case 'Name A-Z':
+          return a.name.compareTo(b.name);
+        case 'Price: low to high':
+          return _fitnessPrice(a.price).compareTo(_fitnessPrice(b.price));
+        case 'Price: high to low':
+          return _fitnessPrice(b.price).compareTo(_fitnessPrice(a.price));
+        case 'Nearest':
+          if (_position == null) return 0;
+          return _distanceSquared(
+            _position!.latitude,
+            _position!.longitude,
+            a.latitude,
+            a.longitude,
+          ).compareTo(
+            _distanceSquared(
+              _position!.latitude,
+              _position!.longitude,
+              b.latitude,
+              b.longitude,
+            ),
+          );
+        default:
+          return 0;
+      }
+    });
+    return classes;
   }
 
   @override
@@ -163,7 +193,14 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
         foregroundColor: _fitnessInk,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () =>
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ReserveDashboardPage(onLogout: widget.onLogout),
+                ),
+                (_) => false,
+              ),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
           color: _fitnessNavy,
         ),
@@ -221,7 +258,10 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           if (index == 1) {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+                builder: (_) => SavedDashboardPage(
+                  onLogout: widget.onLogout,
+                  itemType: 'fitness',
+                ),
               ),
             );
             return;
@@ -260,58 +300,89 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
 
   Widget _results(bool wide) {
     final classes = _filteredClasses;
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${classes.length} of ${_classes.length} classes',
-                    style: const TextStyle(
-                      color: _fitnessMuted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+    return RefreshIndicator(
+      onRefresh: _loadSavedState,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${classes.length} of ${_classes.length} classes',
+                      style: const TextStyle(
+                        color: _fitnessMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                const Text('Sort by', style: TextStyle(color: _fitnessMuted)),
-                const SizedBox(width: 5),
-                const Text(
-                  'Featured ▾',
-                  style: TextStyle(
-                    color: _fitnessInk,
-                    fontWeight: FontWeight.w700,
+                  const Text('Sort by', style: TextStyle(color: _fitnessMuted)),
+                  const SizedBox(width: 5),
+                  DropdownButton<String>(
+                    value: _sortBy,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Featured',
+                        child: Text('Featured'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Nearest',
+                        child: Text('Nearest'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Name A-Z',
+                        child: Text('Name A-Z'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: low to high',
+                        child: Text('Price: low to high'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: high to low',
+                        child: Text('Price: high to low'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _sortBy = value);
+                    },
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (classes.isEmpty)
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(
-              child: Text('No fitness classes match these filters.'),
-            ),
-          )
-        else
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 4, wide ? 28 : 16, 28),
-            sliver: SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: wide ? 2 : 1,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: wide ? .77 : .78,
+                ],
               ),
-              itemCount: classes.length,
-              itemBuilder: (_, index) => _classCard(classes[index]),
             ),
           ),
-      ],
+          if (classes.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text('No fitness classes match these filters.'),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                wide ? 22 : 16,
+                4,
+                wide ? 28 : 16,
+                28,
+              ),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: wide ? 2 : 1,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: wide ? .77 : .78,
+                ),
+                itemCount: classes.length,
+                itemBuilder: (_, index) => _classCard(classes[index]),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -672,7 +743,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                       onPressed: () => _toggleSaved(
                         key: item.name,
                         title: item.name,
-                        subtitle: item.address,
+                        subtitle: 'Class: ${item.category}\n${item.address}',
                       ),
                       icon: Icon(
                         _savedKeys.contains(item.name)
@@ -828,6 +899,20 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
       ),
     ),
   );
+
+  int _fitnessPrice(String value) =>
+      int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  double _distanceSquared(
+    double latitude,
+    double longitude,
+    double otherLatitude,
+    double otherLongitude,
+  ) {
+    final latitudeDelta = latitude - otherLatitude;
+    final longitudeDelta = longitude - otherLongitude;
+    return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
+  }
 
   Widget _detail(IconData icon, String text) => Padding(
     padding: const EdgeInsets.only(bottom: 3),

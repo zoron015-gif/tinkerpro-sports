@@ -58,9 +58,14 @@ class ProfileDashboardPage extends StatelessWidget {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: [
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await FirebaseAuth.instance.currentUser?.reload();
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
             _profileHeader(name: name, email: email, initials: initials),
             const SizedBox(height: 12),
             _statsCard(),
@@ -96,7 +101,8 @@ class ProfileDashboardPage extends StatelessWidget {
                 ),
               ],
             ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: NavigationBar(

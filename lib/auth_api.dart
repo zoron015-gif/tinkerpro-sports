@@ -47,6 +47,64 @@ class AuthApi {
     required String password,
   }) => _post('/api/auth/login', {'email': email, 'password': password});
 
+  Future<Map<String, dynamic>> merchantProfile(String token) async {
+    return _request(
+      'GET',
+      '/api/merchant/profile',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+  }
+
+  Future<Map<String, dynamic>> saveMerchantProfile({
+    required String token,
+    required Map<String, dynamic> profile,
+  }) => _request(
+    'PUT',
+    '/api/merchant/profile',
+    body: profile,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+  );
+
+  Future<List<Map<String, dynamic>>> merchantBusinesses(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/merchant/businesses',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return (response['businesses'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<void> createMerchantBusiness({
+    required String token,
+    required Map<String, dynamic> business,
+  }) async {
+    await _request(
+      'POST',
+      '/api/merchant/businesses',
+      body: business,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+  }
+
+  Future<void> deleteMerchantBusiness({
+    required String token,
+    required int id,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/merchant/businesses/$id',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+  }
+
   Future<Map<String, dynamic>> requestPasswordReset(String email) =>
       _post('/api/auth/forgot-password', {'email': email});
 
@@ -160,6 +218,10 @@ class AuthApi {
           : method == 'DELETE'
           ? await _client
                 .delete(uri, headers: headers)
+                .timeout(const Duration(seconds: 15))
+          : method == 'PUT'
+          ? await _client
+                .put(uri, headers: headers, body: jsonEncode(body))
                 .timeout(const Duration(seconds: 15))
           : await _client
                 .post(uri, headers: headers, body: jsonEncode(body))

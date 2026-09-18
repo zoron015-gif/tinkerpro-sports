@@ -14,7 +14,7 @@ CREATE TABLE users (
   first_name VARCHAR(100) NULL,
   last_name VARCHAR(100) NULL,
   phone VARCHAR(30) NULL,
-  avatar_url VARCHAR(2048) NULL,
+  avatar_url LONGTEXT NULL,
   role ENUM('customer', 'merchant') NOT NULL DEFAULT 'customer',
   status ENUM('pending', 'active', 'suspended', 'deleted') NOT NULL DEFAULT 'pending',
   email_verified_at DATETIME NULL,
@@ -45,6 +45,67 @@ CREATE TABLE user_identities (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS merchant_profiles (
+  user_id BIGINT UNSIGNED NOT NULL,
+  business_name VARCHAR(255) NULL,
+  business_type VARCHAR(100) NULL,
+  registration_number VARCHAR(100) NULL,
+  categories_json JSON NULL,
+  facility_type VARCHAR(50) NULL,
+  address VARCHAR(500) NULL,
+  contact_email VARCHAR(255) NULL,
+  owner_designation VARCHAR(150) NULL,
+  business_image LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_merchant_profiles_user
+    FOREIGN KEY (user_id) REFERENCES users (id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+ALTER TABLE merchant_profiles
+  ADD COLUMN IF NOT EXISTS business_image LONGTEXT NULL;
+
+ALTER TABLE users
+  MODIFY COLUMN avatar_url LONGTEXT NULL;
+
+CREATE TABLE IF NOT EXISTS merchant_businesses (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  merchant_id BIGINT UNSIGNED NOT NULL,
+  business_type VARCHAR(50) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  address VARCHAR(500) NOT NULL,
+  facility_type VARCHAR(50) NOT NULL,
+  price_per_hour DECIMAL(10, 2) NOT NULL,
+  opening_hours VARCHAR(100) NOT NULL,
+  availability VARCHAR(50) NOT NULL DEFAULT 'Any',
+  amenities_json JSON NULL,
+  details VARCHAR(1000) NULL,
+  image_url LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_merchant_businesses_merchant (merchant_id, created_at),
+  CONSTRAINT fk_merchant_businesses_user
+    FOREIGN KEY (merchant_id) REFERENCES users (id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+ALTER TABLE merchant_businesses
+  ADD COLUMN IF NOT EXISTS price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0
+  AFTER facility_type;
+
+ALTER TABLE merchant_businesses
+  ADD COLUMN IF NOT EXISTS opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours'
+  AFTER price_per_hour,
+  ADD COLUMN IF NOT EXISTS availability VARCHAR(50) NOT NULL DEFAULT 'Any'
+  AFTER opening_hours,
+  ADD COLUMN IF NOT EXISTS amenities_json JSON NULL
+  AFTER availability;
 
 CREATE TABLE email_verification_tokens (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

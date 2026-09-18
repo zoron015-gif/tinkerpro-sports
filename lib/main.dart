@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
+import 'merchant_dashboard.dart';
 import 'app_session.dart';
 
 import 'dart:async';
@@ -40,40 +41,46 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         textTheme: GoogleFonts.montserratTextTheme(),
       ),
-      home: session?.isAuthenticated == true && session?.apiToken != null
-          ? ReserveDashboardPage(
-              initialSelection: session?.lastBookingType,
-              onLogout: _logout,
-            )
-          : const OverviewPage(),
+      home: const OverviewPage(),
     );
   }
 
-  Future<void> _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    await session?.clear();
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const OverviewPage()),
-      (_) => false,
-    );
-  }
 }
 
 class OverviewPage extends StatelessWidget {
   const OverviewPage({super.key});
 
   Future<void> _openBookings(BuildContext context) async {
+    final session = await AppSession.load();
+    if (!context.mounted) return;
+    if (session.isAuthenticated && session.apiToken?.isNotEmpty == true) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => session.role == 'merchant'
+              ? MerchantDashboardPage(onLogout: _logout)
+              : ReserveDashboardPage(
+                  initialSelection: session.lastBookingType,
+                  onLogout: _logout,
+                ),
+        ),
+      );
+      return;
+    }
+
     final authenticated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const AuthDashboardPage()),
     );
     if (!context.mounted || authenticated != true) return;
     final navigator = Navigator.of(context);
-    await navigator.pushReplacement(
+    final authenticatedSession = await AppSession.load();
+    await navigator.push(
       MaterialPageRoute(
-        builder: (_) => ReserveDashboardPage(
-          onLogout: _logout,
-        ),
+        builder: (_) => authenticatedSession.role == 'merchant'
+            ? MerchantDashboardPage(onLogout: _logout)
+            : ReserveDashboardPage(
+                initialSelection: authenticatedSession.lastBookingType,
+                onLogout: _logout,
+              ),
       ),
     );
   }
