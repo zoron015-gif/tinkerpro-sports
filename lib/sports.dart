@@ -1,11 +1,36 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
+import 'auth_api.dart';
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+
 import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+
+typedef SportsVenue = ({
+  String name,
+  String sport,
+  String address,
+  String type,
+  String courts,
+  String hours,
+  String availability,
+  String image,
+  List<String> images,
+  String priceDay,
+  String priceNight,
+  List<String> priceLines,
+  double maxPrice,
+  List<String> tags,
+  double latitude,
+  double longitude,
+});
 
 const _sportsNavy = Color(0xFF192B50);
 const _sportsInk = Color(0xFF101B33);
@@ -27,68 +52,8 @@ class SportsDashboardPage extends StatefulWidget {
 
 class _SportsDashboardPageState extends State<SportsDashboardPage> {
   final _searchController = TextEditingController();
-  final _venues = const [
-    (
-      name: 'SLT Court',
-      sport: 'Tennis',
-      address: 'Village, Tugas Street, Kingswood, Minglanilla, Cebu',
-      type: 'Outdoor',
-      courts: '1 court',
-      hours: '6:00 AM - 12:00 AM',
-      image: 'assets/court/pickle-court.jpg',
-      priceDay: '₱300 / hr',
-      priceNight: '₱350 / hr',
-      maxPrice: 350,
-      tags: ['Parking · 4 cars', 'Pet-friendly', 'Restroom'],
-      latitude: 10.245,
-      longitude: 123.796,
-    ),
-    (
-      name: 'Pickaboo Pickleball Cebu',
-      sport: 'Pickleball',
-      address: '(At the back of Gaisano Tabunok) Zafra Compound, Talisay City',
-      type: 'Indoor',
-      courts: '3 courts',
-      hours: 'Open 24 hours',
-      image: 'assets/court/pickle-court.jpg',
-      priceDay: '₱400 / hr',
-      priceNight: '₱500 / hr',
-      maxPrice: 500,
-      tags: ['Parking · 30 cars', 'Pet-friendly', 'Restroom', 'Store'],
-      latitude: 10.244,
-      longitude: 123.833,
-    ),
-    (
-      name: 'River Pickleball Club',
-      sport: 'Volleyball',
-      address: 'South Road Properties, Cebu City',
-      type: 'Covered',
-      courts: '4 courts',
-      hours: '7:00 AM - 11:00 PM',
-      image: 'assets/court/volley-court.jpg',
-      priceDay: '₱350 / hr',
-      priceNight: '₱450 / hr',
-      maxPrice: 450,
-      tags: ['Parking', 'Restroom', 'Store'],
-      latitude: 10.285,
-      longitude: 123.885,
-    ),
-    (
-      name: 'Cebu Sports Hub',
-      sport: 'Basketball',
-      address: 'Mandaue City, Cebu',
-      type: 'Indoor',
-      courts: '6 courts',
-      hours: 'Open 24 hours',
-      image: 'assets/court/basket-court.jpg',
-      priceDay: '₱450 / hr',
-      priceNight: '₱550 / hr',
-      maxPrice: 550,
-      tags: ['Parking', 'Shower', 'Restroom'],
-      latitude: 10.323,
-      longitude: 123.943,
-    ),
-  ];
+  final List<SportsVenue> _merchantVenues = [];
+  List<SportsVenue> get _allVenues => _merchantVenues;
 
   String _area = 'All areas';
   String _sport = 'All sports';
@@ -102,9 +67,15 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   final Map<String, int> _saveCounts = <String, int>{};
   String _sortBy = 'Featured';
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadMerchantBusinesses();
+  }
+
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
-    final venues = _venues.where((venue) {
+    final venues = _allVenues.where((venue) {
       final matchesQuery =
           query.isEmpty ||
           venue.name.toLowerCase().contains(query) ||
@@ -166,6 +137,135 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     super.initState();
     _searchController.addListener(_refresh);
     _loadSavedState();
+    _loadMerchantBusinesses();
+  }
+
+  Future<void> _loadMerchantBusinesses() async {
+    try {
+      final rows = await AuthApi().customerBusinesses();
+      if (!mounted) return;
+      setState(
+        () => _merchantVenues
+          ..clear()
+          ..addAll(
+            rows
+                .where(
+                  (b) =>
+                      '${b['businessType'] ?? b['business_type'] ?? ''}'
+                          .trim()
+                          .toLowerCase() ==
+                      'sports',
+                )
+                .map(_sportsVenue),
+          ),
+      );
+    } on Exception catch (error) {
+      if (mounted) {
+        _showMessage('Could not load merchant Sports venues: $error');
+      }
+    }
+  }
+
+  SportsVenue _sportsVenue(Map<String, dynamic> b) {
+    final rawTags = b['tags'];
+    final tags = rawTags is List
+        ? rawTags.whereType<String>().toList()
+        : rawTags is String
+        ? (() {
+            try {
+              final decoded = jsonDecode(rawTags);
+              return decoded is List
+                  ? decoded.whereType<String>().toList()
+                  : <String>[];
+            } on FormatException {
+              return <String>[];
+            }
+          })()
+        : <String>[];
+    final price =
+        double.tryParse('${b['pricePerHour'] ?? b['price_per_hour'] ?? 0}') ??
+        0;
+    final rawPeriods = b['ratePeriods'] ?? b['rate_periods'];
+    final periods = rawPeriods is List
+        ? rawPeriods.whereType<Map>().map((period) {
+            final start = period['start'] ?? period['start_time'] ?? '';
+            final end = period['end'] ?? period['end_time'] ?? '';
+            final amount = period['pricePerHour'] ?? period['price_per_hour'];
+            return '$start - $end|PHP ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr';
+          }).toList()
+        : <String>[];
+    final images = _merchantImages(b);
+    return (
+      name: b['name'] as String? ?? 'Business',
+      sport: '${b['category'] ?? 'Sports'}',
+      address: '${b['address'] ?? ''}',
+      type: '${b['facilityType'] ?? b['facility_type'] ?? 'Facility'}',
+      courts: '${b['details'] ?? 'Sports facility'}',
+      hours: '${b['hours'] ?? b['opening_hours'] ?? 'Open hours'}',
+      availability: '${b['availability'] ?? b['availability_status'] ?? ''}',
+      image: _merchantImage(b),
+      images: images,
+      priceDay: 'PHP ' + price.toStringAsFixed(0) + ' / hr',
+      priceNight: 'PHP ' + price.toStringAsFixed(0) + ' / hr',
+      priceLines: periods.isEmpty
+          ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
+          : periods,
+      maxPrice: price,
+      tags: tags,
+      latitude: 10.3157,
+      longitude: 123.8854,
+    );
+  }
+
+  String _merchantImage(Map<String, dynamic> business) {
+    return _merchantImages(business).first;
+  }
+
+  List<String> _merchantImages(Map<String, dynamic> business) {
+    final images = <String>[];
+    final raw = business['imageUrls'] ?? business['image_urls'];
+    if (raw is List && raw.whereType<String>().isNotEmpty) {
+      images.addAll(raw.whereType<String>().where((image) => image.isNotEmpty));
+    }
+    if (images.isEmpty && raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          images.addAll(
+            decoded.whereType<String>().where((image) => image.isNotEmpty),
+          );
+        }
+      } on FormatException {
+        images.add(raw);
+      }
+    }
+    final legacy = business['imageUrl'] as String?;
+    if (images.isEmpty && legacy != null && legacy.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(legacy);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          images.addAll(
+            decoded.whereType<String>().where((image) => image.isNotEmpty),
+          );
+        }
+      } on FormatException {
+        images.add(legacy);
+      }
+      if (images.isEmpty) images.add(legacy);
+    }
+    if (images.isEmpty) images.add('assets/court/pickle-court.jpg');
+    return images;
+  }
+
+  ImageProvider _sportsImageProvider(String image) {
+    if (image.startsWith('data:image/')) {
+      final comma = image.indexOf(',');
+      if (comma >= 0) {
+        return MemoryImage(base64Decode(image.substring(comma + 1)));
+      }
+    }
+    if (image.startsWith('http')) return NetworkImage(image);
+    return AssetImage(image);
   }
 
   Future<void> _loadSavedState() async {
@@ -209,17 +309,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         foregroundColor: _sportsInk,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.of(
-            context,
-            rootNavigator: true,
-          ).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => ReserveDashboardPage(
-                onLogout: widget.onLogout,
+          onPressed: () =>
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ReserveDashboardPage(onLogout: widget.onLogout),
+                ),
+                (_) => false,
               ),
-            ),
-            (_) => false,
-          ),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
         ),
         title: const Text(
@@ -280,13 +377,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             );
             return;
           }
-          _showMessage(
-            switch (index) {
-              1 => 'Saved venues will appear here.',
-              2 => 'Booking history will appear here.',
-              _ => 'Profile will appear here.',
-            },
-          );
+          _showMessage(switch (index) {
+            1 => 'Saved venues will appear here.',
+            2 => 'Booking history will appear here.',
+            _ => 'Profile will appear here.',
+          });
         },
         destinations: const [
           NavigationDestination(
@@ -317,76 +412,91 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   Widget _results(bool wide) {
     final venues = _filteredVenues;
     return RefreshIndicator(
-      onRefresh: _loadSavedState,
+      onRefresh: () async {
+        await Future.wait([_loadSavedState(), _loadMerchantBusinesses()]);
+      },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${venues.length == _venues.length ? 55 : venues.length} of 55 courts',
-                    style: const TextStyle(
-                      color: _sportsMuted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${venues.length} of ${_allVenues.length} courts',
+                      style: const TextStyle(
+                        color: _sportsMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                const Text(
-                  'Sort by',
-                  style: TextStyle(color: _sportsMuted, fontSize: 12),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _sortBy,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Featured',
-                      child: Text('Featured'),
-                    ),
-                    DropdownMenuItem(value: 'Nearest', child: Text('Nearest')),
-                    DropdownMenuItem(value: 'Name A-Z', child: Text('Name A-Z')),
-                    DropdownMenuItem(
-                      value: 'Price: low to high',
-                      child: Text('Price: low to high'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Price: high to low',
-                      child: Text('Price: high to low'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _sortBy = value);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (venues.isEmpty)
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(child: Text('No sports courts match these filters.')),
-          )
-        else
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 4, wide ? 28 : 16, 28),
-            sliver: SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: wide ? 2 : 1,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: wide ? .77 : .70,
+                  const Text(
+                    'Sort by',
+                    style: TextStyle(color: _sportsMuted, fontSize: 12),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<String>(
+                    value: _sortBy,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Featured',
+                        child: Text('Featured'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Nearest',
+                        child: Text('Nearest'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Name A-Z',
+                        child: Text('Name A-Z'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: low to high',
+                        child: Text('Price: low to high'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Price: high to low',
+                        child: Text('Price: high to low'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _sortBy = value);
+                    },
+                  ),
+                ],
               ),
-              itemCount: venues.length,
-              itemBuilder: (context, index) => _courtCard(venues[index]),
             ),
           ),
+          if (venues.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text('No sports courts match these filters.'),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                wide ? 22 : 16,
+                4,
+                wide ? 28 : 16,
+                28,
+              ),
+              sliver: SliverGrid.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: wide ? 2 : 1,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: wide ? .77 : .70,
+                ),
+                itemCount: venues.length,
+                itemBuilder: (context, index) => _courtCard(venues[index]),
+              ),
+            ),
         ],
       ),
     );
@@ -799,7 +909,22 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(venue.image, fit: BoxFit.cover),
+              GestureDetector(
+                onTap: () => _showSportsGallery(venue.images),
+                child: PageView.builder(
+                  itemCount: venue.images.length > 1 ? 10000 : 1,
+                  itemBuilder: (_, index) => Image(
+                    image: _sportsImageProvider(
+                      venue.images[index % venue.images.length],
+                    ),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Image.asset(
+                      'assets/court/pickle-court.jpg',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
               Positioned(
                 top: 8,
                 right: 8,
@@ -823,6 +948,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         key: venue.name,
                         title: venue.name,
                         subtitle: 'Sport: ${venue.sport}\n${venue.address}',
+                        imageUrl: venue.image,
                       ),
                       icon: Icon(
                         _savedKeys.contains(venue.name)
@@ -834,23 +960,30 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                   ],
                 ),
               ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      '♧ 3',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
+              if (venue.images.length > 1)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        '${venue.images.length} photos',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -877,6 +1010,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 _detail(Icons.business_center_outlined, 'Type: ${venue.type}'),
                 _detail(Icons.grid_3x3, 'Courts: ${venue.courts}'),
                 _detail(Icons.access_time, 'Hours: ${venue.hours}'),
+                if (venue.availability.isNotEmpty)
+                  _detail(
+                    Icons.check_circle_outline,
+                    'Availability: ${venue.availability}',
+                  ),
                 const SizedBox(height: 6),
                 _priceBox(venue),
                 const SizedBox(height: 6),
@@ -928,6 +1066,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required String key,
     required String title,
     required String subtitle,
+    String? imageUrl,
   }) async {
     try {
       if (_savedKeys.contains(key)) {
@@ -943,6 +1082,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           key: key,
           title: title,
           subtitle: subtitle,
+          imageUrl: imageUrl,
         );
         setState(() {
           _savedKeys.add(key);
@@ -950,7 +1090,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         });
         _showMessage('$title saved.');
       }
-
     } on Exception catch (error) {
       _showMessage('Could not update Saved: $error');
     }
@@ -1023,11 +1162,104 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             fontWeight: FontWeight.w800,
           ),
         ),
-        _priceLine('Daily · 6:00 AM–4:00 PM', venue.priceDay),
-        _priceLine('Daily · 4:00 PM–12:00 AM', venue.priceNight),
+        for (final line in venue.priceLines)
+          _priceLine(
+            line.split('|').first,
+            line.contains('|') ? line.split('|').skip(1).join('|') : '',
+          ),
       ],
     ),
   );
+
+  Future<void> _showSportsGallery(List<String> images) async {
+    if (images.isEmpty) return;
+    var index = 0;
+    final galleryController = PageController(
+      initialPage: images.length > 1 ? images.length * 1000 : 0,
+    );
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setState) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                height: MediaQuery.sizeOf(context).height * .78,
+                child: PageView.builder(
+                  onPageChanged: (value) =>
+                      setState(() => index = value % images.length),
+                  itemCount: images.length > 1 ? 10000 : 1,
+                  controller: galleryController,
+                  itemBuilder: (_, page) => InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 3,
+                    child: Image(
+                      image: _sportsImageProvider(images[page % images.length]),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton.filled(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Positioned(
+                bottom: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .65),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      '${index + 1} of ${images.length}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              if (images.length > 1) ...[
+                Positioned(
+                  left: 8,
+                  child: IconButton.filled(
+                    onPressed: () => galleryController.previousPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  child: IconButton.filled(
+                    onPressed: () => galleryController.nextPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    galleryController.dispose();
+  }
 
   Widget _priceLine(String label, String value) => Row(
     children: [
@@ -1220,7 +1452,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               ),
               MarkerLayer(
                 markers: [
-                  for (final venue in _venues)
+                  for (final venue in _allVenues)
                     Marker(
                       point: LatLng(venue.latitude, venue.longitude),
                       width: 100,
@@ -1229,10 +1461,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                   if (_position != null)
                     Marker(
-                      point: LatLng(
-                        _position!.latitude,
-                        _position!.longitude,
-                      ),
+                      point: LatLng(_position!.latitude, _position!.longitude),
                       width: 112,
                       height: 76,
                       child: _userLocationPin(),

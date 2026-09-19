@@ -1,4 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
+import 'auth_api.dart';
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,6 +12,19 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+
+typedef FitnessClass = ({
+  String name,
+  String category,
+  String address,
+  String sessions,
+  String hours,
+  String image,
+  String price,
+  List<String> tags,
+  double latitude,
+  double longitude,
+});
 
 const _fitnessNavy = Color(0xFF192B50);
 const _fitnessInk = Color(0xFF101B33);
@@ -27,56 +45,8 @@ class FitnessDashboardPage extends StatefulWidget {
 
 class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   final _searchController = TextEditingController();
-  final _classes = const [
-    (
-      name: 'Apex Pulse Fitness',
-      category: 'CrossFit',
-      address: 'Cebu City, Cebu',
-      sessions: '12 classes today',
-      hours: '5:00 AM - 10:00 PM',
-      image: 'assets/book-type/fitness.jpg',
-      price: '₱500 / session',
-      tags: ['Showers', 'Coach', 'Parking'],
-      latitude: 10.3157,
-      longitude: 123.8854,
-    ),
-    (
-      name: 'Zen Pilates Studio',
-      category: 'Pilates',
-      address: 'Mandaue City, Cebu',
-      sessions: '8 classes today',
-      hours: '6:00 AM - 9:00 PM',
-      image: 'assets/book-type/fitness.jpg',
-      price: '₱450 / session',
-      tags: ['Beginner-friendly', 'Mats', 'Locker room'],
-      latitude: 10.323,
-      longitude: 123.943,
-    ),
-    (
-      name: 'Boxing Conditioning Club',
-      category: 'Boxing',
-      address: 'Cebu City, Cebu',
-      sessions: '10 classes today',
-      hours: '7:00 AM - 11:00 PM',
-      image: 'assets/book-type/fitness.jpg',
-      price: '₱600 / session',
-      tags: ['Equipment', 'Coach', 'Parking'],
-      latitude: 10.285,
-      longitude: 123.885,
-    ),
-    (
-      name: 'Flow Yoga Wellness',
-      category: 'Yoga',
-      address: 'Talisay City, Cebu',
-      sessions: '6 classes today',
-      hours: '6:00 AM - 8:00 PM',
-      image: 'assets/book-type/fitness.jpg',
-      price: '₱400 / session',
-      tags: ['Mats', 'Beginner-friendly', 'Shower'],
-      latitude: 10.245,
-      longitude: 123.796,
-    ),
-  ];
+  final List<FitnessClass> _merchantClasses = [];
+  List<FitnessClass> get _allClasses => _merchantClasses;
 
   String _area = 'All areas';
   String _classType = 'All classes';
@@ -91,7 +61,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
 
   List<dynamic> get _filteredClasses {
     final query = _searchController.text.trim().toLowerCase();
-    final classes = _classes.where((item) {
+    final classes = _allClasses.where((item) {
       final matchesSearch =
           query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
@@ -150,6 +120,80 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     super.initState();
     _searchController.addListener(_refresh);
     _loadSavedState();
+    _loadMerchantBusinesses();
+  }
+
+  Future<void> _loadMerchantBusinesses() async {
+    try {
+      final rows = await AuthApi().customerBusinesses();
+      if (!mounted) return;
+      setState(
+        () => _merchantClasses
+          ..clear()
+          ..addAll(
+            rows
+                .where((b) => b['businessType'] == 'Fitness & Wellness')
+                .map(_fitnessClass),
+          ),
+      );
+    } on Exception {}
+  }
+
+  FitnessClass _fitnessClass(Map<String, dynamic> b) => (
+    name: b['name'] as String? ?? 'Business',
+    category: b['category'] as String? ?? 'Fitness',
+    address: b['address'] as String? ?? '',
+    sessions: b['details'] as String? ?? 'Available sessions',
+    hours: b['hours'] as String? ?? 'Open hours',
+    image: _merchantImage(b),
+    price:
+        'PHP ' +
+        ((b['pricePerHour'] as num?)?.toStringAsFixed(0) ?? '0') +
+        ' / session',
+    tags: (b['tags'] as List? ?? const []).whereType<String>().toList(),
+    latitude: 10.3157,
+    longitude: 123.8854,
+  );
+
+  String _merchantImage(Map<String, dynamic> business) {
+    final raw = business['imageUrls'] ?? business['image_urls'];
+    if (raw is List && raw.whereType<String>().isNotEmpty) {
+      return raw.whereType<String>().first;
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          return decoded.whereType<String>().first;
+        }
+      } on FormatException {
+        return raw;
+      }
+    }
+    final legacy = business['imageUrl'] as String?;
+    if (legacy != null && legacy.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(legacy);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          return decoded.whereType<String>().first;
+        }
+      } on FormatException {
+        return legacy;
+      }
+      return legacy;
+    }
+    return 'assets/book-type/fitness.jpg';
+  }
+
+  ImageProvider _fitnessImageProvider(String image) {
+    if (image.startsWith('data:image/')) {
+      final comma = image.indexOf(',');
+      if (comma >= 0) {
+        return MemoryImage(base64Decode(image.substring(comma + 1)));
+      }
+    }
+    if (image.startsWith('http')) return NetworkImage(image);
+    return AssetImage(image);
   }
 
   Future<void> _loadSavedState() async {
@@ -312,7 +356,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      '${classes.length} of ${_classes.length} classes',
+                      '${classes.length} of ${_allClasses.length} classes',
                       style: const TextStyle(
                         color: _fitnessMuted,
                         fontSize: 14,
@@ -717,10 +761,15 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(
-                item.image,
+              Image(
+                image: _fitnessImageProvider(item.image),
                 width: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (_, error, stackTrace) => Image.asset(
+                  'assets/book-type/fitness.jpg',
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
               Positioned(
                 top: 8,
@@ -831,17 +880,34 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                   children: [for (final tag in item.tags) _tag(tag)],
                 ),
                 const Spacer(),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _message('Booking ${item.name} is ready.'),
-                    icon: const Icon(Icons.calendar_month, size: 15),
-                    label: const Text('Book now'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _fitnessOrange,
-                      minimumSize: const Size(0, 36),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _message('Viewing ${item.name}.'),
+                        icon: const Icon(Icons.language, size: 15),
+                        label: const Text('Visit'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _fitnessNavy,
+                          side: const BorderSide(color: _fitnessNavy),
+                          minimumSize: const Size(0, 36),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            _message('Booking ${item.name} is ready.'),
+                        icon: const Icon(Icons.calendar_month, size: 15),
+                        label: const Text('Book now'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _fitnessOrange,
+                          minimumSize: const Size(0, 36),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1098,7 +1164,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
               ),
               MarkerLayer(
                 markers: [
-                  for (final item in _classes)
+                  for (final item in _allClasses)
                     Marker(
                       point: LatLng(item.latitude, item.longitude),
                       width: 120,

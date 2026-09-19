@@ -1,4 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
+import 'auth_api.dart';
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,6 +12,18 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+
+typedef EventVenue = ({
+  String name,
+  String type,
+  String address,
+  String price,
+  String details,
+  String image,
+  List<String> tags,
+  double latitude,
+  double longitude,
+});
 
 const _eventNavy = Color(0xFF192B50);
 const _eventInk = Color(0xFF101B33);
@@ -26,44 +43,8 @@ class EventDashboardPage extends StatefulWidget {
 
 class _EventDashboardPageState extends State<EventDashboardPage> {
   final _searchController = TextEditingController();
-  final _venues = const [
-    (
-      'Grand Ballroom',
-      'Ballroom',
-      'Cebu City, Cebu',
-      '₱25,000 / event',
-      'Banquet · 250 guests',
-      10.3157,
-      123.8854,
-    ),
-    (
-      'Skyline Terrace',
-      'Terrace',
-      'Mandaue City, Cebu',
-      '₱18,000 / event',
-      'Cocktail · 120 guests',
-      10.323,
-      123.943,
-    ),
-    (
-      'Private Dining Hall',
-      'Private Dining',
-      'Cebu City, Cebu',
-      '₱12,000 / event',
-      'Dining · 40 guests',
-      10.285,
-      123.885,
-    ),
-    (
-      'Garden Celebration Venue',
-      'Garden',
-      'Talisay City, Cebu',
-      '₱20,000 / event',
-      'Outdoor · 180 guests',
-      10.245,
-      123.796,
-    ),
-  ];
+  final List<EventVenue> _merchantVenues = [];
+  List<EventVenue> get _allVenues => _merchantVenues;
 
   String _area = 'All areas';
   String _type = 'All venues';
@@ -76,38 +57,38 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
 
   List<dynamic> get _filteredVenues {
     final query = _searchController.text.trim().toLowerCase();
-    final venues = _venues.where((venue) {
+    final venues = _allVenues.where((venue) {
       final search =
           query.isEmpty ||
-          venue.$1.toLowerCase().contains(query) ||
-          venue.$3.toLowerCase().contains(query);
+          venue.name.toLowerCase().contains(query) ||
+          venue.address.toLowerCase().contains(query);
       final area =
           _area == 'All areas' ||
-          venue.$3.toLowerCase().contains(_area.toLowerCase());
-      final type = _type == 'All venues' || venue.$2 == _type;
+          venue.address.toLowerCase().contains(_area.toLowerCase());
+      final type = _type == 'All venues' || venue.type == _type;
       return search && area && type;
     }).toList();
     venues.sort((a, b) {
       switch (_sortBy) {
         case 'Name A-Z':
-          return a.$1.compareTo(b.$1);
+          return a.name.compareTo(b.name);
         case 'Price: low to high':
-          return _eventPrice(a.$4).compareTo(_eventPrice(b.$4));
+          return _eventPrice(a.price).compareTo(_eventPrice(b.price));
         case 'Price: high to low':
-          return _eventPrice(b.$4).compareTo(_eventPrice(a.$4));
+          return _eventPrice(b.price).compareTo(_eventPrice(a.price));
         case 'Nearest':
           if (_position == null) return 0;
           return _distanceSquared(
             _position!.latitude,
             _position!.longitude,
-            a.$6,
-            a.$7,
+            a.latitude,
+            a.longitude,
           ).compareTo(
             _distanceSquared(
               _position!.latitude,
               _position!.longitude,
-              b.$6,
-              b.$7,
+              b.latitude,
+              b.longitude,
             ),
           );
         default:
@@ -122,6 +103,87 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     super.initState();
     _searchController.addListener(_refresh);
     _loadSavedState();
+    _loadMerchantBusinesses();
+  }
+
+  Future<void> _loadMerchantBusinesses() async {
+    try {
+      final rows = await AuthApi().customerBusinesses();
+      if (!mounted) return;
+      setState(
+        () => _merchantVenues
+          ..clear()
+          ..addAll(
+            rows.where((b) => b['businessType'] == 'Event').map(_eventVenue),
+          ),
+      );
+    } on Exception {}
+  }
+
+  EventVenue _eventVenue(Map<String, dynamic> b) {
+    final details = b['details'] as String? ?? '';
+    final eventTypes = RegExp(
+      r'^Event types:\s*(.*)$',
+      multiLine: true,
+    ).firstMatch(details)?.group(1)?.trim();
+    return (
+      name: b['name'] as String? ?? 'Business',
+      type: eventTypes?.isNotEmpty == true
+          ? eventTypes!
+          : b['category'] as String? ?? 'Event',
+      address: b['address'] as String? ?? '',
+      price: 'PHP ' +
+          ((b['pricePerHour'] as num?)?.toStringAsFixed(0) ?? '0') +
+          ' / event',
+      details: details.isNotEmpty
+          ? details
+          : b['facilityType'] as String? ?? 'Event venue',
+      image: _merchantImage(b),
+      tags: (b['tags'] as List? ?? const []).whereType<String>().toList(),
+      latitude: 10.3157,
+      longitude: 123.8854,
+    );
+  }
+
+  String _merchantImage(Map<String, dynamic> business) {
+    final raw = business['imageUrls'] ?? business['image_urls'];
+    if (raw is List && raw.whereType<String>().isNotEmpty) {
+      return raw.whereType<String>().first;
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          return decoded.whereType<String>().first;
+        }
+      } on FormatException {
+        return raw;
+      }
+    }
+    final legacy = business['imageUrl'] as String?;
+    if (legacy != null && legacy.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(legacy);
+        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
+          return decoded.whereType<String>().first;
+        }
+      } on FormatException {
+        return legacy;
+      }
+      return legacy;
+    }
+    return 'assets/book-type/event.jpg';
+  }
+
+  ImageProvider _eventImageProvider(String image) {
+    if (image.startsWith('data:image/')) {
+      final comma = image.indexOf(',');
+      if (comma >= 0) {
+        return MemoryImage(base64Decode(image.substring(comma + 1)));
+      }
+    }
+    if (image.startsWith('http')) return NetworkImage(image);
+    return AssetImage(image);
   }
 
   Future<void> _loadSavedState() async {
@@ -165,15 +227,14 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         foregroundColor: _eventInk,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.of(
-            context,
-            rootNavigator: true,
-          ).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => ReserveDashboardPage(onLogout: widget.onLogout),
-            ),
-            (_) => false,
-          ),
+          onPressed: () =>
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ReserveDashboardPage(onLogout: widget.onLogout),
+                ),
+                (_) => false,
+              ),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
           color: _eventNavy,
         ),
@@ -285,7 +346,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      '${venues.length} of ${_venues.length} venues',
+                      '${venues.length} of ${_allVenues.length} venues',
                       style: const TextStyle(
                         color: _eventMuted,
                         fontSize: 14,
@@ -660,10 +721,15 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(
-                'assets/book-type/event.jpg',
+              Image(
+                image: _eventImageProvider(venue.image),
                 width: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (_, error, stackTrace) => Image.asset(
+                  'assets/book-type/event.jpg',
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
               Positioned(
                 top: 8,
@@ -672,29 +738,29 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton.filled(
-                      tooltip: _savedKeys.contains(venue.$1)
+                      tooltip: _savedKeys.contains(venue.name)
                           ? 'Unsave venue'
                           : 'Save venue',
                       style: IconButton.styleFrom(
-                        backgroundColor: _savedKeys.contains(venue.$1)
+                        backgroundColor: _savedKeys.contains(venue.name)
                             ? _eventOrange
                             : Colors.white,
-                        foregroundColor: _savedKeys.contains(venue.$1)
+                        foregroundColor: _savedKeys.contains(venue.name)
                             ? Colors.white
                             : _eventNavy,
                       ),
                       onPressed: () => _toggleSaved(
-                        key: venue.$1,
-                        title: venue.$1,
-                        subtitle: 'Venue: ${venue.$2}\n${venue.$3}',
+                        key: venue.name,
+                        title: venue.name,
+                        subtitle: 'Venue: ${venue.type}\n${venue.address}',
                       ),
                       icon: Icon(
-                        _savedKeys.contains(venue.$1)
+                        _savedKeys.contains(venue.name)
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
                       ),
                     ),
-                    _saveCount(_saveCounts[venue.$1] ?? 0),
+                    _saveCount(_saveCounts[venue.name] ?? 0),
                   ],
                 ),
               ),
@@ -726,7 +792,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  venue.$1,
+                  venue.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -736,9 +802,9 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                _detail(Icons.location_on_outlined, venue.$3),
-                _detail(Icons.celebration_outlined, 'Type: ${venue.$2}'),
-                _detail(Icons.groups_outlined, venue.$5),
+                _detail(Icons.location_on_outlined, venue.address),
+                _detail(Icons.celebration_outlined, 'Type: ${venue.type}'),
+                _detail(Icons.groups_outlined, venue.details),
                 const SizedBox(height: 8),
                 Container(
                   width: double.infinity,
@@ -757,7 +823,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                         ),
                       ),
                       Text(
-                        venue.$4,
+                        venue.price,
                         style: const TextStyle(
                           color: _eventInk,
                           fontWeight: FontWeight.w900,
@@ -766,18 +832,41 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                     ],
                   ),
                 ),
-                const Spacer(),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _message('Booking ${venue.$1} is ready.'),
-                    icon: const Icon(Icons.calendar_month, size: 15),
-                    label: const Text('Book now'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _eventOrange,
-                      minimumSize: const Size(0, 36),
-                    ),
+                if (venue.tags.isNotEmpty)
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [for (final tag in venue.tags) _tag(tag)],
                   ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _message('Viewing ${venue.name}.'),
+                        icon: const Icon(Icons.language, size: 15),
+                        label: const Text('Visit'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _eventNavy,
+                          side: const BorderSide(color: _eventNavy),
+                          minimumSize: const Size(0, 36),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            _message('Booking ${venue.name} is ready.'),
+                        icon: const Icon(Icons.calendar_month, size: 15),
+                        label: const Text('Book now'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _eventOrange,
+                          minimumSize: const Size(0, 36),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -838,6 +927,20 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
 
   int _eventPrice(String value) =>
       int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  Widget _tag(String text) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: _eventSoftOrange,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      child: Text(
+        text,
+        style: const TextStyle(color: _eventInk, fontSize: 10.5),
+      ),
+    ),
+  );
 
   double _distanceSquared(
     double latitude,
@@ -987,12 +1090,12 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
               ),
               MarkerLayer(
                 markers: [
-                  for (final venue in _venues)
+                  for (final venue in _allVenues)
                     Marker(
-                      point: LatLng(venue.$6, venue.$7),
+                      point: LatLng(venue.latitude, venue.longitude),
                       width: 120,
                       height: 52,
-                      child: _mapPin(venue.$1),
+                      child: _mapPin(venue.name),
                     ),
                   if (_position != null)
                     Marker(

@@ -179,46 +179,65 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 60,
-                  child: FilledButton(
-                    onPressed: _continue,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _mint,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(36),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('Continue to $_selected'),
-                        const SizedBox(width: 10),
-                        const Icon(Icons.arrow_forward_rounded, size: 22),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Center(
-                  child: Text(
-                    '●  Instant confirmation · No upfront payment required',
-                    style: TextStyle(
-                      color: Color(0xFF237C63),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 90),
               ],
             ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+          decoration: BoxDecoration(
+            color: _background,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .08),
+                blurRadius: 14,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton(
+                  onPressed: _continue,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _mint,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(36),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Continue to $_selected'),
+                      const SizedBox(width: 10),
+                      const Icon(Icons.arrow_forward_rounded, size: 22),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                '●  Instant confirmation · No upfront payment required',
+                style: TextStyle(
+                  color: Color(0xFF237C63),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -233,12 +252,6 @@ class _ReserveHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        IconButton(
-          onPressed: () => Navigator.of(context).pop(),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _navy),
-        ),
         const Expanded(
           child: Text(
             'Reserve Experience',

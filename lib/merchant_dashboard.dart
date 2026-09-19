@@ -52,9 +52,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   String? _selectedBookingType;
 
   List<Map<String, dynamic>> get _visibleBusinesses {
-    if (_selectedBookingType == null) return _businesses;
     return _businesses
-        .where((business) => business['businessType'] == _selectedBookingType)
+        .where((business) {
+          final enabled = business['enabled'];
+          final isEnabled =
+              enabled != false &&
+              enabled != 0 &&
+              enabled != '0' &&
+              enabled != 'false' &&
+              enabled != 'FALSE';
+          return isEnabled &&
+              (_selectedBookingType == null ||
+                  business['businessType'] == _selectedBookingType);
+        })
         .toList();
   }
 
@@ -556,7 +566,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   );
 
   Widget _businessCard(Map<String, dynamic> business) {
-    final image = _businessText(business, ['imageUrl', 'image_url']);
+    final images = _businessImages(business);
     final name = _businessText(business, ['name']) ?? 'Unnamed venue';
     final type = _businessText(business, ['businessType', 'business_type']) ??
         'Booking';
@@ -569,6 +579,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final availability = _businessValue(business, ['availability']);
     final courts = _businessValue(business, ['courts', 'courtCount']);
     final price = _hourlyPrice(business);
+    final ratePeriods = _businessRatePeriods(business);
     final sessions = _businessValue(business, ['sessions', 'session']);
     final tags = _businessTags(business);
 
@@ -589,7 +600,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                image == null || image.isEmpty
+                images.isEmpty
                     ? const ColoredBox(
                         color: Color(0xFFFFE8D2),
                         child: Icon(
@@ -598,9 +609,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                           color: _merchantOrange,
                         ),
                       )
-                    : Image(
-                        image: _imageProvider(image)!,
-                        fit: BoxFit.cover,
+                    : GestureDetector(
+                        onTap: () => _showImageGallery(context, images),
+                        child: _imageCarousel(images),
                       ),
                 Positioned(
                   left: 10,
@@ -656,10 +667,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     Icons.check_circle_outline,
                     'Availability: $availability',
                   ),
+                if (ratePeriods.isNotEmpty)
+                  _businessDetail(
+                    Icons.payments_outlined,
+                    'Special rates: ${_formatRatePeriods(ratePeriods)}',
+                  ),
                 if (details.isNotEmpty)
                   _businessDetail(Icons.info_outline, details),
                 const SizedBox(height: 10),
-                _priceBox(type, price.isEmpty ? 'Price not set' : price),
+                _priceBox(
+                  type,
+                  ratePeriods.isNotEmpty
+                      ? 'See special rates above'
+                      : price.isEmpty
+                      ? 'Price not set'
+                      : price,
+                  hasRatePeriods: ratePeriods.isNotEmpty,
+                ),
                 const SizedBox(height: 8),
                 const Text(
                   'Amenities',
@@ -758,6 +782,47 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     return '₱$formatted / hr';
   }
 
+  List<Map<String, dynamic>> _businessRatePeriods(
+    Map<String, dynamic> business,
+  ) {
+    final value = business['ratePeriods'] ?? business['rate_periods'];
+    dynamic decoded = value;
+    if (value is String) {
+      try {
+        decoded = jsonDecode(value);
+      } on FormatException {
+        return [];
+      }
+    }
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map>()
+        .map((period) => Map<String, dynamic>.from(period))
+        .where(
+          (period) =>
+              '${period['start'] ?? ''}'.trim().isNotEmpty &&
+              '${period['end'] ?? ''}'.trim().isNotEmpty,
+        )
+        .toList();
+  }
+
+  String _formatRatePeriods(List<Map<String, dynamic>> periods) => periods
+      .map((period) {
+        final start = period['start'];
+        final end = period['end'];
+        final value = period['pricePerHour'] ?? period['price_per_hour'];
+        final price = value is num
+            ? value.toDouble()
+            : double.tryParse('$value');
+        final formattedPrice = price == null
+            ? ''
+            : price == price.roundToDouble()
+            ? '₱${price.toStringAsFixed(0)}'
+            : '₱${price.toStringAsFixed(2)}';
+        return '$start - $end${formattedPrice.isEmpty ? '' : ' ($formattedPrice / hr)'}';
+      })
+      .join(', ');
+
   List<String> _businessTags(Map<String, dynamic> business) {
     final value = business['tags'] ??
         business['amenities'] ??
@@ -803,7 +868,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ),
   );
 
-  Widget _priceBox(String type, String price) => Container(
+  Widget _priceBox(
+    String type,
+    String price, {
+    bool hasRatePeriods = false,
+  }) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
@@ -815,7 +884,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       children: [
         Expanded(
           child: Text(
-            type == 'Fitness & Wellness'
+            hasRatePeriods
+                ? 'Rate schedule'
+                : type == 'Fitness & Wellness'
                 ? 'Session price'
                 : type == 'Event'
                 ? 'Event package'
@@ -1311,6 +1382,169 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       return MemoryImage(base64Decode(value.split(',').last));
     }
     return NetworkImage(value);
+  }
+
+  List<String> _businessImages(Map<String, dynamic> business) {
+    final raw = business['imageUrls'] ?? business['image_urls'];
+    final images = <String>[];
+    if (raw is List) {
+      images.addAll(raw.whereType<String>().where((value) => value.isNotEmpty));
+    } else if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          images.addAll(
+            decoded.whereType<String>().where((value) => value.isNotEmpty),
+          );
+        }
+      } on FormatException {
+        // Ignore malformed optional gallery data and use the legacy image.
+      }
+    }
+    if (images.isEmpty) {
+      final legacy = _businessText(business, ['imageUrl', 'image_url']);
+      if (legacy != null && legacy.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(legacy);
+          if (decoded is List) {
+            images.addAll(
+              decoded.whereType<String>().where((value) => value.isNotEmpty),
+            );
+          }
+        } on FormatException {
+          images.add(legacy);
+        }
+        if (images.isEmpty) images.add(legacy);
+      }
+    }
+    return images;
+  }
+
+  Widget _imageCarousel(List<String> images) {
+    final controller = PageController(initialPage: 100000);
+    var currentIndex = 0;
+    return StatefulBuilder(
+      builder: (context, setState) => Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: controller,
+            onPageChanged: (index) {
+              setState(() => currentIndex = index % images.length);
+            },
+            itemBuilder: (_, index) => Image(
+              image: _imageProvider(images[index % images.length])!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, stack) => const ColoredBox(
+                color: Color(0xFFFFE8D2),
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: _merchantOrange,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 10,
+            bottom: 10,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                child: Text(
+                  '${currentIndex + 1} of ${images.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showImageGallery(
+    BuildContext context,
+    List<String> images,
+  ) async {
+    var currentIndex = 0;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => SizedBox(
+            height: MediaQuery.sizeOf(context).height * .75,
+            child: Stack(
+              children: [
+                PageView.builder(
+                  controller: PageController(initialPage: 100000),
+                  itemCount: 1000000,
+                  onPageChanged: (index) {
+                    setDialogState(
+                      () => currentIndex = index % images.length,
+                    );
+                  },
+                  itemBuilder: (_, index) => Center(
+                    child: Image(
+                      image: _imageProvider(images[index % images.length])!,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
+                  child: Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          '${currentIndex + 1} of ${images.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IconButton(
+                    color: Colors.white,
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _section({required String title, required Widget child}) => Container(

@@ -47,6 +47,22 @@ class AuthApi {
     required String password,
   }) => _post('/api/auth/login', {'email': email, 'password': password});
 
+  Future<List<Map<String, dynamic>>> customerBusinesses() async {
+    final response = await _request('GET', '/api/businesses');
+    return (response['businesses'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((business) => Map<String, dynamic>.from(business))
+        .where((business) {
+          final enabled = business['enabled'];
+          return enabled != false &&
+              enabled != 0 &&
+              enabled != '0' &&
+              enabled != 'false' &&
+              enabled != 'FALSE';
+        })
+        .toList();
+  }
+
   Future<Map<String, dynamic>> merchantProfile(String token) async {
     return _request(
       'GET',
@@ -87,6 +103,38 @@ class AuthApi {
       'POST',
       '/api/merchant/businesses',
       body: business,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+  }
+
+  Future<void> updateMerchantBusiness({
+    required String token,
+    required int id,
+    required Map<String, dynamic> business,
+  }) async {
+    await _request(
+      'PUT',
+      '/api/merchant/businesses/$id',
+      body: business,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+  }
+
+  Future<void> setMerchantBusinessEnabled({
+    required String token,
+    required int id,
+    required bool enabled,
+  }) async {
+    await _request(
+      'PUT',
+      '/api/merchant/businesses/$id/status',
+      body: {'enabled': enabled},
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
@@ -248,7 +296,11 @@ class AuthApi {
       } on FormatException {
         throw AuthApiException(
           response.statusCode == 404
-              ? 'The saved-items API is unavailable. Restart the backend server and try again.'
+              ? path.contains('/merchant/businesses/')
+                    ? 'The business management API is unavailable. Restart the backend server and try again.'
+                    : path.startsWith('/api/saved-items')
+                    ? 'The saved-items API is unavailable. Restart the backend server and try again.'
+                    : 'The requested API endpoint was not found.'
               : 'The server returned an invalid response.',
           response.statusCode,
         );

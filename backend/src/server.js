@@ -18,7 +18,7 @@ if (!process.env.JWT_SECRET) {
 }
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || true }));
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -564,13 +564,93 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
       `SELECT id, business_type AS businessType, name, category, address,
               facility_type AS facilityType, price_per_hour AS pricePerHour,
               opening_hours AS hours, availability,
+              enabled,
+              rate_periods AS ratePeriods,
               amenities_json AS tags, details, image_url AS imageUrl,
+              image_urls AS imageUrls,
               created_at AS createdAt
        FROM merchant_businesses
        WHERE merchant_id = ?
        ORDER BY created_at DESC`,
       [req.auth.sub],
     );
+    for (const business of businesses) {
+      if (typeof business.imageUrls === 'string') {
+        try {
+          business.imageUrls = JSON.parse(business.imageUrls);
+        } catch {
+          business.imageUrls = [];
+        }
+      }
+      if (!Array.isArray(business.imageUrls)) business.imageUrls = [];
+      if (business.imageUrls.length === 0 && business.imageUrl) {
+        try {
+          const legacyImages = JSON.parse(business.imageUrl);
+          if (Array.isArray(legacyImages)) {
+            business.imageUrls = legacyImages.filter(
+              (image) => typeof image === 'string' && image.length > 0,
+            );
+          }
+        } catch {}
+      }
+      if (business.imageUrls.length === 0 && business.imageUrl) {
+        business.imageUrls = [business.imageUrl];
+      }
+      if (business.imageUrls.length > 0) business.imageUrl = business.imageUrls[0];
+    }
+    return res.json({ businesses });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/businesses', async (req, res, next) => {
+  try {
+    const [businesses] = await pool.execute(
+      `SELECT id, business_type AS businessType, name, category, address,
+              facility_type AS facilityType, price_per_hour AS pricePerHour,
+              opening_hours AS hours, availability, enabled, rate_periods AS ratePeriods,
+              amenities_json AS tags, details, image_url AS imageUrl,
+              image_urls AS imageUrls,
+              created_at AS createdAt
+       FROM merchant_businesses
+       WHERE enabled = 1
+       ORDER BY created_at DESC`,
+    );
+    for (const business of businesses) {
+      for (const field of ['ratePeriods', 'tags']) {
+        if (typeof business[field] === 'string') {
+          try {
+            business[field] = JSON.parse(business[field]);
+          } catch {
+            business[field] = [];
+          }
+        }
+        if (!Array.isArray(business[field])) business[field] = [];
+      }
+      if (typeof business.imageUrls === 'string') {
+        try {
+          business.imageUrls = JSON.parse(business.imageUrls);
+        } catch {
+          business.imageUrls = [];
+        }
+      }
+      if (!Array.isArray(business.imageUrls)) business.imageUrls = [];
+      if (business.imageUrls.length === 0 && business.imageUrl) {
+        try {
+          const legacyImages = JSON.parse(business.imageUrl);
+          if (Array.isArray(legacyImages)) {
+            business.imageUrls = legacyImages.filter(
+              (image) => typeof image === 'string' && image.length > 0,
+            );
+          }
+        } catch {}
+      }
+      if (business.imageUrls.length === 0 && business.imageUrl) {
+        business.imageUrls = [business.imageUrl];
+      }
+      if (business.imageUrls.length > 0) business.imageUrl = business.imageUrls[0];
+    }
     return res.json({ businesses });
   } catch (error) {
     return next(error);
@@ -596,6 +676,25 @@ app.delete('/api/merchant/businesses/:id', requireAuth, async (req, res, next) =
   }
 });
 
+app.put('/api/merchant/businesses/:id/status', requireAuth, async (req, res, next) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isSafeInteger(id) || typeof req.body.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'Invalid business status.' });
+  }
+  try {
+    const [result] = await pool.execute(
+      'UPDATE merchant_businesses SET enabled = ? WHERE id = ? AND merchant_id = ?',
+      [req.body.enabled ? 1 : 0, id, req.auth.sub],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Business not found.' });
+    }
+    return res.json({ message: req.body.enabled ? 'Business enabled.' : 'Business disabled.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   const text = (value, max = 255) =>
     typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -606,30 +705,124 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   const facilityType = text(req.body.facilityType, 50);
   const pricePerHour = Number(req.body.pricePerHour);
   const hours = text(req.body.hours, 100);
-  const availability = text(req.body.availability, 50);
+  const availability = text(req.body.availability, 255);
+  const ratePeriods = Array.isArray(req.body.ratePeriods)
+    ? req.body.ratePeriods
+        .filter(
+          (item) =>
+            item &&
+            typeof item === 'object' &&
+            typeof item.start === 'string' &&
+            typeof item.end === 'string' &&
+            Number.isFinite(Number(item.pricePerHour)) &&
+            Number(item.pricePerHour) > 0,
+        )
+        .slice(0, 20)
+        .map((item) => ({
+          start: text(item.start, 20),
+          end: text(item.end, 20),
+          pricePerHour: Number(item.pricePerHour),
+        }))
+    : [];
   const amenities = Array.isArray(req.body.tags)
     ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
     : [];
   const details = text(req.body.details, 1000);
   const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024);
+  const imageUrls = Array.isArray(req.body.imageUrls)
+    ? req.body.imageUrls.filter((item) => typeof item === 'string').slice(0, 20)
+    : imageUrl ? [imageUrl] : [];
+  const primaryImageUrl = imageUrl || imageUrls[0] || '';
   const allowedBusinessTypes = new Set([
     'Sports',
     'Event',
     'Fitness & Wellness',
   ]);
-  if (
-    !allowedBusinessTypes.has(businessType) ||
-    !name ||
-    !category ||
-    !address ||
-    !facilityType ||
-    !hours ||
-    !Number.isFinite(pricePerHour) ||
-    pricePerHour <= 0
-  ) {
+  const validationErrors = [];
+  if (!allowedBusinessTypes.has(businessType)) {
+    validationErrors.push('booking type');
+  }
+  if (!name) validationErrors.push('business name');
+  if (!category) validationErrors.push('category');
+  if (!address) validationErrors.push('address');
+  if (!facilityType) validationErrors.push('facility type');
+  if (!hours) validationErrors.push('opening and closing hours');
+  if (!Number.isFinite(pricePerHour) ||
+      (pricePerHour <= 0 && ratePeriods.length === 0)) {
+    validationErrors.push(
+      ratePeriods.length > 0 ? 'rate periods' : 'price per hour',
+    );
+  }
+  if (validationErrors.length > 0) {
     return res.status(400).json({
-      error:
-        'Booking type, business name, category, address, and facility type are required.',
+      error: `Please check: ${validationErrors.join(', ')}.`,
+      validationErrors,
+    });
+
+    app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id)) return res.status(400).json({ error: 'Invalid business id.' });
+      const text = (value, max = 255) =>
+        typeof value === 'string' ? value.trim().slice(0, max) : '';
+      const businessType = text(req.body.businessType, 50);
+      const name = text(req.body.name);
+      const category = text(req.body.category, 100);
+      const address = text(req.body.address, 500);
+      const facilityType = text(req.body.facilityType, 50);
+      const pricePerHour = Number(req.body.pricePerHour);
+      const hours = text(req.body.hours, 100);
+      const availability = text(req.body.availability, 255);
+      const ratePeriods = Array.isArray(req.body.ratePeriods)
+        ? req.body.ratePeriods.filter((item) =>
+            item && typeof item === 'object' && typeof item.start === 'string' &&
+            typeof item.end === 'string' && Number.isFinite(Number(item.pricePerHour)) &&
+            Number(item.pricePerHour) > 0).slice(0, 20).map((item) => ({
+              start: text(item.start, 20), end: text(item.end, 20),
+              pricePerHour: Number(item.pricePerHour),
+            }))
+        : [];
+      const amenities = Array.isArray(req.body.tags)
+        ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
+        : [];
+      const details = text(req.body.details, 1000);
+      const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024);
+      const imageUrls = Array.isArray(req.body.imageUrls)
+        ? req.body.imageUrls
+            .filter((item) => typeof item === 'string')
+            .slice(0, 20)
+        : imageUrl ? [imageUrl] : [];
+      const primaryImageUrl = imageUrl || imageUrls[0] || '';
+      const validTypes = new Set(['Sports', 'Event', 'Fitness & Wellness']);
+      const validationErrors = [];
+      if (!validTypes.has(businessType)) validationErrors.push('booking type');
+      if (!name) validationErrors.push('business name');
+      if (!category) validationErrors.push('category');
+      if (!address) validationErrors.push('address');
+      if (!facilityType) validationErrors.push('facility type');
+      if (!hours) validationErrors.push('opening and closing hours');
+      if (!Number.isFinite(pricePerHour) || (pricePerHour <= 0 && ratePeriods.length === 0)) {
+        validationErrors.push(ratePeriods.length > 0 ? 'rate periods' : 'price per hour');
+      }
+      if (validationErrors.length > 0) {
+        return res.status(400).json({ error: `Please check: ${validationErrors.join(', ')}.`, validationErrors });
+      }
+      try {
+        const [result] = await pool.execute(
+          `UPDATE merchant_businesses
+           SET business_type = ?, name = ?, category = ?, address = ?, facility_type = ?,
+               price_per_hour = ?, opening_hours = ?, availability = ?, rate_periods = ?,
+               amenities_json = ?, details = ?, image_url = ?, image_urls = ?
+           WHERE id = ? AND merchant_id = ?`,
+          [businessType, name, category, address, facilityType, pricePerHour, hours,
+           availability || 'Any', ratePeriods.length ? JSON.stringify(ratePeriods) : null,
+           JSON.stringify(amenities), details || null, primaryImageUrl || null,
+           JSON.stringify(imageUrls), id, req.auth.sub],
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Business not found.' });
+        return res.json({ message: 'Business updated.' });
+      } catch (error) {
+        return next(error);
+      }
     });
   }
   try {
@@ -643,9 +836,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
     await pool.execute(
       `INSERT INTO merchant_businesses
        (merchant_id, business_type, name, category, address, facility_type,
-        price_per_hour, opening_hours, availability, amenities_json,
-        details, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        price_per_hour, opening_hours, availability, rate_periods,
+        amenities_json, details, image_url, image_urls)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         req.auth.sub,
         businessType,
@@ -656,9 +849,11 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         pricePerHour,
         hours,
         availability || 'Any',
+        ratePeriods.length > 0 ? JSON.stringify(ratePeriods) : null,
         JSON.stringify(amenities),
         details || null,
-        imageUrl || null,
+        primaryImageUrl || null,
+        JSON.stringify(imageUrls),
       ],
     );
     return res.status(201).json({ message: 'Business added.' });
@@ -877,6 +1072,11 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'The selected images are too large. Choose fewer or smaller images.',
+    });
+  }
   if (
     error.code === 'EAUTH' ||
     error.code === 'ESOCKET' ||
@@ -903,10 +1103,13 @@ async function ensureMerchantBusinessesSchema() {
       facility_type VARCHAR(50) NOT NULL,
       price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
       opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours',
-      availability VARCHAR(50) NOT NULL DEFAULT 'Any',
+      availability VARCHAR(255) NOT NULL DEFAULT 'Any',
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      rate_periods JSON NULL,
       amenities_json JSON NULL,
       details VARCHAR(1000) NULL,
       image_url LONGTEXT NULL,
+      image_urls JSON NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_merchant_businesses_merchant (merchant_id, created_at),
@@ -920,8 +1123,10 @@ async function ensureMerchantBusinessesSchema() {
   const columns = [
     ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
     ['opening_hours', "VARCHAR(100) NOT NULL DEFAULT 'Open hours'"],
-    ['availability', "VARCHAR(50) NOT NULL DEFAULT 'Any'"],
+    ['rate_periods', 'JSON NULL'],
     ['amenities_json', 'JSON NULL'],
+    ['image_urls', 'JSON NULL'],
+    ['enabled', 'TINYINT(1) NOT NULL DEFAULT 1'],
   ];
 
   for (const [name, definition] of columns) {
@@ -933,6 +1138,66 @@ async function ensureMerchantBusinessesSchema() {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
     }
   }
+  await pool.execute(
+    "ALTER TABLE merchant_businesses MODIFY COLUMN availability VARCHAR(255) NOT NULL DEFAULT 'Any'",
+  );
+  try {
+    await pool.execute(
+      'ALTER TABLE merchant_businesses ADD INDEX idx_merchant_businesses_type_enabled (business_type, enabled)',
+    );
+  } catch (error) {
+    if (error.code !== 'ER_DUP_KEYNAME') throw error;
+  }
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS sports_business_details (
+      business_id BIGINT UNSIGNED NOT NULL,
+      player_capacity INT UNSIGNED NULL,
+      court_type VARCHAR(100) NULL,
+      equipment TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (business_id),
+      CONSTRAINT fk_sports_business_details_business
+        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS event_business_details (
+      business_id BIGINT UNSIGNED NOT NULL,
+      event_name VARCHAR(255) NULL,
+      event_type VARCHAR(100) NULL,
+      event_date DATE NULL,
+      start_time TIME NULL,
+      end_time TIME NULL,
+      setup_hours DECIMAL(5, 2) NULL,
+      teardown_hours DECIMAL(5, 2) NULL,
+      estimated_attendance INT UNSIGNED NULL,
+      accessibility_needs TEXT NULL,
+      parking_security TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (business_id),
+      CONSTRAINT fk_event_business_details_business
+        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS fitness_business_details (
+      business_id BIGINT UNSIGNED NOT NULL,
+      class_capacity INT UNSIGNED NULL,
+      session_duration_minutes INT UNSIGNED NULL,
+      instructor_name VARCHAR(255) NULL,
+      class_schedule TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (business_id),
+      CONSTRAINT fk_fitness_business_details_business
+        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
 }
 
 ensureMerchantBusinessesSchema()

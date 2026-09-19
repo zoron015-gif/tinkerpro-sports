@@ -83,12 +83,15 @@ CREATE TABLE IF NOT EXISTS merchant_businesses (
   price_per_hour DECIMAL(10, 2) NOT NULL,
   opening_hours VARCHAR(100) NOT NULL,
   availability VARCHAR(50) NOT NULL DEFAULT 'Any',
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
   amenities_json JSON NULL,
   details VARCHAR(1000) NULL,
   image_url LONGTEXT NULL,
+  image_urls JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_merchant_businesses_merchant (merchant_id, created_at),
+  KEY idx_merchant_businesses_type_enabled (business_type, enabled),
   CONSTRAINT fk_merchant_businesses_user
     FOREIGN KEY (merchant_id) REFERENCES users (id)
     ON UPDATE CASCADE
@@ -100,12 +103,67 @@ ALTER TABLE merchant_businesses
   AFTER facility_type;
 
 ALTER TABLE merchant_businesses
+  ADD COLUMN IF NOT EXISTS image_urls JSON NULL
+  AFTER image_url;
+
+ALTER TABLE merchant_businesses
+  ADD COLUMN IF NOT EXISTS enabled TINYINT(1) NOT NULL DEFAULT 1
+  AFTER availability;
+
+ALTER TABLE merchant_businesses
   ADD COLUMN IF NOT EXISTS opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours'
   AFTER price_per_hour,
   ADD COLUMN IF NOT EXISTS availability VARCHAR(50) NOT NULL DEFAULT 'Any'
   AFTER opening_hours,
   ADD COLUMN IF NOT EXISTS amenities_json JSON NULL
   AFTER availability;
+
+CREATE TABLE IF NOT EXISTS sports_business_details (
+  business_id BIGINT UNSIGNED NOT NULL,
+  player_capacity INT UNSIGNED NULL,
+  court_type VARCHAR(100) NULL,
+  equipment TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id),
+  CONSTRAINT fk_sports_business_details_business
+    FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS event_business_details (
+  business_id BIGINT UNSIGNED NOT NULL,
+  event_name VARCHAR(255) NULL,
+  event_type VARCHAR(100) NULL,
+  event_date DATE NULL,
+  start_time TIME NULL,
+  end_time TIME NULL,
+  setup_hours DECIMAL(5, 2) NULL,
+  teardown_hours DECIMAL(5, 2) NULL,
+  estimated_attendance INT UNSIGNED NULL,
+  accessibility_needs TEXT NULL,
+  parking_security TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id),
+  CONSTRAINT fk_event_business_details_business
+    FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS fitness_business_details (
+  business_id BIGINT UNSIGNED NOT NULL,
+  class_capacity INT UNSIGNED NULL,
+  session_duration_minutes INT UNSIGNED NULL,
+  instructor_name VARCHAR(255) NULL,
+  class_schedule TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id),
+  CONSTRAINT fk_fitness_business_details_business
+    FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
 
 CREATE TABLE email_verification_tokens (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
