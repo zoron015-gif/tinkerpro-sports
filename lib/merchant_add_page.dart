@@ -9,6 +9,7 @@ import 'auth_api.dart';
 const _addNavy = Color(0xFF192B50);
 const _addInk = Color(0xFF101B33);
 const _addOrange = Color(0xFFFF8200);
+const _addSoftOrange = Color(0xFFFFE8D2);
 const _addMuted = Color(0xFF68748A);
 const _addLine = Color(0xFFE2E7EF);
 
@@ -90,13 +91,12 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     final editing = editingBusiness != null;
     final name = TextEditingController();
     final address = TextEditingController();
+    final visitUrl = TextEditingController();
     final price = TextEditingController();
     final details = TextEditingController();
     final categoryOther = TextEditingController();
-    final eventName = TextEditingController();
+    final amenityOther = TextEditingController();
     final eventTypeOther = TextEditingController();
-    final eventDateTime = TextEditingController();
-    final eventSetupTeardown = TextEditingController();
     final eventAttendanceMin = TextEditingController();
     final eventAttendanceMax = TextEditingController();
     final accessibilityInput = TextEditingController();
@@ -123,7 +123,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         r'^(\d{1,2}):(\d{2})\s*(AM|PM)$',
         caseSensitive: false,
       ).firstMatch(text);
-      if (match == null) return null;
+      if (match == null) {
+        return null;
+      }
       var hour = int.parse(match.group(1)!);
       final minute = int.parse(match.group(2)!);
       if (match.group(3)!.toUpperCase() == 'PM' && hour != 12) hour += 12;
@@ -174,6 +176,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       'Restroom',
       'Shower',
       'Store',
+      'Other',
     ];
     final images = <String>[];
     final existingImages =
@@ -206,7 +209,15 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     }
     name.text = editingBusiness?['name'] as String? ?? '';
     address.text = editingBusiness?['address'] as String? ?? '';
-    price.text = '${editingBusiness?['pricePerHour'] ?? ''}';
+    visitUrl.text =
+        editingBusiness?['visitUrl'] as String? ??
+        editingBusiness?['visit_url'] as String? ??
+        '';
+    price.text =
+        '${editingBusiness?['eventFee'] ??
+        editingBusiness?['event_fee'] ??
+        editingBusiness?['pricePerHour'] ??
+        ''}';
     details.text = editingBusiness?['details'] as String? ?? '';
     String eventDetailValue(String label) {
       final match = RegExp(
@@ -217,7 +228,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     }
 
     if (editing && type == 'Event') {
-      eventName.text = eventDetailValue('Event name');
       eventTypes.addAll(
         eventDetailValue('Event types')
             .split(',')
@@ -242,8 +252,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
           ..add('Other');
         eventTypeOther.text = customEventType;
       }
-      eventDateTime.text = eventDetailValue('Date & time');
-      eventSetupTeardown.text = eventDetailValue('Setup and teardown');
       final attendance = eventDetailValue('Estimated attendance')
           .replaceAll('guests', '')
           .trim()
@@ -261,11 +269,8 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       parkingNeeds.addAll(parseNeeds('Parking needs'));
       securityNeeds.addAll(parseNeeds('Security needs'));
       const eventLabels = [
-        'Event name:',
         'Event type:',
         'Event types:',
-        'Date & time:',
-        'Setup and teardown:',
         'Estimated attendance:',
         'Accessibility needs:',
         'Parking needs:',
@@ -289,6 +294,15 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     }
     if (existingAmenities is List) {
       amenities.addAll(existingAmenities.whereType<String>());
+      final customAmenities = amenities
+          .where((value) => !amenityOptions.contains(value))
+          .toList();
+      if (customAmenities.isNotEmpty) {
+        amenities
+          ..removeAll(customAmenities)
+          ..add('Other');
+        amenityOther.text = customAmenities.join(', ');
+      }
     }
     dynamic rawPeriods =
         editingBusiness?['ratePeriods'] ?? editingBusiness?['rate_periods'];
@@ -311,6 +325,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         );
       }
     }
+    if (type == 'Event') ratePeriods.clear();
     String? validationMessage;
     var submitted = false;
     var panelOpen = true;
@@ -457,6 +472,12 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                     setDialogState(() {
                                       type = value;
                                       category = _categories[type]!.first;
+                                      if (type == 'Event') {
+                                        for (final period in ratePeriods) {
+                                          period.dispose();
+                                        }
+                                        ratePeriods.clear();
+                                      }
                                     });
                                   },
                                 ),
@@ -496,8 +517,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                       ),
                                   ],
                                   onChanged: (value) {
-                                    if (value != null)
+                                    if (value != null) {
                                       setDialogState(() => category = value);
+                                    }
                                   },
                                 ),
                                 if (category == 'Other')
@@ -521,13 +543,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                 if (type == 'Event') ...[
                                   const SizedBox(height: 12),
                                   _sectionLabel('EVENT BOOKING DETAILS'),
-                                  TextFormField(
-                                    controller: eventName,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Event name',
-                                      hintText: 'Official title of the event',
-                                    ),
-                                  ),
                                   const Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
@@ -544,8 +559,33 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                     children: [
                                       for (final option in eventTypeOptions)
                                         FilterChip(
-                                          label: Text(option),
+                                          label: Text(
+                                            option,
+                                            style: TextStyle(
+                                              color: eventTypes.contains(option)
+                                                  ? _addOrange
+                                                  : _addInk,
+                                              fontWeight:
+                                                  eventTypes.contains(option)
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
+                                            ),
+                                          ),
                                           selected: eventTypes.contains(option),
+                                          showCheckmark: false,
+                                          selectedColor: _addSoftOrange,
+                                          backgroundColor: Colors.white,
+                                          shape: const StadiumBorder(),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          checkmarkColor: _addOrange,
+                                          side: BorderSide(
+                                            color: eventTypes.contains(option)
+                                                ? _addOrange
+                                                : _addLine,
+                                          ),
                                           onSelected: (selected) =>
                                               setDialogState(() {
                                                 if (selected) {
@@ -568,22 +608,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                         hintText: 'Enter another event type',
                                       ),
                                     ),
-                                  TextFormField(
-                                    controller: eventDateTime,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Date & time',
-                                      hintText:
-                                          'Event date, start time, and end time',
-                                    ),
-                                  ),
-                                  TextFormField(
-                                    controller: eventSetupTeardown,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Setup and teardown hours (optional)',
-                                      hintText:
-                                          'Example: 2 hours setup, 1 hour teardown',
-                                    ),
-                                  ),
                                   Row(
                                     children: [
                                       Expanded(
@@ -675,99 +699,168 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                       : null,
                                 ),
                                 TextFormField(
+                                    controller: visitUrl,
+                                    keyboardType: TextInputType.url,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Visit link (optional)',
+                                      hintText: 'https://example.com',
+                                      helperText: 'Customers open this link from Visit.',
+                                    ),
+                                    validator: (value) {
+                                      final text = value?.trim() ?? '';
+                                      if (text.isEmpty) return null;
+                                      final uri = Uri.tryParse(text);
+                                      if (uri == null ||
+                                          !uri.hasScheme ||
+                                          (uri.scheme != 'http' &&
+                                              uri.scheme != 'https') ||
+                                          uri.host.isEmpty) {
+                                        return 'Enter a valid http:// or https:// link';
+                                      }
+                                      return null;
+                                    },
+                                ),
+                                TextFormField(
                                   controller: price,
-                                  enabled: ratePeriods.isEmpty,
+                                  enabled: type == 'Event' || ratePeriods.isEmpty,
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
                                         decimal: true,
                                       ),
                                   decoration: InputDecoration(
                                     labelText: type == 'Event'
-                                        ? 'Event package price'
+                                        ? 'Fee per event booking'
                                         : type == 'Fitness & Wellness'
                                         ? 'Session price'
                                         : 'Booking price per hour',
                                     prefixText: '₱ ',
                                     hintText: type == 'Event'
-                                        ? '25000 (per event package)'
+                                        ? '25000 (one complete event)'
                                         : type == 'Fitness & Wellness'
                                         ? '500 (per session)'
                                         : '300.00 (base booking rate)',
                                   ),
                                   validator: (value) {
-                                    if (ratePeriods.isNotEmpty) return null;
+                                    if (type != 'Event' && ratePeriods.isNotEmpty) {
+                                      return null;
+                                    }
                                     final amount = double.tryParse(
                                       value?.trim() ?? '',
                                     );
                                     return amount == null || amount <= 0
-                                        ? 'Enter a price greater than 0'
+                                        ? type == 'Event'
+                                            ? 'Enter an event fee greater than ₱0'
+                                            : 'Enter a price greater than 0'
                                         : null;
                                   },
                                 ),
-                                const SizedBox(height: 12),
-                                _sectionLabel('OPTIONAL RATE PERIODS'),
-                                const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'Add different hourly prices for specific time ranges. '
-                                    'When used, the base price is disabled.',
-                                    style: TextStyle(
-                                      color: _addMuted,
-                                      fontSize: 12,
+                                if (type != 'Event') ...[
+                                  const SizedBox(height: 12),
+                                  _sectionLabel('OPTIONAL RATE PERIODS'),
+                                  const Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Add different hourly prices for specific time ranges. '
+                                      'When used, the base price is disabled.',
+                                      style: TextStyle(
+                                        color: _addMuted,
+                                        fontSize: 12,
+                                      ),
                                     ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  for (
+                                    var index = 0;
+                                    index < ratePeriods.length;
+                                    index++
+                                  )
+                                    _ratePeriodRow(
+                                      context: context,
+                                      period: ratePeriods[index],
+                                      onStartChanged: (value) => setDialogState(
+                                        () => ratePeriods[index].start = value,
+                                      ),
+                                      onEndChanged: (value) => setDialogState(
+                                        () => ratePeriods[index].end = value,
+                                      ),
+                                      onRemove: () {
+                                        final period = ratePeriods.removeAt(
+                                          index,
+                                        );
+                                        period.dispose();
+                                        setDialogState(() {});
+                                      },
+                                    ),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: () {
+                                        setDialogState(
+                                          () => ratePeriods.add(_RatePeriod()),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Add rate period'),
+                                    ),
+                                  ),
+                                ],
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.calendar_month_rounded,
+                                        color: _addNavy,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Availability / booking schedule',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                for (
-                                  var index = 0;
-                                  index < ratePeriods.length;
-                                  index++
-                                )
-                                  _ratePeriodRow(
-                                    context: context,
-                                    period: ratePeriods[index],
-                                    onStartChanged: (value) => setDialogState(
-                                      () => ratePeriods[index].start = value,
-                                    ),
-                                    onEndChanged: (value) => setDialogState(
-                                      () => ratePeriods[index].end = value,
-                                    ),
-                                    onRemove: () {
-                                      final period = ratePeriods.removeAt(
-                                        index,
-                                      );
-                                      period.dispose();
-                                      setDialogState(() {});
-                                    },
-                                  ),
                                 Align(
                                   alignment: Alignment.centerLeft,
-                                  child: TextButton.icon(
-                                    onPressed: () {
-                                      setDialogState(
-                                        () => ratePeriods.add(_RatePeriod()),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.add),
-                                    label: const Text('Add rate period'),
-                                  ),
-                                ),
-                                InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Availability / booking schedule',
-                                    prefixIcon: Icon(
-                                      Icons.calendar_month_rounded,
-                                    ),
-                                    alignLabelWithHint: true,
-                                  ),
                                   child: Wrap(
                                     spacing: 8,
                                     runSpacing: 8,
                                     children: [
                                       for (final day in _weekdays)
                                         FilterChip(
-                                          label: Text(day),
+                                          label: Text(
+                                            day,
+                                            style: TextStyle(
+                                              color: availableDays.contains(day)
+                                                  ? _addOrange
+                                                  : _addInk,
+                                              fontWeight:
+                                                  availableDays.contains(day)
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
+                                            ),
+                                          ),
                                           selected: availableDays.contains(day),
+                                          showCheckmark: false,
+                                          selectedColor: _addSoftOrange,
+                                          backgroundColor: Colors.white,
+                                          shape: const StadiumBorder(),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          checkmarkColor: _addOrange,
+                                          side: BorderSide(
+                                            color: availableDays.contains(day)
+                                                ? _addOrange
+                                                : _addLine,
+                                          ),
                                           onSelected: (selected) {
                                             setDialogState(() {
                                               if (selected) {
@@ -807,8 +900,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                   ],
                                   onChanged: (value) {
-                                    if (value != null)
+                                    if (value != null) {
                                       setDialogState(() => facility = value);
+                                    }
                                   },
                                 ),
                                 Align(
@@ -825,15 +919,27 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                         FilterChip(
                                           label: Text(
                                             amenity,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
+                                              color: amenities.contains(amenity)
+                                                  ? _addOrange
+                                                  : _addInk,
+                                              fontWeight:
+                                                  amenities.contains(amenity)
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
                                             ),
                                           ),
                                           selected: amenities.contains(amenity),
                                           showCheckmark: false,
-                                          selectedColor: const Color(
-                                            0xFFFFE8D2,
+                                          selectedColor: _addSoftOrange,
+                                          backgroundColor: Colors.white,
+                                          shape: const StadiumBorder(),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
                                           ),
+                                          checkmarkColor: _addOrange,
                                           side: BorderSide(
                                             color: amenities.contains(amenity)
                                                 ? _addOrange
@@ -845,6 +951,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                                 amenities.add(amenity);
                                               } else {
                                                 amenities.remove(amenity);
+                                                if (amenity == 'Other') {
+                                                  amenityOther.clear();
+                                                }
                                               }
                                             });
                                           },
@@ -852,6 +961,14 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                     ],
                                   ),
                                 ),
+                                if (amenities.contains('Other'))
+                                  TextField(
+                                    controller: amenityOther,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Other amenity',
+                                      hintText: 'Example: Water station',
+                                    ),
+                                  ),
                                 TextField(
                                   controller: details,
                                   maxLines: 2,
@@ -986,8 +1103,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                           ),
                           onPressed: () async {
                             setDialogState(() => validationMessage = null);
-                            if (!(formKey.currentState?.validate() ?? false))
+                            if (!(formKey.currentState?.validate() ?? false)) {
                               return;
+                            }
                             if (openingTime == null || closingTime == null) {
                               setDialogState(
                                 () => validationMessage =
@@ -995,20 +1113,22 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                               );
                               return;
                             }
-                            for (final period in ratePeriods) {
-                              final amount = double.tryParse(
-                                period.price.text.trim(),
-                              );
-                              if (period.start == null ||
-                                  period.end == null ||
-                                  amount == null ||
-                                  amount <= 0) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Complete each rate period with a start time, '
-                                      'end time, and a price greater than ₱0.',
+                            if (type != 'Event') {
+                              for (final period in ratePeriods) {
+                                final amount = double.tryParse(
+                                  period.price.text.trim(),
                                 );
-                                return;
+                                if (period.start == null ||
+                                    period.end == null ||
+                                    amount == null ||
+                                    amount <= 0) {
+                                  setDialogState(
+                                    () => validationMessage =
+                                        'Complete each rate period with a start time, '
+                                        'end time, and a price greater than ₱0.',
+                                  );
+                                  return;
+                                }
                               }
                             }
                             if (availableDays.isEmpty) {
@@ -1072,18 +1192,26 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                               final selectedCategory = category == 'Other'
                                   ? categoryOther.text.trim()
                                   : category;
+                              final selectedAmenities = amenities
+                                  .map(
+                                    (value) => value == 'Other'
+                                        ? amenityOther.text.trim()
+                                        : value,
+                                  )
+                                  .where((value) => value.isNotEmpty)
+                                  .toList();
+                              if (amenities.contains('Other') &&
+                                  amenityOther.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => validationMessage =
+                                      'Enter the other amenity before saving.',
+                                );
+                                return;
+                              }
                               final submittedDetails = type == 'Event'
                                   ? [
-                                      if (eventName.text.trim().isNotEmpty)
-                                        'Event name: ${eventName.text.trim()}',
                                       if (eventTypes.isNotEmpty)
                                         'Event types: ${selectedEventTypes.join(', ')}',
-                                      if (eventDateTime.text.trim().isNotEmpty)
-                                        'Date & time: ${eventDateTime.text.trim()}',
-                                      if (eventSetupTeardown.text
-                                          .trim()
-                                          .isNotEmpty)
-                                        'Setup and teardown: ${eventSetupTeardown.text.trim()}',
                                       if (eventAttendanceMin.text.trim().isNotEmpty ||
                                           eventAttendanceMax.text.trim().isNotEmpty)
                                         'Estimated attendance: ${eventAttendanceMin.text.trim().isEmpty ? '?' : eventAttendanceMin.text.trim()} - ${eventAttendanceMax.text.trim().isEmpty ? '?' : eventAttendanceMax.text.trim()} guests',
@@ -1110,7 +1238,13 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                 'name': name.text.trim(),
                                 'category': selectedCategory,
                                 'address': address.text.trim(),
-                                'pricePerHour': ratePeriods.isEmpty
+                                'visitUrl': visitUrl.text.trim(),
+                                'pricePerHour': type == 'Event'
+                                    ? double.parse(price.text.trim())
+                                    : ratePeriods.isEmpty
+                                    ? double.parse(price.text.trim())
+                                    : 0,
+                                'eventFee': type == 'Event'
                                     ? double.parse(price.text.trim())
                                     : 0,
                                 'ratePeriods': [
@@ -1127,7 +1261,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                 'availability': _weekdays
                                     .where(availableDays.contains)
                                     .join(', '),
-                                'tags': amenities.toList(),
+                                'tags': selectedAmenities,
                                 'facilityType': facility,
                                 'details': submittedDetails,
                                 'imageUrl': images.isEmpty
@@ -1203,13 +1337,12 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     await Future<void>.delayed(const Duration(milliseconds: 350));
     name.dispose();
     address.dispose();
+    visitUrl.dispose();
     price.dispose();
     details.dispose();
     categoryOther.dispose();
-    eventName.dispose();
+    amenityOther.dispose();
     eventTypeOther.dispose();
-    eventDateTime.dispose();
-    eventSetupTeardown.dispose();
     eventAttendanceMin.dispose();
     eventAttendanceMax.dispose();
     accessibilityInput.dispose();
@@ -1521,10 +1654,13 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     final ratePeriods = _businessRatePeriods(business);
     final details = business['details'] as String? ?? '';
     final priceText = _formatPrice(
-      business['pricePerHour'] ??
+      business['eventFee'] ??
+          business['event_fee'] ??
+          business['pricePerHour'] ??
           business['price_per_hour'] ??
           business['price'] ??
           business['hourlyRate'],
+      hourly: type != 'Event',
     );
     final tags = _businessTags(
       business['tags'] ?? business['amenities'] ?? business['amenities_json'],
@@ -1568,16 +1704,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 7),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 6,
-                  children: [
-                    _tag(Icons.event_available_rounded, type),
-                    if (category.isNotEmpty)
-                      _tag(Icons.category_outlined, category),
-                  ],
-                ),
                 if (address.isNotEmpty)
                   _detail(Icons.location_on_outlined, address),
                 if (facility.isNotEmpty)
@@ -1605,6 +1731,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                       : priceText.isEmpty
                       ? 'Price not set'
                       : priceText,
+                  label: type == 'Event' ? 'Event fee' : 'Price / hour',
                   hasRatePeriods: ratePeriods.isNotEmpty,
                 ),
                 const SizedBox(height: 8),
@@ -1688,12 +1815,15 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     bool enabled,
   ) async {
     final id = (business['id'] as num?)?.toInt();
-    if (id == null) return;
+    if (id == null) {
+      return;
+    }
     try {
       final session = await AppSession.load();
       final token = session.apiToken;
-      if (token == null || token.isEmpty)
+      if (token == null || token.isEmpty) {
         throw const AuthApiException('Your session has expired.', 401);
+      }
       await _api.setMerchantBusinessEnabled(
         token: token,
         id: id,
@@ -1754,13 +1884,13 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       }
   }
 
-  String _formatPrice(dynamic value) {
+  String _formatPrice(dynamic value, {bool hourly = true}) {
     final amount = value is num ? value.toDouble() : double.tryParse('$value');
     if (amount == null || amount <= 0) return '';
     final formatted = amount == amount.roundToDouble()
         ? amount.toStringAsFixed(0)
         : amount.toStringAsFixed(2);
-    return '₱$formatted / hr';
+    return hourly ? '₱$formatted / hr' : '₱$formatted';
   }
 
   List<Map<String, dynamic>> _businessRatePeriods(
@@ -1859,6 +1989,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
 
   Widget _priceBox(
     String price, {
+    String label = 'Price / hour',
     bool hasRatePeriods = false,
   }) => Container(
     width: double.infinity,
@@ -1872,7 +2003,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       children: [
         Expanded(
           child: Text(
-            hasRatePeriods ? 'Rate schedule' : 'Price / hour',
+            hasRatePeriods ? 'Rate schedule' : label,
             style: TextStyle(
               color: _addMuted,
               fontSize: 11,

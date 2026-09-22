@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
 
@@ -12,17 +13,24 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+import 'messages_dashboard.dart';
+import 'customer_bookings_page.dart';
 
 typedef EventVenue = ({
   String name,
   String type,
   String address,
+  String facility,
+  String hours,
+  String availability,
   String price,
   String details,
   String image,
+  List<String> images,
   List<String> tags,
   double latitude,
   double longitude,
+  String visitUrl,
 });
 
 const _eventNavy = Color(0xFF192B50);
@@ -48,7 +56,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
 
   String _area = 'All areas';
   String _type = 'All venues';
-  bool _filtersOpen = true;
+  final bool _filtersOpen = true;
   bool _locationLoading = false;
   Position? _position;
   final Set<String> _savedKeys = <String>{};
@@ -114,14 +122,25 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         () => _merchantVenues
           ..clear()
           ..addAll(
-            rows.where((b) => b['businessType'] == 'Event').map(_eventVenue),
+            rows
+                .where(
+                  (b) =>
+                      '${b['businessType'] ?? b['business_type'] ?? ''}'
+                          .trim()
+                          .toLowerCase() ==
+                      'event',
+                )
+                .map(_eventVenue),
           ),
       );
-    } on Exception {}
+    } on Exception {
+      // Ignore load failures and keep the dashboard empty until the next refresh.
+    }
   }
 
   EventVenue _eventVenue(Map<String, dynamic> b) {
     final details = b['details'] as String? ?? '';
+    final fee = _eventFee(b);
     final eventTypes = RegExp(
       r'^Event types:\s*(.*)$',
       multiLine: true,
@@ -132,47 +151,94 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           ? eventTypes!
           : b['category'] as String? ?? 'Event',
       address: b['address'] as String? ?? '',
-      price: 'PHP ' +
-          ((b['pricePerHour'] as num?)?.toStringAsFixed(0) ?? '0') +
-          ' / event',
+      facility:
+          b['facilityType']?.toString() ??
+          b['facility_type']?.toString() ??
+          'Event venue',
+      hours:
+          b['hours']?.toString() ??
+          b['opening_hours']?.toString() ??
+          'Open hours',
+      availability:
+          b['availability']?.toString() ??
+          b['availability_status']?.toString() ??
+          '',
+      price: 'PHP ${fee.toStringAsFixed(0)} / event',
       details: details.isNotEmpty
           ? details
           : b['facilityType'] as String? ?? 'Event venue',
       image: _merchantImage(b),
-      tags: (b['tags'] as List? ?? const []).whereType<String>().toList(),
+      images: _merchantImages(b),
+      tags: _eventTags(b['tags']),
       latitude: 10.3157,
       longitude: 123.8854,
+      visitUrl: '${b['visitUrl'] ?? b['visit_url'] ?? ''}',
     );
   }
 
+  List<String> _eventTags(dynamic rawTags) {
+    if (rawTags is List) {
+      return rawTags
+          .whereType<String>()
+          .where((tag) => tag.isNotEmpty)
+          .toList();
+    }
+    if (rawTags is String && rawTags.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawTags);
+        if (decoded is List) {
+          return decoded
+              .whereType<String>()
+              .where((tag) => tag.isNotEmpty)
+              .toList();
+        }
+      } on FormatException {
+        return <String>[];
+      }
+    }
+    return <String>[];
+  }
+
+  double _eventFee(Map<String, dynamic> business) {
+    final value =
+        business['eventFee'] ??
+        business['event_fee'] ??
+        business['pricePerHour'] ??
+        business['price_per_hour'];
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value'.replaceAll(',', '').trim()) ?? 0;
+  }
+
   String _merchantImage(Map<String, dynamic> business) {
+    return _merchantImages(business).first;
+  }
+
+  List<String> _merchantImages(Map<String, dynamic> business) {
+    final images = <String>[];
     final raw = business['imageUrls'] ?? business['image_urls'];
     if (raw is List && raw.whereType<String>().isNotEmpty) {
-      return raw.whereType<String>().first;
+      images.addAll(raw.whereType<String>().where((image) => image.isNotEmpty));
     }
-    if (raw is String && raw.isNotEmpty) {
+    if (images.isEmpty && raw is String && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is List && decoded.whereType<String>().isNotEmpty) {
-          return decoded.whereType<String>().first;
+          images.addAll(
+            decoded.whereType<String>().where((image) => image.isNotEmpty),
+          );
         }
       } on FormatException {
-        return raw;
+        images.add(raw);
       }
     }
-    final legacy = business['imageUrl'] as String?;
-    if (legacy != null && legacy.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(legacy);
-        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
-          return decoded.whereType<String>().first;
-        }
-      } on FormatException {
-        return legacy;
+    if (images.isEmpty) {
+      final legacy = business['imageUrl'] as String?;
+      if (legacy != null && legacy.isNotEmpty) {
+        images.add(legacy);
       }
-      return legacy;
     }
-    return 'assets/book-type/event.jpg';
+    if (images.isEmpty) images.add('assets/book-type/event.jpg');
+    return images;
   }
 
   ImageProvider _eventImageProvider(String image) {
@@ -275,59 +341,114 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        backgroundColor: Colors.white,
-        indicatorColor: _eventSoftOrange,
-        onDestinationSelected: (index) {
-          if (index == 0) return;
-          if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
-              ),
-            );
-            return;
-          }
-          if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(
-                  onLogout: widget.onLogout,
-                  itemType: 'event',
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            shadowColor: Colors.transparent,
+            indicatorColor: _eventSoftOrange,
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected
+                    ? const Color(0xFFFF8200)
+                    : const Color(0xFF68748A),
+                size: 24,
+              );
+            }),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                color: selected
+                    ? const Color(0xFF101B33)
+                    : const Color(0xFF68748A),
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              );
+            }),
+          ),
+        ),
+        child: NavigationBar(
+          height: 72,
+          elevation: 0,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: 0,
+          onDestinationSelected: (index) {
+            if (index == 0) return;
+            if (index == 4) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ProfileDashboardPage(onLogout: widget.onLogout),
                 ),
-              ),
-            );
-            return;
-          }
-          _message(switch (index) {
-            1 => 'Saved venues will appear here.',
-            2 => 'Booking history will appear here.',
-            _ => 'Profile will appear here.',
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on_rounded),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Saved',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: 'Bookings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
+              );
+              return;
+            }
+            if (index == 1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SavedDashboardPage(
+                    onLogout: widget.onLogout,
+                    itemType: 'event',
+                  ),
+                ),
+              );
+              return;
+            }
+            if (index == 2) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+              );
+              return;
+            }
+            if (index == 3) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CustomerBookingsPage(onLogout: widget.onLogout),
+                ),
+              );
+              return;
+            }
+            _message(switch (index) {
+              1 => 'Saved venues will appear here.',
+              2 => 'Messages will appear here.',
+              3 => 'Booking history will appear here.',
+              _ => 'Profile will appear here.',
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.location_on_outlined, size: 24),
+              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
+              label: 'Explore',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border_rounded, size: 24),
+              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
+              label: 'Saved',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.send_outlined, size: 24),
+              selectedIcon: Icon(Icons.send_rounded, size: 24),
+              label: 'Messages',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined, size: 22),
+              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
+              label: 'Bookings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded, size: 24),
+              selectedIcon: Icon(Icons.person_rounded, size: 24),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -403,15 +524,27 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                 wide ? 28 : 16,
                 28,
               ),
-              sliver: SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: wide ? 2 : 1,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: wide ? .77 : .78,
+              sliver: SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = wide ? 2 : 1;
+                    const spacing = 16.0;
+                    final itemWidth =
+                        (constraints.maxWidth - spacing * (columns - 1)) /
+                        columns;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: [
+                        for (final venue in venues)
+                          SizedBox(
+                            width: itemWidth,
+                            child: _venueCard(venue),
+                          ),
+                      ],
+                    );
+                  },
                 ),
-                itemCount: venues.length,
-                itemBuilder: (_, index) => _venueCard(venues[index]),
               ),
             ),
         ],
@@ -714,21 +847,30 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     clipBehavior: Clip.antiAlias,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 8,
+        AspectRatio(
+          aspectRatio: 16 / 10,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image(
-                image: _eventImageProvider(venue.image),
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, error, stackTrace) => Image.asset(
-                  'assets/book-type/event.jpg',
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+              GestureDetector(
+                onTap: () => _showEventGallery(venue.images),
+                child: PageView.builder(
+                  itemCount: venue.images.length > 1 ? 10000 : 1,
+                  itemBuilder: (_, index) => Image(
+                    image: _eventImageProvider(
+                      venue.images[index % venue.images.length],
+                    ),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Image.asset(
+                      'assets/book-type/event.jpg',
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -753,6 +895,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                         key: venue.name,
                         title: venue.name,
                         subtitle: 'Venue: ${venue.type}\n${venue.address}',
+                        imageUrl: venue.image,
                       ),
                       icon: Icon(
                         _savedKeys.contains(venue.name)
@@ -764,114 +907,130 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                   ],
                 ),
               ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      '♧ 3',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
+              if (venue.images.length > 1)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        '${venue.images.length} photos',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
-        Expanded(
-          flex: 12,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(13, 11, 13, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  venue.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _eventInk,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+                  Text(
+                    venue.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _eventInk,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                _detail(Icons.location_on_outlined, venue.address),
-                _detail(Icons.celebration_outlined, 'Type: ${venue.type}'),
-                _detail(Icons.groups_outlined, venue.details),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFAFBFD),
-                    border: Border.all(color: _eventLine),
-                    borderRadius: BorderRadius.circular(9),
+                  const SizedBox(height: 6),
+                  _detail(Icons.location_on_outlined, venue.address),
+                  _detail(Icons.celebration_outlined, 'Type: ${venue.type}'),
+                  _detail(
+                    Icons.business_outlined,
+                    'Facility: ${venue.facility}',
                   ),
-                  child: Row(
+                  _detail(Icons.access_time, 'Hours: ${venue.hours}'),
+                  if (venue.availability.isNotEmpty)
+                    _detail(
+                      Icons.check_circle_outline,
+                      'Availability: ${venue.availability}',
+                    ),
+                  for (final line in _eventDetailLines(venue.details))
+                    _detail(Icons.info_outline, line),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAFBFD),
+                      border: Border.all(color: _eventLine),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Event package',
+                            style: TextStyle(color: _eventMuted, fontSize: 11),
+                          ),
+                        ),
+                        Text(
+                          venue.price,
+                          style: const TextStyle(
+                            color: _eventInk,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (venue.tags.isNotEmpty)
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 4,
+                      children: [for (final tag in venue.tags) _tag(tag)],
+                    ),
+                  Row(
                     children: [
-                      const Expanded(
-                        child: Text(
-                          'Event package',
-                          style: TextStyle(color: _eventMuted, fontSize: 11),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openVisit(venue.visitUrl, venue.name),
+                          icon: const Icon(Icons.language, size: 15),
+                          label: const Text('Visit'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _eventNavy,
+                            side: const BorderSide(color: _eventNavy),
+                            minimumSize: const Size(0, 36),
+                          ),
                         ),
                       ),
-                      Text(
-                        venue.price,
-                        style: const TextStyle(
-                          color: _eventInk,
-                          fontWeight: FontWeight.w900,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => _message(
+                            'Booking ${venue.name} is ready. Fee: ${venue.price}.',
+                          ),
+                          icon: const Icon(Icons.calendar_month, size: 15),
+                          label: const Text('Book now'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _eventOrange,
+                            minimumSize: const Size(0, 36),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                if (venue.tags.isNotEmpty)
-                  Wrap(
-                    spacing: 5,
-                    runSpacing: 4,
-                    children: [for (final tag in venue.tags) _tag(tag)],
-                  ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _message('Viewing ${venue.name}.'),
-                        icon: const Icon(Icons.language, size: 15),
-                        label: const Text('Visit'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _eventNavy,
-                          side: const BorderSide(color: _eventNavy),
-                          minimumSize: const Size(0, 36),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () =>
-                            _message('Booking ${venue.name} is ready.'),
-                        icon: const Icon(Icons.calendar_month, size: 15),
-                        label: const Text('Book now'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _eventOrange,
-                          minimumSize: const Size(0, 36),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ),
       ],
     ),
   );
@@ -880,6 +1039,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     required String key,
     required String title,
     required String subtitle,
+    String? imageUrl,
   }) async {
     try {
       if (_savedKeys.contains(key)) {
@@ -895,6 +1055,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           key: key,
           title: title,
           subtitle: subtitle,
+          imageUrl: imageUrl,
         );
         setState(() {
           _savedKeys.add(key);
@@ -905,6 +1066,96 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     } on Exception catch (error) {
       _message('Could not update Saved: $error');
     }
+  }
+
+  Future<void> _showEventGallery(List<String> images) async {
+    if (images.isEmpty) return;
+    var index = 0;
+    final controller = PageController(
+      initialPage: images.length > 1 ? images.length * 1000 : 0,
+    );
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                height: MediaQuery.sizeOf(dialogContext).height * .78,
+                child: PageView.builder(
+                  controller: controller,
+                  itemCount: images.length > 1 ? 10000 : 1,
+                  onPageChanged: (page) =>
+                      setDialogState(() => index = page % images.length),
+                  itemBuilder: (_, page) => InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 3,
+                    child: Image(
+                      image: _eventImageProvider(images[page % images.length]),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton.filled(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Positioned(
+                bottom: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .65),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      '${index + 1} of ${images.length}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              if (images.length > 1) ...[
+                Positioned(
+                  left: 8,
+                  child: IconButton.filled(
+                    onPressed: () => controller.previousPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  child: IconButton.filled(
+                    onPressed: () => controller.nextPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
   }
 
   Widget _saveCount(int count) => DecoratedBox(
@@ -971,6 +1222,12 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     ),
   );
 
+  List<String> _eventDetailLines(String details) => details
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty && !line.startsWith('Event types:'))
+      .toList();
+
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 7),
     child: Text(
@@ -1018,10 +1275,18 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     children: [
       for (final value in values)
         FilterChip(
-          label: Text(value, style: const TextStyle(fontSize: 10)),
+          label: Text(
+            value,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected == value ? _eventOrange : _eventInk,
+              fontWeight: selected == value ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
           selected: selected == value,
           showCheckmark: false,
           selectedColor: _eventSoftOrange,
+          checkmarkColor: _eventOrange,
           side: BorderSide(
             color: selected == value ? _eventOrange : _eventLine,
           ),
@@ -1068,6 +1333,20 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
 
   void _message(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _openVisit(String rawUrl, String name) async {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      _message('$name does not have a visit link yet.');
+      return;
+    }
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _message('Could not open the visit link for $name.');
+    }
+  }
 
   void _openMap() {
     final center = _position == null

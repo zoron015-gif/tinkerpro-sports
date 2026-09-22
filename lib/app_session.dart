@@ -44,10 +44,7 @@ class AppSession {
       _preferences.getString(_merchantProfileEmailKey) == email.toLowerCase();
 
   Future<void> markMerchantProfileCompleted(String email) async {
-    await _preferences.setString(
-      _merchantProfileEmailKey,
-      email.toLowerCase(),
-    );
+    await _preferences.setString(_merchantProfileEmailKey, email.toLowerCase());
   }
 
   Future<void> setLastBookingType(String type) async {
@@ -60,5 +57,6 @@ class AppSession {
     await _preferences.remove(_apiTokenKey);
     await _preferences.remove(_roleKey);
     await _preferences.remove(_accountEmailKey);
+    await _preferences.remove(_merchantProfileEmailKey);
   }
 }

@@ -5,6 +5,7 @@ import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
@@ -36,15 +37,104 @@ class MyApp extends StatelessWidget {
       title: 'TinkerPro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _orange),
+        colorScheme: const ColorScheme.light(
+          primary: _navy,
+          onPrimary: Colors.white,
+          secondary: _orange,
+          onSecondary: Colors.white,
+          surface: Colors.white,
+          onSurface: _ink,
+          error: Color(0xFFB42318),
+          onError: Colors.white,
+        ),
         scaffoldBackgroundColor: _page,
         useMaterial3: true,
         textTheme: GoogleFonts.montserratTextTheme(),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _page,
+          foregroundColor: _ink,
+          elevation: 0,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: _ink,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 1,
+          shadowColor: Color(0x1A192B50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: Color(0xFFE2E7EF)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: Color(0xFFE2E7EF)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: _navy, width: 1.4),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: Color(0xFFB42318)),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: Color(0xFFB42318), width: 1.4),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: _orange,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 46),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _navy,
+            side: const BorderSide(color: _navy),
+            minimumSize: const Size(0, 46),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        navigationBarTheme: const NavigationBarThemeData(
+          backgroundColor: Colors.white,
+          indicatorColor: Color(0xFFFFE8D2),
+          labelTextStyle: WidgetStatePropertyAll(
+            TextStyle(color: _ink, fontWeight: FontWeight.w600),
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFFE2E7EF),
+          thickness: 1,
+        ),
       ),
       home: const OverviewPage(),
     );
   }
-
 }
 
 class OverviewPage extends StatelessWidget {
@@ -67,9 +157,9 @@ class OverviewPage extends StatelessWidget {
       return;
     }
 
-    final authenticated = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const AuthDashboardPage()),
-    );
+    final authenticated = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const AuthDashboardPage()));
     if (!context.mounted || authenticated != true) return;
     final navigator = Navigator.of(context);
     final authenticatedSession = await AppSession.load();
@@ -86,13 +176,17 @@ class OverviewPage extends StatelessWidget {
   }
 
   Future<void> _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    final session = await AppSession.load();
-    await session.clear();
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
+    final navigator = Navigator.of(context);
+    navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const OverviewPage()),
       (_) => false,
+    );
+    unawaited(
+      Future.wait<void>([
+        FirebaseAuth.instance.signOut(),
+        GoogleSignIn.instance.signOut(),
+        AppSession.load().then((session) => session.clear()),
+      ]).then<void>((_) {}, onError: (_, _) {}),
     );
   }
 
@@ -114,16 +208,18 @@ class OverviewPage extends StatelessWidget {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
+            SliverToBoxAdapter(child: const _Header()),
             SliverToBoxAdapter(
-              child: const _Header(),
+              child: _Hero(onExplore: () => _openBookings(context)),
             ),
             SliverToBoxAdapter(
-              child: _Hero(
+              child: _OverviewCategories(
                 onExplore: () => _openBookings(context),
               ),
             ),
             SliverToBoxAdapter(child: _HowItWorks()),
             SliverToBoxAdapter(child: _Features()),
+            SliverToBoxAdapter(child: _OverviewTrustSection()),
             SliverToBoxAdapter(
               child: _BottomCallout(
                 onTap: () =>
@@ -779,6 +875,119 @@ class _Hero extends StatelessWidget {
   }
 }
 
+class _OverviewCategories extends StatelessWidget {
+  const _OverviewCategories({required this.onExplore});
+
+  final VoidCallback onExplore;
+
+  @override
+  Widget build(BuildContext context) {
+    const categories = [
+      (
+        Icons.sports_tennis_rounded,
+        'Sports',
+        'Find courts, fields, facilities, and open schedules.',
+        Color(0xFFFFF1E4),
+      ),
+      (
+        Icons.celebration_rounded,
+        'Events',
+        'Discover spaces for gatherings, celebrations, and occasions.',
+        Color(0xFFEFF2F7),
+      ),
+      (
+        Icons.fitness_center_rounded,
+        'Fitness & Wellness',
+        'Explore classes, sessions, gyms, and wellness activities.',
+        Color(0xFFE8F5F0),
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Find the right place for your plan',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 23,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Browse real merchant listings with details, availability, photos, and pricing before you decide.',
+            style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          ...categories.map(
+            (category) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                onTap: onExplore,
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(17),
+                    border: Border.all(color: const Color(0xFFE7EBF2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: category.$4,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(category.$1, color: _navy, size: 25),
+                      ),
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              category.$2,
+                              style: const TextStyle(
+                                color: _ink,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              category.$3,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 12,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: _muted,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class SportsSelectionPage extends StatefulWidget {
   const SportsSelectionPage({super.key});
 
@@ -978,8 +1187,8 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                   child: Text(
                     _selectedBooking == null
                         ? (_showEvents
-                            ? 'Select an event to continue'
-                            : 'Select a sport to continue')
+                              ? 'Select an event to continue'
+                              : 'Select a sport to continue')
                         : 'Find $_selectedBooking',
                   ),
                 ),
@@ -1484,6 +1693,87 @@ class _Features extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _OverviewTrustSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _navy,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: _TrustItem(
+              icon: Icons.verified_rounded,
+              title: 'Clear details',
+              text: 'See what each venue offers.',
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: _TrustItem(
+              icon: Icons.favorite_rounded,
+              title: 'Save favorites',
+              text: 'Keep places ready to book.',
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: _TrustItem(
+              icon: Icons.storefront_rounded,
+              title: 'Local options',
+              text: 'Support real businesses.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrustItem extends StatelessWidget {
+  const _TrustItem({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: _orange, size: 22),
+        const SizedBox(height: 9),
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          text,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: .68),
+            fontSize: 10,
+            height: 1.3,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -165,6 +165,30 @@ CREATE TABLE IF NOT EXISTS fitness_business_details (
     ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS bookings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  venue_id BIGINT UNSIGNED NOT NULL,
+  booking_date DATE NOT NULL,
+  start_time TIME NOT NULL,
+  duration_hours DECIMAL(5, 2) NOT NULL,
+  players INT UNSIGNED NOT NULL,
+  payment_method VARCHAR(50) NOT NULL,
+  price_per_hour DECIMAL(10, 2) NOT NULL,
+  total_amount DECIMAL(10, 2) NOT NULL,
+  downpayment_amount DECIMAL(10, 2) NOT NULL,
+  status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_bookings_customer (customer_id, booking_date, start_time),
+  KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
+  CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE email_verification_tokens (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -235,4 +259,45 @@ CREATE TABLE saved_items (
     FOREIGN KEY (user_id) REFERENCES users (id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE conversations (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  type ENUM('direct', 'group') NOT NULL DEFAULT 'direct',
+  title VARCHAR(120) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_conversations_created (created_at),
+  CONSTRAINT fk_conversations_creator FOREIGN KEY (created_by) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE conversation_members (
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (conversation_id, user_id),
+  KEY idx_conversation_members_user (user_id),
+  CONSTRAINT fk_conversation_members_conversation FOREIGN KEY (conversation_id)
+    REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_conversation_members_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  sender_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NULL,
+  attachment_json LONGTEXT NULL,
+  read_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_messages_conversation_created (conversation_id, created_at),
+  KEY idx_messages_unread (conversation_id, read_at),
+  CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id)
+    REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;

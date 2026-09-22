@@ -151,17 +151,17 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
             builder: (_) => EmailVerificationPage(email: email, api: _api),
           ),
         );
-        if (mounted) {
-          final token = verificationResult?['token'] as String?;
-          final session = await AppSession.load();
-          await session.setAccountEmail(email);
-          if (token != null) await session.setApiToken(token);
-          final user = verificationResult?['user'] as Map<String, dynamic>?;
-          final role = user?['role'] as String?;
-          if (role != null) await session.setRole(role);
-          await session.markAuthenticated();
-          Navigator.of(context).pop(true);
-        }
+        if (!mounted) return;
+        final token = verificationResult?['token'] as String?;
+        final session = await AppSession.load();
+        await session.setAccountEmail(email);
+        if (token != null) await session.setApiToken(token);
+        final user = verificationResult?['user'] as Map<String, dynamic>?;
+        final role = user?['role'] as String?;
+        if (role != null) await session.setRole(role);
+        await session.markAuthenticated();
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
       } else {
         final user = response['user'] as Map<String, dynamic>?;
         if (user != null) {
@@ -172,6 +172,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
           final role = user['role'] as String?;
           if (role != null) await session.setRole(role);
           await session.markAuthenticated();
+          if (!mounted) return;
           Navigator.of(context).pop(true);
         }
       }
@@ -236,18 +237,18 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               : 'customer',
         );
       }
-      if (mounted) {
-        final user = apiResult['user'] as Map<String, dynamic>?;
-        if (user != null) {
-          final session = await AppSession.load();
-          await session.setAccountEmail(firebaseUser.email ?? '');
-          final token = apiResult['token'] as String?;
-          if (token != null) await session.setApiToken(token);
-          final role = user['role'] as String?;
-          if (role != null) await session.setRole(role);
-          await session.markAuthenticated();
-          Navigator.of(context).pop(true);
-        }
+      if (!mounted) return;
+      final user = apiResult['user'] as Map<String, dynamic>?;
+      if (user != null) {
+        final session = await AppSession.load();
+        await session.setAccountEmail(firebaseUser.email ?? '');
+        final token = apiResult['token'] as String?;
+        if (token != null) await session.setApiToken(token);
+        final role = user['role'] as String?;
+        if (role != null) await session.setRole(role);
+        await session.markAuthenticated();
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
       }
     } on FirebaseAuthException catch (error) {
       if (mounted) _showMessage(error.message ?? 'Google sign-in failed.');
@@ -266,28 +267,26 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Choose your TinkerPro account type'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RadioListTile<_AccountRole>(
-                value: _AccountRole.customer,
-                groupValue: selectedRole,
-                title: const Text('Customer'),
-                subtitle: const Text('Discover and book experiences'),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => selectedRole = value);
-                },
-              ),
-              RadioListTile<_AccountRole>(
-                value: _AccountRole.merchant,
-                groupValue: selectedRole,
-                title: const Text('Merchant'),
-                subtitle: const Text('List and manage your business'),
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => selectedRole = value);
-                },
-              ),
-            ],
+          content: RadioGroup<_AccountRole>(
+            groupValue: selectedRole,
+            onChanged: (value) {
+              if (value != null) setDialogState(() => selectedRole = value);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const RadioListTile<_AccountRole>(
+                  value: _AccountRole.customer,
+                  title: Text('Customer'),
+                  subtitle: Text('Discover and book experiences'),
+                ),
+                const RadioListTile<_AccountRole>(
+                  value: _AccountRole.merchant,
+                  title: Text('Merchant'),
+                  subtitle: Text('List and manage your business'),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

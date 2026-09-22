@@ -57,6 +57,17 @@ function hashVerificationCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex');
 }
 
+function publicMessageUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    avatarUrl: user.avatar_url || null,
+    role: user.role,
+  };
+}
+
 function requireAuth(req, res, next) {
   const header = req.get('authorization') || '';
   const [scheme, value] = header.split(' ');
@@ -435,6 +446,257 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   }
 });
 
+app.get('/api/messages/owner', requireAuth, async (req, res, next) => {
+  const key = typeof req.query.businessKey === 'string'
+    ? req.query.businessKey.trim()
+    : '';
+  if (!key) return res.status(400).json({ error: 'A business key is required.' });
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.role
+       FROM merchant_businesses b
+       JOIN users u ON u.id = b.merchant_id
+       WHERE (CAST(b.id AS CHAR) = ? OR b.name = ?) AND u.status = 'active'
+       LIMIT 1`,
+      [key, key],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'The venue owner is no longer available.' });
+    }
+    return res.json({ owner: publicMessageUser(rows[0]) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/messages/contacts', requireAuth, async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, email, first_name, last_name, avatar_url, role
+       FROM users
+       WHERE id <> ? AND status = 'active'
+       ORDER BY first_name, last_name, email`,
+      [req.auth.sub],
+    );
+    return res.json({ contacts: rows.map(publicMessageUser) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/messages/conversations', requireAuth, async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT c.id, c.type, c.title, c.created_at AS createdAt,
+              m.body AS lastMessage, m.created_at AS lastMessageAt,
+              (SELECT COUNT(*) FROM messages unread
+               WHERE unread.conversation_id = c.id
+                 AND unread.sender_id <> ? AND unread.read_at IS NULL) AS unreadCount
+       FROM conversations c
+       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+       LEFT JOIN messages m ON m.id = (
+         SELECT MAX(latest.id) FROM messages latest
+         WHERE latest.conversation_id = c.id
+       )
+       ORDER BY COALESCE(m.created_at, c.created_at) DESC`,
+      [req.auth.sub, req.auth.sub],
+    );
+    for (const conversation of rows) {
+      const [members] = await pool.execute(
+        `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.role
+         FROM conversation_members cm JOIN users u ON u.id = cm.user_id
+         WHERE cm.conversation_id = ?`,
+        [conversation.id],
+      );
+      conversation.members = members.map(publicMessageUser);
+    }
+    return res.json({ conversations: rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/messages/conversations', requireAuth, async (req, res, next) => {
+  const requestedIds = Array.isArray(req.body.participantIds)
+    ? req.body.participantIds.map(Number).filter(Number.isInteger)
+    : [];
+  const recipientId = Number(req.body.recipientId);
+  if (Number.isInteger(recipientId)) requestedIds.push(recipientId);
+  const participantIds = [...new Set(requestedIds)].filter(
+    (id) => id !== Number(req.auth.sub),
+  );
+  const isGroup = req.body.type === 'group' || participantIds.length > 1;
+  const title = typeof req.body.title === 'string'
+    ? req.body.title.trim().slice(0, 120)
+    : null;
+  if (participantIds.length === 0) {
+    return res.status(400).json({ error: 'A valid recipient is required.' });
+  }
+  try {
+    if (!isGroup) {
+      const [existing] = await pool.execute(
+        `SELECT c.id FROM conversations c
+         JOIN conversation_members cm ON cm.conversation_id = c.id
+         WHERE c.type = 'direct' AND cm.user_id IN (?, ?)
+         GROUP BY c.id
+         HAVING COUNT(DISTINCT cm.user_id) = 2 AND COUNT(*) = 2
+         LIMIT 1`,
+        [req.auth.sub, participantIds[0]],
+      );
+      if (existing.length > 0) return res.json({ conversationId: existing[0].id });
+    }
+    const placeholders = participantIds.map(() => '?').join(', ');
+    const [users] = await pool.execute(
+      `SELECT id FROM users
+       WHERE id IN (${placeholders}) AND status = 'active'`,
+      participantIds,
+    );
+    if (users.length !== participantIds.length) {
+      return res.status(404).json({ error: 'One or more user accounts are unavailable.' });
+    }
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [result] = await connection.execute(
+        'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+        [isGroup ? 'group' : 'direct', title, req.auth.sub],
+      );
+      const allParticipants = [Number(req.auth.sub), ...participantIds];
+      for (const userId of allParticipants) {
+        await connection.execute(
+          'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?)',
+          [result.insertId, userId],
+        );
+      }
+      await connection.commit();
+      return res.status(201).json({ conversationId: result.insertId });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    return next(error);
+  }
+});
+
+async function isConversationMember(conversationId, userId) {
+  const [rows] = await pool.execute(
+    'SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+    [conversationId, userId],
+  );
+  return rows.length > 0;
+}
+
+app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
+  try {
+    const conversationId = Number(req.params.id);
+    if (!(await isConversationMember(conversationId, req.auth.sub))) {
+      return res.status(403).json({ error: 'You are not a member of this conversation.' });
+    }
+    const [rows] = await pool.execute(
+      `SELECT m.id, m.sender_id AS senderId, m.body, m.created_at AS createdAt,
+              m.attachment_json AS attachmentJson,
+              m.read_at AS readAt, u.first_name AS senderFirstName,
+              u.last_name AS senderLastName
+       FROM messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.conversation_id = ? ORDER BY m.created_at ASC`,
+      [conversationId],
+    );
+    for (const message of rows) {
+      if (typeof message.attachmentJson === 'string') {
+        try {
+          message.attachment = JSON.parse(message.attachmentJson);
+        } catch {
+          message.attachment = null;
+        }
+      } else {
+        message.attachment = message.attachmentJson || null;
+      }
+      delete message.attachmentJson;
+    }
+    await pool.execute(
+      `UPDATE messages SET read_at = CURRENT_TIMESTAMP
+       WHERE conversation_id = ? AND sender_id <> ? AND read_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    return res.json({ messages: rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete('/api/messages/conversations/:conversationId/messages/:messageId', requireAuth, async (req, res, next) => {
+  const conversationId = Number(req.params.conversationId);
+  const messageId = Number(req.params.messageId);
+  if (!Number.isInteger(conversationId) || !Number.isInteger(messageId)) {
+    return res.status(400).json({ error: 'The conversation and message are invalid.' });
+  }
+  try {
+    const [result] = await pool.execute(
+      `DELETE FROM messages
+       WHERE id = ? AND conversation_id = ? AND sender_id = ?
+       AND EXISTS (
+         SELECT 1 FROM conversation_members
+         WHERE conversation_id = ? AND user_id = ?
+       )`,
+      [messageId, conversationId, req.auth.sub, conversationId, req.auth.sub],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Message not found or cannot be deleted.' });
+    }
+    return res.json({ message: 'Message deleted.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
+  const body = typeof req.body.body === 'string' ? req.body.body.trim() : '';
+  const attachment = req.body.attachment;
+  const hasImage = attachment &&
+    typeof attachment === 'object' &&
+    attachment.type === 'image' &&
+    typeof attachment.data === 'string' &&
+    /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(attachment.data) &&
+    attachment.data.length <= 7 * 1024 * 1024;
+  if ((!body && !hasImage) || body.length > 4000) {
+    return res.status(400).json({
+      error: 'Add a message or a valid image attachment. Images must be smaller than 5 MB.',
+    });
+  }
+  if (attachment != null && !hasImage) {
+    return res.status(400).json({ error: 'The image attachment is invalid or too large.' });
+  }
+  try {
+    const conversationId = Number(req.params.id);
+    if (!(await isConversationMember(conversationId, req.auth.sub))) {
+      return res.status(403).json({ error: 'You are not a member of this conversation.' });
+    }
+    await pool.execute(
+      'INSERT INTO messages (conversation_id, sender_id, body, attachment_json) VALUES (?, ?, ?, ?)',
+      [
+        conversationId,
+        req.auth.sub,
+        body || null,
+        hasImage
+          ? JSON.stringify({
+              type: 'image',
+              name: typeof attachment.name === 'string'
+                ? attachment.name.slice(0, 255)
+                : 'image',
+              data: attachment.data,
+            })
+          : null,
+      ],
+    );
+    return res.status(201).json({ message: 'Message sent.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get('/api/merchant/profile', requireAuth, async (req, res, next) => {
   try {
     const [rows] = await pool.execute(
@@ -561,17 +823,22 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Only merchant accounts can access businesses.' });
     }
     const [businesses] = await pool.execute(
-      `SELECT id, business_type AS businessType, name, category, address,
-              facility_type AS facilityType, price_per_hour AS pricePerHour,
-              opening_hours AS hours, availability,
-              enabled,
-              rate_periods AS ratePeriods,
-              amenities_json AS tags, details, image_url AS imageUrl,
-              image_urls AS imageUrls,
-              created_at AS createdAt
-       FROM merchant_businesses
-       WHERE merchant_id = ?
-       ORDER BY created_at DESC`,
+      `SELECT b.id, b.business_type AS businessType, b.name, b.category, b.address,
+              u.first_name AS ownerFirstName, u.last_name AS ownerLastName,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
+              b.facility_type AS facilityType, b.price_per_hour AS pricePerHour,
+              b.event_fee AS eventFee,
+              b.visit_url AS visitUrl,
+              b.opening_hours AS hours, b.availability,
+              b.enabled,
+              b.rate_periods AS ratePeriods,
+              b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
+              b.image_urls AS imageUrls,
+              b.created_at AS createdAt
+       FROM merchant_businesses b
+       JOIN users u ON u.id = b.merchant_id
+       WHERE b.merchant_id = ? AND u.role = 'merchant'
+       ORDER BY b.created_at DESC`,
       [req.auth.sub],
     );
     for (const business of businesses) {
@@ -607,15 +874,19 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
 app.get('/api/businesses', async (req, res, next) => {
   try {
     const [businesses] = await pool.execute(
-      `SELECT id, business_type AS businessType, name, category, address,
-              facility_type AS facilityType, price_per_hour AS pricePerHour,
-              opening_hours AS hours, availability, enabled, rate_periods AS ratePeriods,
-              amenities_json AS tags, details, image_url AS imageUrl,
-              image_urls AS imageUrls,
-              created_at AS createdAt
-       FROM merchant_businesses
-       WHERE enabled = 1
-       ORDER BY created_at DESC`,
+      `SELECT b.id, b.business_type AS businessType, b.name, b.category, b.address,
+              b.facility_type AS facilityType, b.price_per_hour AS pricePerHour,
+              b.event_fee AS eventFee,
+              b.visit_url AS visitUrl,
+              b.opening_hours AS hours, b.availability, b.enabled,
+              b.rate_periods AS ratePeriods,
+              b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
+              b.image_urls AS imageUrls,
+              b.created_at AS createdAt
+       FROM merchant_businesses b
+       JOIN users u ON u.id = b.merchant_id
+       WHERE b.enabled = 1 AND u.status = 'active'
+       ORDER BY b.created_at DESC`,
     );
     for (const business of businesses) {
       for (const field of ['ratePeriods', 'tags']) {
@@ -695,7 +966,11 @@ app.put('/api/merchant/businesses/:id/status', requireAuth, async (req, res, nex
   }
 });
 
-app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isSafeInteger(id)) {
+    return res.status(400).json({ error: 'Invalid business id.' });
+  }
   const text = (value, max = 255) =>
     typeof value === 'string' ? value.trim().slice(0, max) : '';
   const businessType = text(req.body.businessType, 50);
@@ -703,7 +978,68 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   const category = text(req.body.category, 100);
   const address = text(req.body.address, 500);
   const facilityType = text(req.body.facilityType, 50);
+  const hours = text(req.body.hours, 100);
+  const visitUrl = text(req.body.visitUrl, 1000);
+  const availability = text(req.body.availability, 255) || 'Any';
   const pricePerHour = Number(req.body.pricePerHour);
+  const eventFee = Number(req.body.eventFee);
+  const ratePeriods = Array.isArray(req.body.ratePeriods)
+    ? req.body.ratePeriods.slice(0, 20)
+    : [];
+  const tags = Array.isArray(req.body.tags)
+    ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
+    : [];
+  const imageUrls = Array.isArray(req.body.imageUrls)
+    ? req.body.imageUrls.filter((item) => typeof item === 'string').slice(0, 20)
+    : [];
+  const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024) || imageUrls[0] || '';
+  const valid =
+    ['Sports', 'Event', 'Fitness & Wellness'].includes(businessType) &&
+    name && category && address && facilityType && hours &&
+    (businessType === 'Event'
+      ? Number.isFinite(eventFee) && eventFee > 0
+      : Number.isFinite(pricePerHour) &&
+        (pricePerHour > 0 || ratePeriods.length > 0));
+  if (!valid) {
+    return res.status(400).json({ error: 'Please check the business details.' });
+  }
+  try {
+    const [result] = await pool.execute(
+      `UPDATE merchant_businesses
+       SET business_type = ?, name = ?, category = ?, address = ?, facility_type = ?,
+           price_per_hour = ?, event_fee = ?, opening_hours = ?, availability = ?,
+           rate_periods = ?, amenities_json = ?, details = ?, image_url = ?,
+           image_urls = ?, visit_url = ?
+       WHERE id = ? AND merchant_id = ?`,
+      [
+        businessType, name, category, address, facilityType,
+        businessType === 'Event' ? eventFee : pricePerHour,
+        businessType === 'Event' ? eventFee : 0,
+        hours, availability, JSON.stringify(ratePeriods), JSON.stringify(tags),
+        text(req.body.details, 1000) || null, imageUrl || null,
+        JSON.stringify(imageUrls), visitUrl || null, id, req.auth.sub,
+      ],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Business not found.' });
+    }
+    return res.json({ message: 'Business updated.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+  const text = (value, max = 255) =>
+    typeof value === 'string' ? value.trim().slice(0, max) : '';
+  const businessType = text(req.body.businessType, 50);
+  const name = text(req.body.name);
+  const category = text(req.body.category, 100);
+  const address = text(req.body.address, 500);
+  const visitUrl = text(req.body.visitUrl, 1000);
+  const facilityType = text(req.body.facilityType, 50);
+  const pricePerHour = Number(req.body.pricePerHour);
+  const eventFee = Number(req.body.eventFee);
   const hours = text(req.body.hours, 100);
   const availability = text(req.body.availability, 255);
   const ratePeriods = Array.isArray(req.body.ratePeriods)
@@ -747,10 +1083,16 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   if (!address) validationErrors.push('address');
   if (!facilityType) validationErrors.push('facility type');
   if (!hours) validationErrors.push('opening and closing hours');
-  if (!Number.isFinite(pricePerHour) ||
-      (pricePerHour <= 0 && ratePeriods.length === 0)) {
+  if (visitUrl && !/^https?:\/\/\S+$/i.test(visitUrl)) validationErrors.push('visit link');
+  const amountIsValid = businessType === 'Event'
+    ? Number.isFinite(eventFee) && eventFee > 0
+    : Number.isFinite(pricePerHour) &&
+      (pricePerHour > 0 || ratePeriods.length > 0);
+  if (!amountIsValid) {
     validationErrors.push(
-      ratePeriods.length > 0 ? 'rate periods' : 'price per hour',
+      businessType === 'Event'
+        ? 'event fee'
+        : ratePeriods.length > 0 ? 'rate periods' : 'price per hour',
     );
   }
   if (validationErrors.length > 0) {
@@ -759,71 +1101,6 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
       validationErrors,
     });
 
-    app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
-      const id = Number.parseInt(req.params.id, 10);
-      if (!Number.isSafeInteger(id)) return res.status(400).json({ error: 'Invalid business id.' });
-      const text = (value, max = 255) =>
-        typeof value === 'string' ? value.trim().slice(0, max) : '';
-      const businessType = text(req.body.businessType, 50);
-      const name = text(req.body.name);
-      const category = text(req.body.category, 100);
-      const address = text(req.body.address, 500);
-      const facilityType = text(req.body.facilityType, 50);
-      const pricePerHour = Number(req.body.pricePerHour);
-      const hours = text(req.body.hours, 100);
-      const availability = text(req.body.availability, 255);
-      const ratePeriods = Array.isArray(req.body.ratePeriods)
-        ? req.body.ratePeriods.filter((item) =>
-            item && typeof item === 'object' && typeof item.start === 'string' &&
-            typeof item.end === 'string' && Number.isFinite(Number(item.pricePerHour)) &&
-            Number(item.pricePerHour) > 0).slice(0, 20).map((item) => ({
-              start: text(item.start, 20), end: text(item.end, 20),
-              pricePerHour: Number(item.pricePerHour),
-            }))
-        : [];
-      const amenities = Array.isArray(req.body.tags)
-        ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
-        : [];
-      const details = text(req.body.details, 1000);
-      const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024);
-      const imageUrls = Array.isArray(req.body.imageUrls)
-        ? req.body.imageUrls
-            .filter((item) => typeof item === 'string')
-            .slice(0, 20)
-        : imageUrl ? [imageUrl] : [];
-      const primaryImageUrl = imageUrl || imageUrls[0] || '';
-      const validTypes = new Set(['Sports', 'Event', 'Fitness & Wellness']);
-      const validationErrors = [];
-      if (!validTypes.has(businessType)) validationErrors.push('booking type');
-      if (!name) validationErrors.push('business name');
-      if (!category) validationErrors.push('category');
-      if (!address) validationErrors.push('address');
-      if (!facilityType) validationErrors.push('facility type');
-      if (!hours) validationErrors.push('opening and closing hours');
-      if (!Number.isFinite(pricePerHour) || (pricePerHour <= 0 && ratePeriods.length === 0)) {
-        validationErrors.push(ratePeriods.length > 0 ? 'rate periods' : 'price per hour');
-      }
-      if (validationErrors.length > 0) {
-        return res.status(400).json({ error: `Please check: ${validationErrors.join(', ')}.`, validationErrors });
-      }
-      try {
-        const [result] = await pool.execute(
-          `UPDATE merchant_businesses
-           SET business_type = ?, name = ?, category = ?, address = ?, facility_type = ?,
-               price_per_hour = ?, opening_hours = ?, availability = ?, rate_periods = ?,
-               amenities_json = ?, details = ?, image_url = ?, image_urls = ?
-           WHERE id = ? AND merchant_id = ?`,
-          [businessType, name, category, address, facilityType, pricePerHour, hours,
-           availability || 'Any', ratePeriods.length ? JSON.stringify(ratePeriods) : null,
-           JSON.stringify(amenities), details || null, primaryImageUrl || null,
-           JSON.stringify(imageUrls), id, req.auth.sub],
-        );
-        if (result.affectedRows === 0) return res.status(404).json({ error: 'Business not found.' });
-        return res.json({ message: 'Business updated.' });
-      } catch (error) {
-        return next(error);
-      }
-    });
   }
   try {
     const [merchants] = await pool.execute(
@@ -836,9 +1113,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
     await pool.execute(
       `INSERT INTO merchant_businesses
        (merchant_id, business_type, name, category, address, facility_type,
-        price_per_hour, opening_hours, availability, rate_periods,
-        amenities_json, details, image_url, image_urls)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        price_per_hour, event_fee, opening_hours, availability, rate_periods,
+        amenities_json, details, image_url, image_urls, visit_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         req.auth.sub,
         businessType,
@@ -846,7 +1123,8 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         category,
         address,
         facilityType,
-        pricePerHour,
+        businessType === 'Event' ? eventFee : pricePerHour,
+        businessType === 'Event' ? eventFee : 0,
         hours,
         availability || 'Any',
         ratePeriods.length > 0 ? JSON.stringify(ratePeriods) : null,
@@ -854,6 +1132,7 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         details || null,
         primaryImageUrl || null,
         JSON.stringify(imageUrls),
+        visitUrl || null,
       ],
     );
     return res.status(201).json({ message: 'Business added.' });
@@ -866,7 +1145,9 @@ app.get('/api/saved-items', requireAuth, async (req, res, next) => {
   try {
     const [items] = await pool.execute(
       `SELECT id, item_type AS itemType, item_key AS itemKey,
-              title, subtitle, image_url AS imageUrl, created_at AS createdAt
+              title, subtitle, image_url AS imageUrl,
+              owner_email AS ownerEmail, owner_phone AS ownerPhone,
+              created_at AS createdAt
        FROM saved_items
        WHERE user_id = ?
        ORDER BY created_at DESC`,
@@ -914,13 +1195,29 @@ app.post('/api/saved-items', requireAuth, async (req, res, next) => {
   }
 
   try {
+    const [owners] = await pool.execute(
+      `SELECT u.email, u.phone, mp.contact_email AS contactEmail
+       FROM merchant_businesses b
+       JOIN users u ON u.id = b.merchant_id
+       LEFT JOIN merchant_profiles mp ON mp.user_id = u.id
+       WHERE b.id = ? OR b.name = ?
+       LIMIT 1`,
+      [itemKey, itemKey],
+    );
+    const owner = owners[0];
+    const ownerEmail = owner?.contactEmail || owner?.email || null;
+    const ownerPhone = owner?.phone || null;
     await pool.execute(
       `INSERT INTO saved_items
-       (user_id, item_type, item_key, title, subtitle, image_url)
-       VALUES (?, ?, ?, ?, ?, ?)
+       (user_id, item_type, item_key, title, subtitle, image_url,
+        owner_email, owner_phone)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE title = VALUES(title), subtitle = VALUES(subtitle),
-                               image_url = VALUES(image_url)`,
-      [req.auth.sub, itemType, itemKey, title, subtitle || null, imageUrl],
+                               image_url = VALUES(image_url),
+                               owner_email = COALESCE(VALUES(owner_email), owner_email),
+                               owner_phone = COALESCE(VALUES(owner_phone), owner_phone)`,
+      [req.auth.sub, itemType, itemKey, title, subtitle || null, imageUrl,
+       ownerEmail, ownerPhone],
     );
     return res.status(201).json({ message: 'Item saved.' });
   } catch (error) {
@@ -1070,6 +1367,183 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
   }
 });
 
+function requireRole(role) {
+  return async (req, res, next) => {
+    try {
+      const [users] = await pool.execute(
+        'SELECT role, status FROM users WHERE id = ? LIMIT 1',
+        [req.auth.sub],
+      );
+      if (!users[0] || users[0].role !== role || users[0].status !== 'active') {
+        return res.status(403).json({ error: `Only active ${role} accounts can access this endpoint.` });
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+function validDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function validTime(value) {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value);
+}
+
+app.get('/api/bookings/availability', requireAuth, requireRole('customer'), async (req, res, next) => {
+  const venueId = Number(req.query.venueId);
+  const bookingDate = req.query.date;
+  if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate)) {
+    return res.status(400).json({ error: 'venueId and a valid date are required.' });
+  }
+  try {
+    const [bookings] = await pool.execute(
+      `SELECT start_time AS startTime, duration_hours AS durationHours
+       FROM bookings
+       WHERE venue_id = ? AND booking_date = ?
+         AND status IN ('pending', 'approved')
+       ORDER BY start_time`,
+      [venueId, bookingDate],
+    );
+    return res.json({ bookings });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
+  const venueId = Number(req.body.venueId ?? req.body.businessId);
+  const bookingDate = req.body.date;
+  const startTime = req.body.startTime;
+  const durationHours = Number(req.body.durationHours ?? req.body.duration);
+  const players = Number(req.body.players);
+  const paymentMethod = typeof req.body.paymentMethod === 'string'
+    ? req.body.paymentMethod.trim().slice(0, 50) : '';
+  if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
+      !validTime(startTime) || !Number.isFinite(durationHours) ||
+      durationHours <= 0 || durationHours > 24 || !Number.isSafeInteger(players) ||
+      players <= 0 || players > 1000 || !paymentMethod) {
+    return res.status(400).json({
+      error: 'venueId, date, startTime, positive duration, players, and paymentMethod are required.',
+    });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [venues] = await connection.execute(
+      `SELECT b.id, b.merchant_id, b.price_per_hour, b.enabled, u.status AS merchant_status
+       FROM merchant_businesses b JOIN users u ON u.id = b.merchant_id
+       WHERE b.id = ? FOR UPDATE`,
+      [venueId],
+    );
+    const venue = venues[0];
+    if (!venue || !venue.enabled || venue.merchant_status !== 'active') {
+      await connection.rollback();
+      return res.status(404).json({ error: 'The venue is unavailable.' });
+    }
+    const [overlaps] = await connection.execute(
+      `SELECT id FROM bookings
+       WHERE venue_id = ? AND booking_date = ?
+         AND status IN ('pending', 'approved')
+         AND start_time < ADDTIME(?, SEC_TO_TIME(? * 3600))
+         AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ? LIMIT 1`,
+      [venueId, bookingDate, startTime, durationHours, startTime],
+    );
+    if (overlaps.length) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'The venue is already booked for that time.' });
+    }
+    const pricePerHour = Number(venue.price_per_hour);
+    const total = Number((pricePerHour * durationHours).toFixed(2));
+    const downpayment = Number((total * 0.50).toFixed(2));
+    const [result] = await connection.execute(
+      `INSERT INTO bookings
+       (customer_id, venue_id, booking_date, start_time, duration_hours, players,
+        payment_method, price_per_hour, total_amount, downpayment_amount, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
+       paymentMethod, pricePerHour, total, downpayment],
+    );
+    await connection.commit();
+    return res.status(201).json({
+      booking: { id: result.insertId, venueId, date: bookingDate, startTime,
+        durationHours, players, paymentMethod, pricePerHour, total, downpayment,
+        status: 'pending' },
+    });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
+app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
+  try {
+    const [bookings] = await pool.execute(
+      `SELECT b.id, b.venue_id AS venueId, v.name AS venueName, v.address,
+              v.business_type AS businessType, v.category, v.facility_type AS facilityType,
+              v.opening_hours AS hours, v.availability, v.details,
+              b.booking_date AS date, b.start_time AS startTime,
+              b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
+              b.price_per_hour AS pricePerHour, b.total_amount AS total,
+              b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt
+       FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.customer_id = ? ORDER BY b.booking_date DESC, b.start_time DESC`,
+      [req.auth.sub],
+    );
+    return res.json({ bookings });
+  } catch (error) { return next(error); }
+});
+
+app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const [bookings] = await pool.execute(
+      `SELECT b.id, b.customer_id AS customerId,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS customerName, u.email AS customerEmail,
+              b.venue_id AS venueId, v.name AS venueName,
+              v.business_type AS businessType, b.booking_date AS date,
+              b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
+              b.payment_method AS paymentMethod, b.price_per_hour AS pricePerHour,
+              b.total_amount AS total, b.downpayment_amount AS downpayment,
+              b.status, b.created_at AS createdAt
+       FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       JOIN users u ON u.id = b.customer_id
+       WHERE v.merchant_id = ? ORDER BY b.booking_date, b.start_time`,
+      [req.auth.sub],
+    );
+    return res.json({ bookings });
+  } catch (error) { return next(error); }
+});
+
+app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const [result] = await pool.execute(
+      `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       SET b.status = 'approved' WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'`,
+      [req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Pending booking not found.' });
+    return res.json({ message: 'Booking approved.', status: 'approved' });
+  } catch (error) { return next(error); }
+});
+
+app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const [result] = await pool.execute(
+      `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       SET b.status = 'finished' WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'approved'`,
+      [req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Approved booking not found.' });
+    return res.json({ message: 'Booking marked finished.', status: 'finished' });
+  } catch (error) { return next(error); }
+});
+
 app.use((error, req, res, next) => {
   console.error(error);
   if (error.type === 'entity.too.large') {
@@ -1102,6 +1576,7 @@ async function ensureMerchantBusinessesSchema() {
       address VARCHAR(500) NOT NULL,
       facility_type VARCHAR(50) NOT NULL,
       price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      event_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
       opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours',
       availability VARCHAR(255) NOT NULL DEFAULT 'Any',
       enabled TINYINT(1) NOT NULL DEFAULT 1,
@@ -1110,6 +1585,7 @@ async function ensureMerchantBusinessesSchema() {
       details VARCHAR(1000) NULL,
       image_url LONGTEXT NULL,
       image_urls JSON NULL,
+      visit_url VARCHAR(1000) NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_merchant_businesses_merchant (merchant_id, created_at),
@@ -1122,10 +1598,12 @@ async function ensureMerchantBusinessesSchema() {
 
   const columns = [
     ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
+    ['event_fee', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
     ['opening_hours', "VARCHAR(100) NOT NULL DEFAULT 'Open hours'"],
     ['rate_periods', 'JSON NULL'],
     ['amenities_json', 'JSON NULL'],
     ['image_urls', 'JSON NULL'],
+    ['visit_url', 'VARCHAR(1000) NULL'],
     ['enabled', 'TINYINT(1) NOT NULL DEFAULT 1'],
   ];
 
@@ -1136,6 +1614,18 @@ async function ensureMerchantBusinessesSchema() {
       );
     } catch (error) {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+    for (const [name, definition] of [
+      ['owner_email', 'VARCHAR(255) NULL'],
+      ['owner_phone', 'VARCHAR(30) NULL'],
+    ]) {
+      try {
+        await pool.execute(
+          `ALTER TABLE saved_items ADD COLUMN ${name} ${definition}`,
+        );
+      } catch (error) {
+        if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+      }
     }
   }
   await pool.execute(
@@ -1200,7 +1690,91 @@ async function ensureMerchantBusinessesSchema() {
   `);
 }
 
-ensureMerchantBusinessesSchema()
+async function ensureMessagingSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      type ENUM('direct', 'group') NOT NULL DEFAULT 'direct',
+      title VARCHAR(120) NULL,
+      created_by BIGINT UNSIGNED NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_conversations_created (created_at),
+      CONSTRAINT fk_conversations_creator FOREIGN KEY (created_by) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS conversation_members (
+      conversation_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (conversation_id, user_id),
+      KEY idx_conversation_members_user (user_id),
+      CONSTRAINT fk_conversation_members_conversation FOREIGN KEY (conversation_id)
+        REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_conversation_members_user FOREIGN KEY (user_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      conversation_id BIGINT UNSIGNED NOT NULL,
+      sender_id BIGINT UNSIGNED NOT NULL,
+      body TEXT NULL,
+      attachment_json LONGTEXT NULL,
+      read_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_messages_conversation_created (conversation_id, created_at),
+      KEY idx_messages_unread (conversation_id, read_at),
+      CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id)
+        REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  try {
+    await pool.execute(
+      'ALTER TABLE messages ADD COLUMN attachment_json LONGTEXT NULL AFTER body',
+    );
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  await pool.execute('ALTER TABLE messages MODIFY COLUMN body TEXT NULL');
+}
+
+async function ensureBookingsSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS bookings (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      venue_id BIGINT UNSIGNED NOT NULL,
+      booking_date DATE NOT NULL,
+      start_time TIME NOT NULL,
+      duration_hours DECIMAL(5, 2) NOT NULL,
+      players INT UNSIGNED NOT NULL,
+      payment_method VARCHAR(50) NOT NULL,
+      price_per_hour DECIMAL(10, 2) NOT NULL,
+      total_amount DECIMAL(10, 2) NOT NULL,
+      downpayment_amount DECIMAL(10, 2) NOT NULL,
+      status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_bookings_customer (customer_id, booking_date, start_time),
+      KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
+      CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
+Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
+  .then(() => ensureBookingsSchema())
   .then(() => {
     app.listen(port, () => {
       console.log(`TinkerPro Sports API listening on http://localhost:${port}`);

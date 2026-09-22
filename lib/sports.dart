@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
+import 'app_session.dart';
 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -11,12 +13,16 @@ import 'package:latlong2/latlong.dart';
 import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
+import 'customer_bookings_page.dart';
 import 'saved_items.dart';
+import 'messages_dashboard.dart';
 
 typedef SportsVenue = ({
+  int id,
   String name,
   String sport,
   String address,
+  String ownerName,
   String type,
   String courts,
   String hours,
@@ -30,6 +36,7 @@ typedef SportsVenue = ({
   List<String> tags,
   double latitude,
   double longitude,
+  String visitUrl,
 });
 
 const _sportsNavy = Color(0xFF192B50);
@@ -51,8 +58,10 @@ class SportsDashboardPage extends StatefulWidget {
 }
 
 class _SportsDashboardPageState extends State<SportsDashboardPage> {
+  final _api = AuthApi();
   final _searchController = TextEditingController();
   final List<SportsVenue> _merchantVenues = [];
+  List<Map<String, dynamic>> _customerBookings = [];
   List<SportsVenue> get _allVenues => _merchantVenues;
 
   String _area = 'All areas';
@@ -138,6 +147,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     _searchController.addListener(_refresh);
     _loadSavedState();
     _loadMerchantBusinesses();
+    _loadCustomerBookings();
   }
 
   Future<void> _loadMerchantBusinesses() async {
@@ -163,6 +173,18 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       if (mounted) {
         _showMessage('Could not load merchant Sports venues: $error');
       }
+    }
+  }
+
+  Future<void> _loadCustomerBookings() async {
+    try {
+      final session = await AppSession.load();
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) return;
+      final bookings = await _api.customerBookings(token);
+      if (mounted) setState(() => _customerBookings = bookings);
+    } on Exception {
+      // The venue browser remains usable if booking status is unavailable.
     }
   }
 
@@ -196,17 +218,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         : <String>[];
     final images = _merchantImages(b);
     return (
+      id: (b['id'] as num?)?.toInt() ?? 0,
       name: b['name'] as String? ?? 'Business',
       sport: '${b['category'] ?? 'Sports'}',
       address: '${b['address'] ?? ''}',
+      ownerName: _ownerName(b),
       type: '${b['facilityType'] ?? b['facility_type'] ?? 'Facility'}',
       courts: '${b['details'] ?? 'Sports facility'}',
       hours: '${b['hours'] ?? b['opening_hours'] ?? 'Open hours'}',
       availability: '${b['availability'] ?? b['availability_status'] ?? ''}',
       image: _merchantImage(b),
       images: images,
-      priceDay: 'PHP ' + price.toStringAsFixed(0) + ' / hr',
-      priceNight: 'PHP ' + price.toStringAsFixed(0) + ' / hr',
+      priceDay: 'PHP ${price.toStringAsFixed(0)} / hr',
+      priceNight: 'PHP ${price.toStringAsFixed(0)} / hr',
       priceLines: periods.isEmpty
           ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
           : periods,
@@ -214,7 +238,20 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       tags: tags,
       latitude: 10.3157,
       longitude: 123.8854,
+      visitUrl: '${b['visitUrl'] ?? b['visit_url'] ?? ''}',
     );
+  }
+
+  String _ownerName(Map<String, dynamic> business) {
+    final explicit = business['ownerName'] ?? business['owner_name'];
+    if (explicit is String && explicit.trim().isNotEmpty) {
+      return explicit.trim();
+    }
+    final first =
+        business['ownerFirstName'] ?? business['owner_first_name'] ?? '';
+    final last = business['ownerLastName'] ?? business['owner_last_name'] ?? '';
+    final name = '$first $last'.trim();
+    return name.isEmpty ? 'Venue owner' : name;
   }
 
   String _merchantImage(Map<String, dynamic> business) {
@@ -338,6 +375,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       ),
       body: Column(
         children: [
+          if (_customerBookings.any(
+            (booking) =>
+                booking['status'] == 'approved' ||
+                booking['status'] == 'finished',
+          ))
+            _bookingStatusBanner(),
           _mainSearchBar(),
           Expanded(
             child: LayoutBuilder(
@@ -352,59 +395,117 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        backgroundColor: _sportsSurface,
-        indicatorColor: _sportsSoftOrange,
-        onDestinationSelected: (index) {
-          if (index == 0) return;
-          if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
-              ),
-            );
-            return;
-          }
-          if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(
-                  onLogout: widget.onLogout,
-                  itemType: 'sports',
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: _sportsSurface,
+            surfaceTintColor: _sportsSurface,
+            shadowColor: Colors.transparent,
+            indicatorColor: _sportsSoftOrange,
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected
+                    ? const Color(0xFFFF8200)
+                    : const Color(0xFF68748A),
+                size: 24,
+              );
+            }),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                color: selected
+                    ? const Color(0xFF101B33)
+                    : const Color(0xFF68748A),
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              );
+            }),
+          ),
+        ),
+        child: NavigationBar(
+          height: 72,
+          elevation: 0,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: 0,
+          onDestinationSelected: (index) {
+            if (index == 0) return;
+            if (index == 4) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ProfileDashboardPage(onLogout: widget.onLogout),
                 ),
-              ),
-            );
-            return;
-          }
-          _showMessage(switch (index) {
-            1 => 'Saved venues will appear here.',
-            2 => 'Booking history will appear here.',
-            _ => 'Profile will appear here.',
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on_rounded),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Saved',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: 'Bookings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
+              );
+              return;
+            }
+
+            if (index == 1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SavedDashboardPage(
+                    onLogout: widget.onLogout,
+                    itemType: 'sports',
+                  ),
+                ),
+              );
+              return;
+            }
+            if (index == 2) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MessagesDashboardPage(),
+                ),
+              );
+              return;
+            }
+            if (index == 3) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CustomerBookingsPage(onLogout: widget.onLogout),
+                ),
+              );
+              return;
+            }
+            _showMessage(switch (index) {
+              1 => 'Saved venues will appear here.',
+              2 => 'Messages will appear here.',
+              3 => 'Booking history will appear here.',
+              _ => 'Profile will appear here.',
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.location_on_outlined, size: 24),
+              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
+              label: 'Explore',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border_rounded, size: 24),
+              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
+              label: 'Saved',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.send_outlined, size: 24),
+              selectedIcon: Icon(Icons.send_rounded, size: 24),
+              label: 'Messages',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined, size: 22),
+              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
+              label: 'Bookings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded, size: 24),
+              selectedIcon: Icon(Icons.person_rounded, size: 24),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -486,19 +587,55 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 wide ? 28 : 16,
                 28,
               ),
-              sliver: SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: wide ? 2 : 1,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: wide ? .77 : .70,
+              sliver: SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = wide ? 2 : 1;
+                    const spacing = 16.0;
+                    final itemWidth =
+                        (constraints.maxWidth - spacing * (columns - 1)) /
+                        columns;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: [
+                        for (final venue in venues)
+                          SizedBox(width: itemWidth, child: _courtCard(venue)),
+                      ],
+                    );
+                  },
                 ),
-                itemCount: venues.length,
-                itemBuilder: (context, index) => _courtCard(venues[index]),
               ),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _bookingStatusBanner() {
+    final booking = _customerBookings.firstWhere(
+      (item) => item['status'] == 'approved' || item['status'] == 'finished',
+    );
+    final finished = booking['status'] == 'finished';
+    return MaterialBanner(
+      backgroundColor: finished ? const Color(0xFFE7F6EC) : _sportsSoftOrange,
+      leading: Icon(
+        finished ? Icons.check_circle_rounded : Icons.event_available_rounded,
+        color: finished ? Colors.green.shade700 : _sportsOrange,
+      ),
+      content: Text(
+        finished
+            ? 'Booking at ${booking['venueName']} is finished.'
+            : 'Booking at ${booking['venueName']} was approved for '
+                  '${booking['date']} at ${booking['startTime']}.',
+        style: const TextStyle(color: _sportsInk, fontWeight: FontWeight.w700),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _loadCustomerBookings,
+          child: const Text('Refresh'),
+        ),
+      ],
     );
   }
 
@@ -902,10 +1039,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     clipBehavior: Clip.antiAlias,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 8,
+        AspectRatio(
+          aspectRatio: 16 / 10,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -987,74 +1125,624 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             ],
           ),
         ),
-        Expanded(
-          flex: 12,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(13, 11, 13, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  venue.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _sportsInk,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                venue.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _sportsInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
                 ),
-                const SizedBox(height: 6),
-                _detail(Icons.location_on_outlined, venue.address),
-                _detail(Icons.sports_rounded, 'Sport: ${venue.sport}'),
-                _detail(Icons.business_center_outlined, 'Type: ${venue.type}'),
-                _detail(Icons.grid_3x3, 'Courts: ${venue.courts}'),
-                _detail(Icons.access_time, 'Hours: ${venue.hours}'),
-                if (venue.availability.isNotEmpty)
-                  _detail(
-                    Icons.check_circle_outline,
-                    'Availability: ${venue.availability}',
-                  ),
-                const SizedBox(height: 6),
-                _priceBox(venue),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 4,
-                  children: [for (final tag in venue.tags) _tag(tag)],
+              ),
+              const SizedBox(height: 6),
+              _detail(Icons.location_on_outlined, venue.address),
+              _detail(Icons.sports_rounded, 'Sport: ${venue.sport}'),
+              _detail(Icons.business_center_outlined, 'Type: ${venue.type}'),
+              _detail(Icons.grid_3x3, 'Courts: ${venue.courts}'),
+              _detail(Icons.access_time, 'Hours: ${venue.hours}'),
+              if (venue.availability.isNotEmpty)
+                _detail(
+                  Icons.check_circle_outline,
+                  'Availability: ${venue.availability}',
                 ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showMessage('Opening ${venue.name}'),
-                        icon: const Icon(Icons.language, size: 15),
-                        label: const Text('Visit'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _sportsNavy,
-                          side: const BorderSide(color: _sportsNavy),
-                          minimumSize: const Size(0, 36),
-                        ),
+              const SizedBox(height: 6),
+              _priceBox(venue),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [for (final tag in venue.tags) _tag(tag)],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openVisit(venue.visitUrl, venue.name),
+                      icon: const Icon(Icons.language, size: 15),
+                      label: const Text('Visit'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _sportsNavy,
+                        side: const BorderSide(color: _sportsNavy),
+                        minimumSize: const Size(0, 36),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _openBookingModal(venue),
+                      icon: const Icon(Icons.calendar_month, size: 15),
+                      label: const Text('Book now'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _sportsOrange,
+                        minimumSize: const Size(0, 36),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _openBookingModal(SportsVenue venue) async {
+    final rate = venue.maxPrice;
+    if (!rate.isFinite || rate <= 0) {
+      _showMessage('This venue does not have a valid merchant rate.');
+      return;
+    }
+    var hours = 1;
+    var players = 1;
+    var payment = 'gcash';
+    DateTime bookingDate = DateTime.now();
+    TimeOfDay bookingTime = TimeOfDay.now();
+    var occupiedBookings = <Map<String, dynamic>>[];
+    var availabilityLoading = true;
+    final session = await AppSession.load();
+    final token = session.apiToken;
+    if (token != null && token.isNotEmpty) {
+      try {
+        occupiedBookings = await _api.bookingAvailability(
+          token: token,
+          venueId: venue.id,
+          date: _bookingDateString(bookingDate),
+        );
+      } on Exception catch (error) {
+        _showMessage('Could not load this venue\'s availability: $error');
+      }
+    }
+    availabilityLoading = false;
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: _sportsPage,
+      builder: (modalContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final total = rate * hours;
+          final cashOnArrival = total / 2;
+          final dueNow = payment == 'cash' ? cashOnArrival : total;
+          final selectedSlotBooked = _bookingSlotOverlaps(
+            bookingTime,
+            hours,
+            occupiedBookings,
+          );
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                MediaQuery.viewInsetsOf(context).bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Book ${venue.name}',
+                      style: const TextStyle(
+                        color: _sportsNavy,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Merchant rate: PHP ${rate.toStringAsFixed(2)} / hour',
+                      style: const TextStyle(color: _sportsMuted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Owner: ${venue.ownerName}',
+                      style: const TextStyle(
+                        color: _sportsNavy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _bookingDetail(Icons.location_on_outlined, venue.address),
+                    _bookingDetail(Icons.access_time_rounded, venue.hours),
+                    _bookingDetail(Icons.sports_rounded, venue.sport),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Choose date and time',
+                      style: TextStyle(
+                        color: _sportsInk,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: bookingDate,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
+                              );
+                              if (picked != null) {
+                                setModalState(() {
+                                  bookingDate = picked;
+                                  availabilityLoading = true;
+                                });
+                                if (token != null && token.isNotEmpty) {
+                                  try {
+                                    final bookings = await _api
+                                        .bookingAvailability(
+                                          token: token,
+                                          venueId: venue.id,
+                                          date: _bookingDateString(picked),
+                                        );
+                                    if (context.mounted) {
+                                      setModalState(() {
+                                        occupiedBookings = bookings;
+                                        availabilityLoading = false;
+                                      });
+                                    }
+                                  } on Exception catch (error) {
+                                    if (context.mounted) {
+                                      setModalState(
+                                        () => availabilityLoading = false,
+                                      );
+                                      _showMessage(
+                                        'Could not refresh availability: $error',
+                                      );
+                                    }
+                                  }
+                                } else {
+                                  setModalState(
+                                    () => availabilityLoading = false,
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.calendar_today_outlined),
+                            label: Text(
+                              MaterialLocalizations.of(context)
+                                  .formatMediumDate(bookingDate),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: bookingTime,
+                              );
+                              if (picked != null) {
+                                setModalState(() => bookingTime = picked);
+                              }
+                            },
+                            icon: const Icon(Icons.schedule_rounded),
+                            label: Text(bookingTime.format(context)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Select a time within the venue hours: ${venue.hours}.',
+                      style: const TextStyle(color: _sportsMuted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    if (availabilityLoading)
+                      const LinearProgressIndicator()
+                    else if (occupiedBookings.isEmpty)
+                      Text(
+                        'No existing bookings for this date.',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    else ...[
+                      Text(
+                        'Already booked on this date',
+                        style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: occupiedBookings
+                            .map(
+                              (booking) => Chip(
+                                avatar: Icon(
+                                  Icons.event_busy_rounded,
+                                  size: 16,
+                                  color: Colors.red.shade700,
+                                ),
+                                label: Text(_occupiedBookingLabel(booking)),
+                                backgroundColor: Colors.red.shade50,
+                                side: BorderSide(color: Colors.red.shade200),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                    if (selectedSlotBooked) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Text(
+                          'This time overlaps an existing booking. Please choose another time.',
+                          style: TextStyle(
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Booking duration',
+                      style: TextStyle(
+                        color: _sportsInk,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      initialValue: hours,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.schedule_rounded),
+                        labelText: 'Hours',
+                      ),
+                      items: [
+                        for (var value = 1; value <= 8; value++)
+                          DropdownMenuItem(
+                            value: value,
+                            child: Text('$value hour${value == 1 ? '' : 's'}'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setModalState(() => hours = value);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<int>(
+                      initialValue: players,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.groups_rounded),
+                        labelText: 'Number of players',
+                      ),
+                      items: [
+                        for (var value = 1; value <= 30; value++)
+                          DropdownMenuItem(
+                            value: value,
+                            child: Text(
+                              '$value player${value == 1 ? '' : 's'}',
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setModalState(() => players = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Payment method',
+                      style: TextStyle(
+                        color: _sportsInk,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                          value: 'gcash',
+                          label: Text('GCash'),
+                          icon: Icon(Icons.account_balance_wallet_rounded),
+                        ),
+                        ButtonSegment(
+                          value: 'card',
+                          label: Text('Card'),
+                          icon: Icon(Icons.credit_card_rounded),
+                        ),
+                        ButtonSegment(
+                          value: 'cash',
+                          label: Text('Cash on arrival'),
+                          icon: Icon(Icons.payments_outlined),
+                        ),
+                      ],
+                      selected: {payment},
+                      onSelectionChanged: (selection) {
+                        setModalState(() => payment = selection.first);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      payment == 'cash'
+                          ? 'Pay PHP ${cashOnArrival.toStringAsFixed(2)} now and '
+                                'PHP ${cashOnArrival.toStringAsFixed(2)} on arrival.'
+                          : 'Pay the full PHP ${total.toStringAsFixed(2)} now by '
+                                '${payment == 'gcash' ? 'GCash' : 'card'}.',
+                      style: const TextStyle(color: _sportsMuted),
+                    ),
+                    const Divider(height: 24),
+                    _bookingAmountRow('Merchant rate', rate, '/ hour'),
+                    _bookingAmountRow('Duration', hours.toDouble(), ' hour(s)'),
+                    _bookingAmountRow(
+                      'Players',
+                      players.toDouble(),
+                      players == 1 ? ' player' : ' players',
+                    ),
+                    _bookingScheduleRow(
+                      context,
+                      bookingDate,
+                      bookingTime,
+                      hours,
+                    ),
+                    _bookingAmountRow('Booking total', total, ''),
+                    _bookingAmountRow(
+                      payment == 'cash' ? 'Pay now' : 'Amount due',
+                      dueNow,
+                      '',
+                      strong: true,
+                    ),
+                    if (payment == 'cash')
+                      Text(
+                        'Cash on Arrival is fixed at 50% of the booking total.',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () =>
-                            _showMessage('Booking ${venue.name} is ready.'),
-                        icon: const Icon(Icons.calendar_month, size: 15),
-                        label: const Text('Book now'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _sportsOrange,
-                          minimumSize: const Size(0, 36),
+                        onPressed: availabilityLoading || selectedSlotBooked
+                            ? null
+                            : () {
+                                _submitBooking(
+                                  modalContext: modalContext,
+                                  venue: venue,
+                                  bookingDate: bookingDate,
+                                  bookingTime: bookingTime,
+                                  hours: hours,
+                                  players: players,
+                                  payment: payment,
+                                );
+                              },
+                        icon: const Icon(Icons.lock_outline_rounded),
+                        label: Text(
+                          payment == 'cash'
+                              ? 'Continue · PHP ${dueNow.toStringAsFixed(2)}'
+                              : 'Pay · PHP ${dueNow.toStringAsFixed(2)}',
                         ),
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _bookingDateString(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  bool _bookingSlotOverlaps(
+    TimeOfDay selectedTime,
+    int durationHours,
+    List<Map<String, dynamic>> bookings,
+  ) {
+    final selectedStart = selectedTime.hour * 60 + selectedTime.minute;
+    final selectedEnd = selectedStart + durationHours * 60;
+    for (final booking in bookings) {
+      final rawStart = '${booking['startTime'] ?? ''}';
+      final parts = rawStart.split(':');
+      if (parts.length < 2) continue;
+      final startHour = int.tryParse(parts[0]);
+      final startMinute = int.tryParse(parts[1]);
+      final duration = double.tryParse('${booking['durationHours']}');
+      if (startHour == null || startMinute == null || duration == null) {
+        continue;
+      }
+      final bookedStart = startHour * 60 + startMinute;
+      final bookedEnd = bookedStart + (duration * 60).round();
+      if (selectedStart < bookedEnd && selectedEnd > bookedStart) return true;
+    }
+    return false;
+  }
+
+  String _occupiedBookingLabel(Map<String, dynamic> booking) {
+    final rawStart = '${booking['startTime'] ?? ''}';
+    final parts = rawStart.split(':');
+    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
+    final minute = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    final duration = double.tryParse('${booking['durationHours']}') ?? 0;
+    if (hour == null || minute == null) return 'Unavailable';
+    final start = TimeOfDay(hour: hour, minute: minute);
+    final endMinutes = hour * 60 + minute + (duration * 60).round();
+    final end = TimeOfDay(
+      hour: (endMinutes ~/ 60) % 24,
+      minute: endMinutes % 60,
+    );
+    return '${_formatTime(start)} - ${_formatTime(end)}';
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${time.period == DayPeriod.am ? 'AM' : 'PM'}';
+  }
+
+  Future<void> _submitBooking({
+    required BuildContext modalContext,
+    required SportsVenue venue,
+    required DateTime bookingDate,
+    required TimeOfDay bookingTime,
+    required int hours,
+    required int players,
+    required String payment,
+  }) async {
+    final session = await AppSession.load();
+    final token = session.apiToken;
+    if (token == null || token.isEmpty || venue.id <= 0) {
+      _showMessage('Please sign in before creating a booking.');
+      return;
+    }
+    final date =
+        '${bookingDate.year.toString().padLeft(4, '0')}-'
+        '${bookingDate.month.toString().padLeft(2, '0')}-'
+        '${bookingDate.day.toString().padLeft(2, '0')}';
+    final startTime =
+        '${bookingTime.hour.toString().padLeft(2, '0')}:'
+        '${bookingTime.minute.toString().padLeft(2, '0')}:00';
+    try {
+      final response = await _api.createBooking(
+        token: token,
+        venueId: venue.id,
+        date: date,
+        startTime: startTime,
+        durationHours: hours.toDouble(),
+        players: players,
+        paymentMethod: payment,
+      );
+      if (!mounted || !modalContext.mounted) return;
+      Navigator.of(modalContext).pop();
+      final booking = response['booking'] as Map<String, dynamic>? ?? {};
+      final downpayment =
+          booking['downpayment'] ?? (venue.maxPrice * hours / 2);
+      _showMessage(
+        'Booking request sent to ${venue.ownerName}. '
+        'Downpayment: PHP $downpayment. Waiting for approval.',
+      );
+    } on Exception catch (error) {
+      _showMessage('Could not submit booking: $error');
+    }
+  }
+
+  Widget _bookingAmountRow(
+    String label,
+    double amount,
+    String suffix, {
+    bool strong = false,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: _sportsMuted,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          label == 'Duration'
+              ? '${amount.toStringAsFixed(0)}$suffix'
+              : 'PHP ${amount.toStringAsFixed(2)}$suffix',
+          style: TextStyle(
+            color: _sportsInk,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _bookingDetail(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Row(
+      children: [
+        Icon(icon, size: 15, color: _sportsMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text.isEmpty ? 'Not provided' : text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _sportsMuted, fontSize: 12),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _bookingScheduleRow(
+    BuildContext context,
+    DateTime date,
+    TimeOfDay time,
+    int hours,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Schedule',
+            style: TextStyle(color: _sportsMuted, fontWeight: FontWeight.w600),
+          ),
+        ),
+        Text(
+          '${MaterialLocalizations.of(context).formatShortDate(date)} · '
+          '${time.format(context)} · $hours hr',
+          style: const TextStyle(
+            color: _sportsInk,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ],
@@ -1348,13 +2036,21 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     children: [
       for (final value in values)
         FilterChip(
-          label: Text(value, style: const TextStyle(fontSize: 10)),
+          label: Text(
+            value,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected == value ? _sportsOrange : _sportsInk,
+              fontWeight: selected == value ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
           selected: selected == value,
           showCheckmark: false,
           side: BorderSide(
             color: selected == value ? _sportsOrange : _sportsLine,
           ),
           selectedColor: _sportsSoftOrange,
+          checkmarkColor: _sportsOrange,
           onSelected: (_) => onChanged(value),
         ),
     ],
@@ -1367,7 +2063,18 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         children: [
           for (final value in values)
             FilterChip(
-              label: Text(value, style: const TextStyle(fontSize: 10)),
+              label: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: _selectedAmenities.contains(value)
+                      ? _sportsOrange
+                      : _sportsInk,
+                  fontWeight: _selectedAmenities.contains(value)
+                      ? FontWeight.w800
+                      : FontWeight.w600,
+                ),
+              ),
               selected: _selectedAmenities.contains(value),
               showCheckmark: false,
               side: BorderSide(
@@ -1545,5 +2252,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openVisit(String rawUrl, String name) async {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      _showMessage('$name does not have a visit link yet.');
+      return;
+    }
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showMessage('Could not open the visit link for $name.');
+    }
   }
 }

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_session.dart';
@@ -7,6 +10,8 @@ import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'sports.dart';
 import 'saved_dashboard.dart';
+import 'messages_dashboard.dart';
+import 'customer_bookings_page.dart';
 
 const _profileNavy = Color(0xFF192B50);
 const _profileInk = Color(0xFF101B33);
@@ -66,90 +71,146 @@ class ProfileDashboardPage extends StatelessWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
-            _profileHeader(name: name, email: email, initials: initials),
-            const SizedBox(height: 12),
-            _statsCard(),
-            const SizedBox(height: 12),
-            _fastPassCard(context),
-            const SizedBox(height: 12),
-            _balanceCard(context),
-            const SizedBox(height: 12),
-            _nextMatchCard(context),
-            const SizedBox(height: 12),
-            _settingsCard(context),
-            const SizedBox(height: 12),
-            _ownerCard(context),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: () =>
-                      _message(context, 'Help center coming soon.'),
-                  child: const Text('Help Center'),
-                ),
-                const Text('•', style: TextStyle(color: _profileMuted)),
-                TextButton(
-                  onPressed: () =>
-                      _message(context, 'Court rules coming soon.'),
-                  child: const Text('Court Rules'),
-                ),
-                const Text('•', style: TextStyle(color: _profileMuted)),
-                TextButton(
-                  onPressed: () => _logout(context),
-                  child: const Text('Log Out'),
-                ),
-              ],
-            ),
+              _profileHeader(name: name, email: email, initials: initials),
+              const SizedBox(height: 12),
+              _statsCard(),
+              const SizedBox(height: 12),
+              _fastPassCard(context),
+              const SizedBox(height: 12),
+              _balanceCard(context),
+              const SizedBox(height: 12),
+              _nextMatchCard(context),
+              const SizedBox(height: 12),
+              _settingsCard(context),
+              const SizedBox(height: 12),
+              _ownerCard(context),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton(
+                    onPressed: () =>
+                        _message(context, 'Help center coming soon.'),
+                    child: const Text('Help Center'),
+                  ),
+                  const Text('•', style: TextStyle(color: _profileMuted)),
+                  TextButton(
+                    onPressed: () =>
+                        _message(context, 'Court rules coming soon.'),
+                    child: const Text('Court Rules'),
+                  ),
+                  const Text('•', style: TextStyle(color: _profileMuted)),
+                  TextButton(
+                    onPressed: () => _logout(context),
+                    child: const Text('Log Out'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 3,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFFFE8D2),
-        onDestinationSelected: (index) {
-          if (index == 0) {
-            _openExplore(context);
-            return;
-          }
-          if (index == 3) return;
-          if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(onLogout: onLogout),
-              ),
-            );
-            return;
-          }
-          _message(context, switch (index) {
-            1 => 'Saved venues will appear here.',
-            _ => 'Booking history will appear here.',
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on_rounded),
-            label: 'Explore',
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            shadowColor: Colors.transparent,
+            indicatorColor: const Color(0xFFFFE8D2),
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected
+                    ? const Color(0xFFFF8200)
+                    : const Color(0xFF68748A),
+                size: 24,
+              );
+            }),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                color: selected
+                    ? const Color(0xFF101B33)
+                    : const Color(0xFF68748A),
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              );
+            }),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Saved',
+        ),
+        child: NavigationBar(
+          height: 72,
+          elevation: 0,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: 'Bookings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: 4,
+          onDestinationSelected: (index) {
+            if (index == 0) {
+              _openExplore(context);
+              return;
+            }
+            if (index == 4) return;
+            if (index == 1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SavedDashboardPage(onLogout: onLogout),
+                ),
+              );
+              return;
+            }
+            if (index == 2) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MessagesDashboardPage(),
+                ),
+              );
+              return;
+            }
+            if (index == 3) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => CustomerBookingsPage(onLogout: onLogout),
+                ),
+              );
+              return;
+            }
+            _message(context, switch (index) {
+              1 => 'Saved venues will appear here.',
+              2 => 'Messages will appear here.',
+              3 => 'Booking history will appear here.',
+              _ => 'Booking history will appear here.',
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.location_on_outlined, size: 24),
+              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
+              label: 'Explore',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border_rounded, size: 24),
+              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
+              label: 'Saved',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.send_outlined, size: 24),
+              selectedIcon: Icon(Icons.send_rounded, size: 24),
+              label: 'Messages',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined, size: 22),
+              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
+              label: 'Bookings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded, size: 24),
+              selectedIcon: Icon(Icons.person_rounded, size: 24),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -602,14 +663,26 @@ class ProfileDashboardPage extends StatelessWidget {
   );
 
   Future<void> _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    await GoogleSignIn.instance.signOut();
-    await (await AppSession.load()).clear();
-    if (!context.mounted) return;
     if (onLogout != null) {
       await onLogout!(context);
-    } else {
-      Navigator.of(context).pop();
+      return;
+    }
+
+    try {
+      final navigator = Navigator.of(context);
+      if (context.mounted) {
+        navigator.popUntil((route) => route.isFirst);
+      }
+
+      await Future.wait<void>([
+        FirebaseAuth.instance.signOut(),
+        GoogleSignIn.instance.signOut(),
+        AppSession.load().then((session) => session.clear()),
+      ]);
+    } catch (_) {
+      if (context.mounted) {
+        _message(context, 'Could not log out. Please try again.');
+      }
     }
   }
 

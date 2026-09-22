@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
 
@@ -12,18 +13,26 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+import 'messages_dashboard.dart';
+import 'customer_bookings_page.dart';
 
 typedef FitnessClass = ({
   String name,
   String category,
   String address,
   String sessions,
+  String facility,
   String hours,
+  String availability,
+  String specialRates,
+  String details,
   String image,
+  List<String> images,
   String price,
   List<String> tags,
   double latitude,
   double longitude,
+  String visitUrl,
 });
 
 const _fitnessNavy = Color(0xFF192B50);
@@ -51,7 +60,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   String _area = 'All areas';
   String _classType = 'All classes';
   String _availability = 'Any';
-  bool _filtersOpen = true;
+  final bool _filtersOpen = true;
   bool _locationLoading = false;
   Position? _position;
   final Set<String> _savedKeys = <String>{};
@@ -123,6 +132,30 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     _loadMerchantBusinesses();
   }
 
+  String _normalizedBusinessType(Map<String, dynamic> business) {
+    final candidates = [
+      business['businessType'],
+      business['business_type'],
+      business['bookingType'],
+      business['type'],
+      business['category'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        final value = candidate.trim();
+        final normalized = value.toLowerCase();
+        if (normalized == 'fitness' ||
+            normalized == 'wellness' ||
+            normalized.contains('fitness') ||
+            normalized.contains('wellness')) {
+          return 'Fitness & Wellness';
+        }
+        return value;
+      }
+    }
+    return 'Fitness & Wellness';
+  }
+
   Future<void> _loadMerchantBusinesses() async {
     try {
       final rows = await AuthApi().customerBusinesses();
@@ -132,57 +165,148 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           ..clear()
           ..addAll(
             rows
-                .where((b) => b['businessType'] == 'Fitness & Wellness')
+                .where((b) {
+                  final type = _normalizedBusinessType(b);
+                  return type == 'Fitness & Wellness' ||
+                      type == 'Fitness' ||
+                      type == 'Wellness';
+                })
                 .map(_fitnessClass),
           ),
       );
-    } on Exception {}
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Could not load fitness businesses: $error'),
+            ),
+          );
+      }
+    }
   }
 
-  FitnessClass _fitnessClass(Map<String, dynamic> b) => (
-    name: b['name'] as String? ?? 'Business',
-    category: b['category'] as String? ?? 'Fitness',
-    address: b['address'] as String? ?? '',
-    sessions: b['details'] as String? ?? 'Available sessions',
-    hours: b['hours'] as String? ?? 'Open hours',
-    image: _merchantImage(b),
-    price:
-        'PHP ' +
-        ((b['pricePerHour'] as num?)?.toStringAsFixed(0) ?? '0') +
-        ' / session',
-    tags: (b['tags'] as List? ?? const []).whereType<String>().toList(),
-    latitude: 10.3157,
-    longitude: 123.8854,
-  );
+  FitnessClass _fitnessClass(Map<String, dynamic> b) {
+    final businessType = _normalizedBusinessType(b);
+    final rawTags = b['tags'] ?? b['amenities'] ?? b['amenities_json'];
+    final tags = rawTags is List
+        ? rawTags.whereType<String>().toList()
+        : rawTags is String
+        ? _decodeStringList(rawTags)
+        : <String>[];
+    final priceValue =
+        b['pricePerHour'] ??
+        b['price_per_hour'] ??
+        b['price'] ??
+        b['hourlyRate'];
+    final parsedPrice = double.tryParse('$priceValue');
+    final ratePeriods = _decodeRatePeriods(
+      b['ratePeriods'] ?? b['rate_periods'],
+    );
+    final images = _merchantImages(b);
+    return (
+      name: '${b['name'] ?? 'Business'}',
+      category: '${b['category'] ?? businessType}',
+      address: '${b['address'] ?? ''}',
+      sessions: '${b['sessions'] ?? b['session'] ?? ''}',
+      facility: '${b['facilityType'] ?? b['facility_type'] ?? ''}',
+      hours: '${b['hours'] ?? b['opening_hours'] ?? 'Open hours'}',
+      availability: '${b['availability'] ?? ''}',
+      specialRates: _formatRatePeriods(ratePeriods),
+      details: '${b['details'] ?? ''}',
+      image: _merchantImage(b),
+      images: images,
+      price: parsedPrice == null
+          ? ''
+          : 'PHP ${parsedPrice.toStringAsFixed(0)} / session',
+      tags: tags,
+      latitude: 10.3157,
+      longitude: 123.8854,
+      visitUrl: '${b['visitUrl'] ?? b['visit_url'] ?? ''}',
+    );
+  }
+
+  List<Map<String, dynamic>> _decodeRatePeriods(dynamic value) {
+    dynamic decoded = value;
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        decoded = jsonDecode(value);
+      } on FormatException {
+        return const [];
+      }
+    }
+    if (decoded is! List) return const [];
+    return decoded
+        .whereType<Map>()
+        .map((period) => Map<String, dynamic>.from(period))
+        .where(
+          (period) =>
+              '${period['start'] ?? period['start_time'] ?? ''}'
+                  .trim()
+                  .isNotEmpty &&
+              '${period['end'] ?? period['end_time'] ?? ''}'.trim().isNotEmpty,
+        )
+        .toList();
+  }
+
+  String _formatRatePeriods(List<Map<String, dynamic>> periods) => periods
+      .map((period) {
+        final start = period['start'] ?? period['start_time'];
+        final end = period['end'] ?? period['end_time'];
+        final value = period['pricePerHour'] ?? period['price_per_hour'];
+        final price = double.tryParse('$value');
+        final formattedPrice = price == null
+            ? ''
+            : ' (PHP ${price.toStringAsFixed(0)} / hr)';
+        return '$start - $end$formattedPrice';
+      })
+      .join(', ');
+
+  List<String> _decodeStringList(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded.whereType<String>().toList();
+      }
+    } on FormatException {
+      return value.trim().isEmpty ? <String>[] : [value.trim()];
+    }
+    return value.trim().isEmpty ? <String>[] : [value.trim()];
+  }
 
   String _merchantImage(Map<String, dynamic> business) {
+    return _merchantImages(business).first;
+  }
+
+  List<String> _merchantImages(Map<String, dynamic> business) {
+    final images = <String>[];
     final raw = business['imageUrls'] ?? business['image_urls'];
     if (raw is List && raw.whereType<String>().isNotEmpty) {
-      return raw.whereType<String>().first;
+      images.addAll(raw.whereType<String>().where((image) => image.isNotEmpty));
     }
-    if (raw is String && raw.isNotEmpty) {
+    if (images.isEmpty && raw is String && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is List && decoded.whereType<String>().isNotEmpty) {
-          return decoded.whereType<String>().first;
+          images.addAll(
+            decoded.whereType<String>().where((image) => image.isNotEmpty),
+          );
         }
       } on FormatException {
-        return raw;
+        images.add(raw);
       }
     }
-    final legacy = business['imageUrl'] as String?;
-    if (legacy != null && legacy.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(legacy);
-        if (decoded is List && decoded.whereType<String>().isNotEmpty) {
-          return decoded.whereType<String>().first;
-        }
-      } on FormatException {
-        return legacy;
+    if (images.isEmpty) {
+      final legacy = business['imageUrl'] as String?;
+      if (legacy != null && legacy.isNotEmpty) {
+        images.add(legacy);
       }
-      return legacy;
     }
-    return 'assets/book-type/fitness.jpg';
+    if (images.isEmpty) {
+      images.add('assets/book-type/fitness.jpg');
+    }
+    return images;
   }
 
   ImageProvider _fitnessImageProvider(String image) {
@@ -285,59 +409,114 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        backgroundColor: Colors.white,
-        indicatorColor: _fitnessSoftOrange,
-        onDestinationSelected: (index) {
-          if (index == 0) return;
-          if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
-              ),
-            );
-            return;
-          }
-          if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(
-                  onLogout: widget.onLogout,
-                  itemType: 'fitness',
+      bottomNavigationBar: Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            shadowColor: Colors.transparent,
+            indicatorColor: _fitnessSoftOrange,
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected
+                    ? const Color(0xFFFF8200)
+                    : const Color(0xFF68748A),
+                size: 24,
+              );
+            }),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                color: selected
+                    ? const Color(0xFF101B33)
+                    : const Color(0xFF68748A),
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              );
+            }),
+          ),
+        ),
+        child: NavigationBar(
+          height: 72,
+          elevation: 0,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: 0,
+          onDestinationSelected: (index) {
+            if (index == 0) return;
+            if (index == 4) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ProfileDashboardPage(onLogout: widget.onLogout),
                 ),
-              ),
-            );
-            return;
-          }
-          _message(switch (index) {
-            1 => 'Saved venues will appear here.',
-            2 => 'Booking history will appear here.',
-            _ => 'Profile will appear here.',
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on_rounded),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Saved',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: 'Bookings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
+              );
+              return;
+            }
+            if (index == 1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SavedDashboardPage(
+                    onLogout: widget.onLogout,
+                    itemType: 'fitness',
+                  ),
+                ),
+              );
+              return;
+            }
+            if (index == 2) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+              );
+              return;
+            }
+            if (index == 3) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CustomerBookingsPage(onLogout: widget.onLogout),
+                ),
+              );
+              return;
+            }
+            _message(switch (index) {
+              1 => 'Saved venues will appear here.',
+              2 => 'Messages will appear here.',
+              3 => 'Booking history will appear here.',
+              _ => 'Profile will appear here.',
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.location_on_outlined, size: 24),
+              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
+              label: 'Explore',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border_rounded, size: 24),
+              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
+              label: 'Saved',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.send_outlined, size: 24),
+              selectedIcon: Icon(Icons.send_rounded, size: 24),
+              label: 'Messages',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined, size: 22),
+              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
+              label: 'Bookings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded, size: 24),
+              selectedIcon: Icon(Icons.person_rounded, size: 24),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -345,7 +524,9 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   Widget _results(bool wide) {
     final classes = _filteredClasses;
     return RefreshIndicator(
-      onRefresh: _loadSavedState,
+      onRefresh: () async {
+        await Future.wait([_loadMerchantBusinesses(), _loadSavedState()]);
+      },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -414,15 +595,27 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                 wide ? 28 : 16,
                 28,
               ),
-              sliver: SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: wide ? 2 : 1,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: wide ? .77 : .78,
+              sliver: SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = wide ? 2 : 1;
+                    const spacing = 16.0;
+                    final itemWidth =
+                        (constraints.maxWidth - spacing * (columns - 1)) /
+                        columns;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: [
+                        for (final item in classes)
+                          SizedBox(
+                            width: itemWidth,
+                            child: _classCard(item),
+                          ),
+                      ],
+                    );
+                  },
                 ),
-                itemCount: classes.length,
-                itemBuilder: (_, index) => _classCard(classes[index]),
               ),
             ),
         ],
@@ -754,21 +947,30 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     clipBehavior: Clip.antiAlias,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 8,
+        AspectRatio(
+          aspectRatio: 16 / 10,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image(
-                image: _fitnessImageProvider(item.image),
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, error, stackTrace) => Image.asset(
-                  'assets/book-type/fitness.jpg',
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+              GestureDetector(
+                onTap: () => _showFitnessGallery(item.images),
+                child: PageView.builder(
+                  itemCount: item.images.length > 1 ? 10000 : 1,
+                  itemBuilder: (_, index) => Image(
+                    image: _fitnessImageProvider(
+                      item.images[index % item.images.length],
+                    ),
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Image.asset(
+                      'assets/book-type/fitness.jpg',
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -793,6 +995,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                         key: item.name,
                         title: item.name,
                         subtitle: 'Class: ${item.category}\n${item.address}',
+                        imageUrl: item.image,
                       ),
                       icon: Icon(
                         _savedKeys.contains(item.name)
@@ -804,33 +1007,39 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                   ],
                 ),
               ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      '♧ 3',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
+              if (item.images.length > 1)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        '${item.images.length} photos',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
-        Expanded(
-          flex: 12,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(13, 11, 13, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                 Text(
                   item.name,
                   maxLines: 1,
@@ -844,8 +1053,26 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                 const SizedBox(height: 6),
                 _detail(Icons.location_on_outlined, item.address),
                 _detail(Icons.fitness_center, 'Class: ${item.category}'),
-                _detail(Icons.event_available_outlined, item.sessions),
+                if (item.facility.isNotEmpty)
+                  _detail(
+                    Icons.business_outlined,
+                    'Facility: ${item.facility}',
+                  ),
+                if (item.sessions.isNotEmpty)
+                  _detail(Icons.event_available_outlined, item.sessions),
                 _detail(Icons.access_time, 'Hours: ${item.hours}'),
+                if (item.availability.isNotEmpty)
+                  _detail(
+                    Icons.check_circle_outline,
+                    'Availability: ${item.availability}',
+                  ),
+                if (item.specialRates.isNotEmpty)
+                  _detail(
+                    Icons.payments_outlined,
+                    'Special rates: ${item.specialRates}',
+                  ),
+                if (item.details.isNotEmpty)
+                  _detail(Icons.info_outline, item.details),
                 const SizedBox(height: 7),
                 Container(
                   width: double.infinity,
@@ -864,7 +1091,11 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                         ),
                       ),
                       Text(
-                        item.price,
+                        item.specialRates.isNotEmpty
+                            ? 'See special rates above'
+                            : item.price.isEmpty
+                            ? 'Price not set'
+                            : item.price,
                         style: const TextStyle(
                           color: _fitnessInk,
                           fontWeight: FontWeight.w900,
@@ -879,12 +1110,12 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                   runSpacing: 4,
                   children: [for (final tag in item.tags) _tag(tag)],
                 ),
-                const Spacer(),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _message('Viewing ${item.name}.'),
+                        onPressed: () => _openVisit(item.visitUrl, item.name),
                         icon: const Icon(Icons.language, size: 15),
                         label: const Text('Visit'),
                         style: OutlinedButton.styleFrom(
@@ -912,7 +1143,6 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
               ],
             ),
           ),
-        ),
       ],
     ),
   );
@@ -921,6 +1151,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     required String key,
     required String title,
     required String subtitle,
+    String? imageUrl,
   }) async {
     try {
       if (_savedKeys.contains(key)) {
@@ -936,6 +1167,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
           key: key,
           title: title,
           subtitle: subtitle,
+          imageUrl: imageUrl,
         );
         setState(() {
           _savedKeys.add(key);
@@ -946,6 +1178,98 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     } on Exception catch (error) {
       _message('Could not update Saved: $error');
     }
+  }
+
+  Future<void> _showFitnessGallery(List<String> images) async {
+    if (images.isEmpty) return;
+    var index = 0;
+    final controller = PageController(
+      initialPage: images.length > 1 ? images.length * 1000 : 0,
+    );
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                height: MediaQuery.sizeOf(dialogContext).height * .78,
+                child: PageView.builder(
+                  controller: controller,
+                  itemCount: images.length > 1 ? 10000 : 1,
+                  onPageChanged: (page) =>
+                      setDialogState(() => index = page % images.length),
+                  itemBuilder: (_, page) => InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 3,
+                    child: Image(
+                      image: _fitnessImageProvider(
+                        images[page % images.length],
+                      ),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton.filled(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Positioned(
+                bottom: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: .65),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      '${index + 1} of ${images.length}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              if (images.length > 1) ...[
+                Positioned(
+                  left: 8,
+                  child: IconButton.filled(
+                    onPressed: () => controller.previousPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
+                Positioned(
+                  right: 8,
+                  child: IconButton.filled(
+                    onPressed: () => controller.nextPage(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
   }
 
   Widget _saveCount(int count) => DecoratedBox(
@@ -1061,10 +1385,18 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     children: [
       for (final value in values)
         FilterChip(
-          label: Text(value, style: const TextStyle(fontSize: 10)),
+          label: Text(
+            value,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected == value ? _fitnessOrange : _fitnessInk,
+              fontWeight: selected == value ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
           selected: selected == value,
           showCheckmark: false,
           selectedColor: _fitnessSoftOrange,
+          checkmarkColor: _fitnessOrange,
           side: BorderSide(
             color: selected == value ? _fitnessOrange : _fitnessLine,
           ),
@@ -1079,10 +1411,22 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     children: [
       for (final value in values)
         FilterChip(
-          label: Text(value, style: const TextStyle(fontSize: 10)),
+          label: Text(
+            value,
+            style: TextStyle(
+              fontSize: 10,
+              color: _selectedAmenities.contains(value)
+                  ? _fitnessOrange
+                  : _fitnessInk,
+              fontWeight: _selectedAmenities.contains(value)
+                  ? FontWeight.w800
+                  : FontWeight.w600,
+            ),
+          ),
           selected: _selectedAmenities.contains(value),
           showCheckmark: false,
           selectedColor: _fitnessSoftOrange,
+          checkmarkColor: _fitnessOrange,
           side: BorderSide(
             color: _selectedAmenities.contains(value)
                 ? _fitnessOrange
@@ -1141,6 +1485,20 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openVisit(String rawUrl, String name) async {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      _message('$name does not have a visit link yet.');
+      return;
+    }
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _message('Could not open the visit link for $name.');
+    }
   }
 
   void _openMap() {

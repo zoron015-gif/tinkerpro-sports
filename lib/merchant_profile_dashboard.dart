@@ -13,6 +13,7 @@ class MerchantProfileDashboardPage extends StatelessWidget {
     required this.venueCount,
     required this.onEditProfile,
     required this.onLogout,
+    this.onNavigate,
   });
 
   final Map<String, dynamic> owner;
@@ -20,6 +21,7 @@ class MerchantProfileDashboardPage extends StatelessWidget {
   final int venueCount;
   final VoidCallback onEditProfile;
   final Future<void> Function(BuildContext context) onLogout;
+  final ValueChanged<int>? onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +63,43 @@ class MerchantProfileDashboardPage extends StatelessWidget {
               foregroundColor: _profileOrange,
               minimumSize: const Size.fromHeight(48),
             ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        height: 72,
+        selectedIndex: 4,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        onDestinationSelected: (index) {
+          if (index == 4) return;
+          onNavigate?.call(index);
+          Navigator.of(context).pop();
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront_rounded),
+            label: 'Venues',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add_circle_outline),
+            selectedIcon: Icon(Icons.add_circle),
+            label: 'Add',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.send_outlined),
+            selectedIcon: Icon(Icons.send_rounded),
+            label: 'Messages',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.payments_outlined),
+            selectedIcon: Icon(Icons.payments_rounded),
+            label: 'Payouts',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
           ),
         ],
       ),

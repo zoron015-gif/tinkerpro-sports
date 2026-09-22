@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 const apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.14:3000',
+  defaultValue: 'http://192.168.1.47:3000',
 );
 
 class AuthApiException implements Exception {
@@ -23,6 +23,18 @@ class AuthApi {
   AuthApi({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+
+  Map<String, String> _authHeaders(
+    String? token, {
+    Map<String, String>? extra,
+  }) {
+    final headers = <String, String>{};
+    if (extra != null) headers.addAll(extra);
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
 
   Future<Map<String, dynamic>> register({
     required String email,
@@ -63,13 +75,8 @@ class AuthApi {
         .toList();
   }
 
-  Future<Map<String, dynamic>> merchantProfile(String token) async {
-    return _request(
-      'GET',
-      '/api/merchant/profile',
-      headers: {'Authorization': 'Bearer $token'},
-    );
-  }
+  Future<Map<String, dynamic>> merchantProfile(String token) =>
+      _request('GET', '/api/merchant/profile', headers: _authHeaders(token));
 
   Future<Map<String, dynamic>> saveMerchantProfile({
     required String token,
@@ -78,17 +85,14 @@ class AuthApi {
     'PUT',
     '/api/merchant/profile',
     body: profile,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    },
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
 
   Future<List<Map<String, dynamic>>> merchantBusinesses(String token) async {
     final response = await _request(
       'GET',
       '/api/merchant/businesses',
-      headers: {'Authorization': 'Bearer $token'},
+      headers: _authHeaders(token),
     );
     return (response['businesses'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -103,10 +107,7 @@ class AuthApi {
       'POST',
       '/api/merchant/businesses',
       body: business,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
 
@@ -119,10 +120,7 @@ class AuthApi {
       'PUT',
       '/api/merchant/businesses/$id',
       body: business,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
 
@@ -135,10 +133,7 @@ class AuthApi {
       'PUT',
       '/api/merchant/businesses/$id/status',
       body: {'enabled': enabled},
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
 
@@ -149,7 +144,91 @@ class AuthApi {
     await _request(
       'DELETE',
       '/api/merchant/businesses/$id',
-      headers: {'Authorization': 'Bearer $token'},
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<Map<String, dynamic>> createBooking({
+    required String token,
+    required int venueId,
+    required String date,
+    required String startTime,
+    required double durationHours,
+    required int players,
+    required String paymentMethod,
+  }) => _request(
+    'POST',
+    '/api/bookings',
+    body: {
+      'venueId': venueId,
+      'date': date,
+      'startTime': startTime,
+      'durationHours': durationHours,
+      'players': players,
+      'paymentMethod': paymentMethod,
+    },
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+  );
+
+  Future<List<Map<String, dynamic>>> customerBookings(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/bookings',
+      headers: _authHeaders(token),
+    );
+    return (response['bookings'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> bookingAvailability({
+    required String token,
+    required int venueId,
+    required String date,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/bookings/availability?venueId=$venueId&date=${Uri.encodeQueryComponent(date)}',
+      headers: _authHeaders(token),
+    );
+    return (response['bookings'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> merchantBookings(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/merchant/bookings',
+      headers: _authHeaders(token),
+    );
+    return (response['bookings'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<void> approveBooking({
+    required String token,
+    required int bookingId,
+  }) async {
+    await _request(
+      'PATCH',
+      '/api/merchant/bookings/$bookingId/approve',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<void> finishBooking({
+    required String token,
+    required int bookingId,
+  }) async {
+    await _request(
+      'PATCH',
+      '/api/merchant/bookings/$bookingId/finish',
+      headers: _authHeaders(token),
     );
   }
 
@@ -174,16 +253,19 @@ class AuthApi {
     'password': password,
   });
 
-  Future<Map<String, dynamic>> loginWithGoogle(
-    String idToken, {
-    String? role,
-  }) => _post('/api/auth/oauth/google', {'idToken': idToken, 'role': ?role});
+  Future<Map<String, dynamic>> loginWithGoogle(String idToken, {String? role}) {
+    final payload = <String, dynamic>{'idToken': idToken};
+    if (role != null && role.isNotEmpty) {
+      payload['role'] = role;
+    }
+    return _post('/api/auth/oauth/google', payload);
+  }
 
   Future<List<Map<String, dynamic>>> savedItems(String token) async {
     final response = await _request(
       'GET',
       '/api/saved-items',
-      headers: {'Authorization': 'Bearer $token'},
+      headers: _authHeaders(token),
     );
     return (response['items'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -194,7 +276,7 @@ class AuthApi {
     final response = await _request(
       'GET',
       '/api/saved-item-counts?itemType=${Uri.encodeQueryComponent(type)}',
-      headers: {'Authorization': 'Bearer $token'},
+      headers: _authHeaders(token),
     );
     final counts = response['counts'];
     if (counts is! Map) return {};
@@ -221,10 +303,7 @@ class AuthApi {
         'subtitle': subtitle,
         'imageUrl': imageUrl,
       },
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
 
@@ -232,14 +311,140 @@ class AuthApi {
     await _request(
       'DELETE',
       '/api/saved-items/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}',
-      headers: {'Authorization': 'Bearer $token'},
+      headers: _authHeaders(token),
     );
   }
 
-  Future<Map<String, dynamic>> me(String token) => _request(
+  Future<Map<String, dynamic>> me(String token) =>
+      _request('GET', '/api/auth/me', headers: _authHeaders(token));
+
+  Future<Map<String, dynamic>> messageOwner({
+    required String token,
+    required String businessKey,
+  }) => _request(
     'GET',
-    '/api/auth/me',
-    headers: {'Authorization': 'Bearer $token'},
+    '/api/messages/owner?businessKey=${Uri.encodeQueryComponent(businessKey)}',
+    headers: _authHeaders(token),
+  );
+
+  Future<List<Map<String, dynamic>>> conversations(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/messages/conversations',
+      headers: _authHeaders(token),
+    );
+    return (response['conversations'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> messageContacts(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/messages/contacts',
+      headers: _authHeaders(token),
+    );
+    return (response['contacts'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<int> openConversation({
+    required String token,
+    int? recipientId,
+    List<int>? participantIds,
+    String? title,
+    bool group = false,
+  }) async {
+    final ids = [...?participantIds];
+    if (recipientId != null) ids.add(recipientId);
+    final response = await _request(
+      'POST',
+      '/api/messages/conversations',
+      body: {
+        'recipientId': recipientId,
+        'participantIds': ids,
+        'title': title,
+        'type': group ? 'group' : 'direct',
+      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+    return (response['conversationId'] as num).toInt();
+  }
+
+  Future<List<Map<String, dynamic>>> conversationMessages({
+    required String token,
+    required int conversationId,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/api/messages/conversations/$conversationId',
+      headers: _authHeaders(token),
+    );
+    return (response['messages'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<void> sendConversationMessage({
+    required String token,
+    required int conversationId,
+    required String body,
+    Map<String, dynamic>? attachment,
+  }) async {
+    await _request(
+      'POST',
+      '/api/messages/conversations/$conversationId',
+      body: {
+        'body': body,
+        ...?(attachment == null ? null : {'attachment': attachment}),
+      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> deleteConversationMessage({
+    required String token,
+    required int conversationId,
+    required int messageId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/messages/conversations/$conversationId/messages/$messageId',
+      headers: _authHeaders(token),
+    );
+  }
+
+  // Compatibility aliases for older messaging-page editor snapshots.
+  Future<List<Map<String, dynamic>>> messages({
+    required String token,
+    required int conversationId,
+  }) => conversationMessages(token: token, conversationId: conversationId);
+
+  Future<int> createConversation({
+    required String token,
+    required List<int> participantIds,
+    String? title,
+    bool group = false,
+  }) => openConversation(
+    token: token,
+    participantIds: participantIds,
+    title: title,
+    group: group,
+  );
+
+  Future<void> sendMessage({
+    required String token,
+    required int conversationId,
+    String? body,
+    Map<String, dynamic>? attachment,
+  }) => sendConversationMessage(
+    token: token,
+    conversationId: conversationId,
+    body: body ?? '',
   );
 
   Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body) =>
@@ -270,6 +475,10 @@ class AuthApi {
           : method == 'PUT'
           ? await _client
                 .put(uri, headers: headers, body: jsonEncode(body))
+                .timeout(const Duration(seconds: 15))
+          : method == 'PATCH'
+          ? await _client
+                .patch(uri, headers: headers, body: jsonEncode(body))
                 .timeout(const Duration(seconds: 15))
           : await _client
                 .post(uri, headers: headers, body: jsonEncode(body))
