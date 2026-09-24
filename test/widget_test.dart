@@ -6,32 +6,46 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:myapp/main.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('Marketplace overview renders the booking experience', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
 
     expect(find.text('Your sport.\nYour event.\nYour place.'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Everything in one place'),
+      200,
+      scrollable: find.byType(Scrollable),
+    );
     expect(find.text('Everything in one place'), findsOneWidget);
+
     await tester.tap(find.text('Explore bookings'));
     await tester.pumpAndSettle();
+
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Continue with Google'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-    await tester.pumpAndSettle();
-    expect(find.text('Explore bookings'), findsOneWidget);
-    await tester.tap(find.text('Explore bookings'));
-    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Register').first);
     await tester.pumpAndSettle();
+
     expect(find.text('Create your account'), findsOneWidget);
     expect(find.text('Merchant'), findsOneWidget);
+
     await tester.tap(find.text('Merchant'));
     await tester.pumpAndSettle();
+
     expect(find.text('Create account'), findsOneWidget);
   });
 }

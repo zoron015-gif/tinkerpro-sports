@@ -289,8 +289,8 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
     return Scaffold(
       backgroundColor: _eventPage,
       appBar: AppBar(
-        backgroundColor: _eventPage,
-        foregroundColor: _eventInk,
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           onPressed: () =>
@@ -306,7 +306,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         ),
         title: const Text(
           'Event Venues',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -344,25 +344,21 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
           navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
+            backgroundColor: Colors.black,
+            surfaceTintColor: Colors.black,
             shadowColor: Colors.transparent,
             indicatorColor: _eventSoftOrange,
             iconTheme: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);
               return IconThemeData(
-                color: selected
-                    ? const Color(0xFFFF8200)
-                    : const Color(0xFF68748A),
+                color: selected ? const Color(0xFFFF8200) : Colors.white,
                 size: 24,
               );
             }),
             labelTextStyle: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);
               return TextStyle(
-                color: selected
-                    ? const Color(0xFF101B33)
-                    : const Color(0xFF68748A),
+                color: selected ? Colors.white : Colors.white,
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               );
@@ -401,7 +397,9 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
             }
             if (index == 2) {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+                MaterialPageRoute(
+                  builder: (_) => const MessagesDashboardPage(),
+                ),
               );
               return;
             }
@@ -537,10 +535,7 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
                       runSpacing: spacing,
                       children: [
                         for (final venue in venues)
-                          SizedBox(
-                            width: itemWidth,
-                            child: _venueCard(venue),
-                          ),
+                          SizedBox(width: itemWidth, child: _venueCard(venue)),
                       ],
                     );
                   },
@@ -940,97 +935,94 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                  Text(
-                    venue.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _eventInk,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  _detail(Icons.location_on_outlined, venue.address),
-                  _detail(Icons.celebration_outlined, 'Type: ${venue.type}'),
-                  _detail(
-                    Icons.business_outlined,
-                    'Facility: ${venue.facility}',
-                  ),
-                  _detail(Icons.access_time, 'Hours: ${venue.hours}'),
-                  if (venue.availability.isNotEmpty)
-                    _detail(
-                      Icons.check_circle_outline,
-                      'Availability: ${venue.availability}',
-                    ),
-                  for (final line in _eventDetailLines(venue.details))
-                    _detail(Icons.info_outline, line),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFAFBFD),
-                      border: Border.all(color: _eventLine),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Event package',
-                            style: TextStyle(color: _eventMuted, fontSize: 11),
-                          ),
-                        ),
-                        Text(
-                          venue.price,
-                          style: const TextStyle(
-                            color: _eventInk,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (venue.tags.isNotEmpty)
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 4,
-                      children: [for (final tag in venue.tags) _tag(tag)],
-                    ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openVisit(venue.visitUrl, venue.name),
-                          icon: const Icon(Icons.language, size: 15),
-                          label: const Text('Visit'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _eventNavy,
-                            side: const BorderSide(color: _eventNavy),
-                            minimumSize: const Size(0, 36),
-                          ),
-                        ),
+              Text(
+                venue.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _eventInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              _detail(Icons.location_on_outlined, venue.address),
+              _detail(Icons.celebration_outlined, 'Type: ${venue.type}'),
+              _detail(Icons.business_outlined, 'Facility: ${venue.facility}'),
+              _detail(Icons.access_time, 'Hours: ${venue.hours}'),
+              if (venue.availability.isNotEmpty)
+                _detail(
+                  Icons.check_circle_outline,
+                  'Availability: ${venue.availability}',
+                ),
+              for (final line in _eventDetailLines(venue.details))
+                _detail(Icons.info_outline, line),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAFBFD),
+                  border: Border.all(color: _eventLine),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Event package',
+                        style: TextStyle(color: _eventMuted, fontSize: 11),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _message(
-                            'Booking ${venue.name} is ready. Fee: ${venue.price}.',
-                          ),
-                          icon: const Icon(Icons.calendar_month, size: 15),
-                          label: const Text('Book now'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _eventOrange,
-                            minimumSize: const Size(0, 36),
-                          ),
-                        ),
+                    ),
+                    Text(
+                      venue.price,
+                      style: const TextStyle(
+                        color: _eventInk,
+                        fontWeight: FontWeight.w900,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              if (venue.tags.isNotEmpty)
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 4,
+                  children: [for (final tag in venue.tags) _tag(tag)],
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openVisit(venue.visitUrl, venue.name),
+                      icon: const Icon(Icons.language, size: 15),
+                      label: const Text('Visit'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _eventNavy,
+                        side: const BorderSide(color: _eventNavy),
+                        minimumSize: const Size(0, 36),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _message(
+                        'Booking ${venue.name} is ready. Fee: ${venue.price}.',
+                      ),
+                      icon: const Icon(Icons.calendar_month, size: 15),
+                      label: const Text('Book now'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _eventOrange,
+                        minimumSize: const Size(0, 36),
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
+          ),
+        ),
       ],
     ),
   );

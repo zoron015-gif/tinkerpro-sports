@@ -15,6 +15,8 @@ CREATE TABLE users (
   last_name VARCHAR(100) NULL,
   phone VARCHAR(30) NULL,
   avatar_url LONGTEXT NULL,
+  address VARCHAR(500) NULL,
+  hobby VARCHAR(255) NULL,
   role ENUM('customer', 'merchant') NOT NULL DEFAULT 'customer',
   status ENUM('pending', 'active', 'suspended', 'deleted') NOT NULL DEFAULT 'pending',
   email_verified_at DATETIME NULL,
@@ -135,6 +137,7 @@ CREATE TABLE IF NOT EXISTS event_business_details (
   business_id BIGINT UNSIGNED NOT NULL,
   event_name VARCHAR(255) NULL,
   event_type VARCHAR(100) NULL,
+  event_types_json JSON NULL,
   event_date DATE NULL,
   start_time TIME NULL,
   end_time TIME NULL,
@@ -143,6 +146,10 @@ CREATE TABLE IF NOT EXISTS event_business_details (
   estimated_attendance INT UNSIGNED NULL,
   accessibility_needs TEXT NULL,
   parking_security TEXT NULL,
+  attendance_min INT UNSIGNED NULL,
+  attendance_max INT UNSIGNED NULL,
+  parking_needs JSON NULL,
+  security_needs JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (business_id),
@@ -187,6 +194,42 @@ CREATE TABLE IF NOT EXISTS bookings (
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
     ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS merchant_news (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  business_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL,
+  image_url LONGTEXT NULL,
+  status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_merchant_news_business_status (business_id, status, created_at),
+  CONSTRAINT fk_merchant_news_business FOREIGN KEY (business_id)
+    REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS venue_reviews (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  business_id BIGINT UNSIGNED NOT NULL,
+  booking_id BIGINT UNSIGNED NOT NULL,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  rating TINYINT UNSIGNED NOT NULL,
+  comment VARCHAR(2000) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_venue_reviews_booking_customer (booking_id, customer_id),
+  KEY idx_venue_reviews_business (business_id, created_at),
+  CONSTRAINT fk_venue_reviews_business FOREIGN KEY (business_id)
+    REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_venue_reviews_booking FOREIGN KEY (booking_id)
+    REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_venue_reviews_customer FOREIGN KEY (customer_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT chk_venue_reviews_rating CHECK (rating BETWEEN 1 AND 5)
 ) ENGINE=InnoDB;
 
 CREATE TABLE email_verification_tokens (

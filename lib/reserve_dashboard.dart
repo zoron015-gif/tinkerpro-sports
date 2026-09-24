@@ -1,9 +1,14 @@
+// The legacy booking-type picker remains in this file for the View info
+// navigation flow, while Explore now opens the customer News Feed first.
+// ignore_for_file: unused_element
+
 import 'package:flutter/material.dart';
 
 import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'sports.dart';
 import 'app_session.dart';
+import 'news_feed.dart';
 
 import 'dart:async';
 
@@ -82,6 +87,8 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    return NewsFeedPage(onLogout: widget.onLogout);
+    /*
     return Scaffold(
       backgroundColor: _background,
       body: SafeArea(
@@ -242,6 +249,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
         ),
       ),
     );
+    */
   }
 }
 

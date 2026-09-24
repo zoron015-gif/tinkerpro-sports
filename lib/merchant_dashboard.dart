@@ -58,36 +58,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   String _venueSearchQuery = '';
 
   List<Map<String, dynamic>> get _visibleBusinesses {
-    return _businesses
-        .where((business) {
-          final enabled = business['enabled'];
-          final isEnabled =
-              enabled != false &&
-              enabled != 0 &&
-              enabled != '0' &&
-              enabled != 'false' &&
-              enabled != 'FALSE';
-          return isEnabled &&
-              (_selectedBookingType == null ||
-                  business['businessType'] == _selectedBookingType);
-        })
-        .toList();
+    return _businesses.where((business) {
+      final enabled = business['enabled'];
+      final isEnabled =
+          enabled != false &&
+          enabled != 0 &&
+          enabled != '0' &&
+          enabled != 'false' &&
+          enabled != 'FALSE';
+      return isEnabled &&
+          (_selectedBookingType == null ||
+              business['businessType'] == _selectedBookingType);
+    }).toList();
   }
 
   static const _categoriesByBusinessType = {
-    'Sports': [
-      'Tennis',
-      'Pickleball',
-      'Basketball',
-      'Volleyball',
-      'Badminton',
-    ],
-    'Event': [
-      'Ballroom',
-      'Terrace',
-      'Private Dining',
-      'Garden',
-    ],
+    'Sports': ['Tennis', 'Pickleball', 'Basketball', 'Volleyball', 'Badminton'],
+    'Event': ['Ballroom', 'Terrace', 'Private Dining', 'Garden'],
     'Fitness & Wellness': [
       'CrossFit',
       'Pilates',
@@ -137,11 +124,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       }
       final response = await _api.merchantProfile(token);
       final profile = response['profile'] as Map<String, dynamic>? ?? {};
-      final accountEmail =
-          (profile['email'] as String?) ?? session.accountEmail ?? '';
-      final profileCompleted = _hasCompletedProfile(profile) ||
-          (accountEmail.isNotEmpty &&
-              session.merchantProfileCompletedFor(accountEmail));
       if (!mounted) return;
       setState(() {
         _owner = profile;
@@ -152,7 +134,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         _phone.text = profile['phone'] as String? ?? '';
         _businessName.text = profile['businessName'] as String? ?? '';
         _businessTypeValue = profile['businessType'] as String?;
-        _profileSaved = profileCompleted;
+        // Merchant accounts go directly to the dashboard. Profile details are
+        // displayed from the account record instead of blocking first login.
+        _profileSaved = true;
         _businessType.text = _businessTypeValue ?? '';
         _registrationNumber.text =
             profile['registrationNumber'] as String? ?? '';
@@ -175,10 +159,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ),
           );
       });
-      if (_profileSaved) {
-        await _loadBusinesses();
-        await _loadBookings();
-      }
+      await _loadBusinesses();
+      await _loadBookings();
     } on Exception catch (error) {
       if (mounted) {
         _showMessage('Could not load merchant profile: $error');
@@ -188,28 +170,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     }
   }
 
-  bool _hasCompletedProfile(Map<String, dynamic> profile) {
-    final profileExists = profile['profileExists'];
-    final hasProfileRecord = profileExists == true ||
-        profileExists == 1 ||
-        profileExists == '1' ||
-        profileExists == 'true' ||
-        profileExists == 'TRUE';
-    final requiredFields = [
-      profile['firstName'],
-      profile['lastName'],
-      profile['phone'],
-      profile['ownerDesignation'],
-      profile['businessType'],
-    ];
-    final hasRequiredFields = requiredFields.every(
-      (value) => value is String && value.trim().isNotEmpty,
-    );
-    return hasProfileRecord || hasRequiredFields;
-  }
-
-  Future<void> _saveProfile() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<bool> _saveProfile() async {
+    if (!(_formKey.currentState?.validate() ?? true)) return false;
     setState(() => _saving = true);
     try {
       final session = await AppSession.load();
@@ -243,12 +205,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       await _loadBusinesses();
       if (mounted) setState(() => _profileSaved = true);
       _showMessage('Merchant profile saved and ready for customer listings.');
+      return true;
     } on Exception catch (error) {
       _showMessage('Could not save merchant profile: $error');
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-
   }
 
   void _showMessage(String message) {
@@ -256,6 +219,206 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<Map<String, dynamic>?> _openMerchantEditPanel() async {
+    var panelProfileImage = _profileImage;
+    final saved = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close merchant profile editor',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (panelContext, animation, secondaryAnimation) =>
+          StatefulBuilder(
+            builder: (panelContext, setPanelState) => Align(
+              alignment: Alignment.centerRight,
+              child: Material(
+                color: Colors.white,
+                child: SizedBox(
+                  width: MediaQuery.sizeOf(panelContext).width * .88,
+                  height: double.infinity,
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.storefront_outlined,
+                                color: _merchantOrange,
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Edit merchant profile',
+                                  style: TextStyle(
+                                    color: _merchantInk,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () =>
+                                    Navigator.pop(panelContext, false),
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 18),
+                              GestureDetector(
+                                onTap: () async {
+                                  final selected = await _pickProfileImage();
+                                  if (selected == null) return;
+                                  panelProfileImage = selected;
+                                  if (mounted) setPanelState(() {});
+                                },
+                                child: CircleAvatar(
+                                  radius: 42,
+                                  backgroundColor: const Color(0xFFFFE8D2),
+                                  backgroundImage: _imageProvider(
+                                    panelProfileImage,
+                                  ),
+                                  child: panelProfileImage == null
+                                      ? const Icon(
+                                          Icons.add_a_photo_outlined,
+                                          color: _merchantOrange,
+                                          size: 25,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Tap to upload avatar',
+                                style: TextStyle(
+                                  color: _merchantMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: Form(
+                                  key: _formKey,
+                                  child: ListView(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      20,
+                                      6,
+                                      20,
+                                      20,
+                                    ),
+                                    children: [
+                                      _field(
+                                        _firstName,
+                                        'First name',
+                                        'First name',
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _field(
+                                        _lastName,
+                                        'Last name',
+                                        'Last name',
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _field(
+                                        _phone,
+                                        'Direct contact phone',
+                                        'Contact phone',
+                                        keyboardType: TextInputType.phone,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _field(
+                                        _address,
+                                        'Address',
+                                        'Address',
+                                        required: false,
+                                        maxLines: 2,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _field(
+                                        _contactEmail,
+                                        'Official business email',
+                                        'Business email',
+                                        required: false,
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  10,
+                                  20,
+                                  18,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: () =>
+                                            Navigator.pop(panelContext, false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: FilledButton(
+                                        onPressed: _saving
+                                            ? null
+                                            : () async {
+                                                final didSave =
+                                                    await _saveProfile();
+                                                if (didSave &&
+                                                    panelContext.mounted) {
+                                                  Navigator.pop(
+                                                    panelContext,
+                                                    true,
+                                                  );
+                                                }
+                                              },
+                                        child: const Text('Save changes'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
+    );
+    if (saved == true && mounted) {
+      await _loadProfile();
+      return {'owner': _owner, 'profileImage': _profileImage};
+    }
+    return null;
   }
 
   Future<void> _logout() async {
@@ -281,9 +444,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               onPressed: _logout,
               icon: const Icon(Icons.logout_rounded, size: 18),
               label: const Text('Log out'),
-              style: TextButton.styleFrom(
-                foregroundColor: _merchantOrange,
-              ),
+              style: TextButton.styleFrom(foregroundColor: _merchantOrange),
             ),
         ],
       ),
@@ -469,7 +630,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           },
         ),
         const SizedBox(height: 20),
-        if (_payoutTab == 0) _bookingRequestsContent() else _payoutTrackContent(),
+        if (_payoutTab == 0)
+          _bookingRequestsContent()
+        else
+          _payoutTrackContent(),
       ],
     ),
   );
@@ -478,8 +642,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final requests = _filteredPayoutBookings
         .where(
           (booking) =>
-              booking['status'] == 'pending' ||
-              booking['status'] == 'approved',
+              booking['status'] == 'pending' || booking['status'] == 'approved',
         )
         .toList();
     final hasRequests = requests.isNotEmpty;
@@ -659,7 +822,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               _businessGrid(businesses, wide),
           ],
         );
-
       },
     ),
   );
@@ -667,9 +829,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _venueSearchBar() {
     return TextField(
       controller: _venueSearchController,
-      onChanged: (value) => setState(
-        () => _venueSearchQuery = value.trim().toLowerCase(),
-      ),
+      onChanged: (value) =>
+          setState(() => _venueSearchQuery = value.trim().toLowerCase()),
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Search your venues...',
@@ -908,8 +1069,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _businessCard(Map<String, dynamic> business) {
     final images = _businessImages(business);
     final name = _businessText(business, ['name']) ?? 'Unnamed venue';
-    final type = _businessText(business, ['businessType', 'business_type']) ??
-        'Booking';
+    final type =
+        _businessText(business, ['businessType', 'business_type']) ?? 'Booking';
     final category = _businessText(business, ['category']) ?? '';
     final address = _businessText(business, ['address']) ?? '';
     final facility =
@@ -953,11 +1114,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         onTap: () => _showImageGallery(context, images),
                         child: _imageCarousel(images),
                       ),
-                Positioned(
-                  left: 10,
-                  top: 10,
-                  child: _statusPill(),
-                ),
+                Positioned(left: 10, top: 10, child: _statusPill()),
               ],
             ),
           ),
@@ -979,17 +1136,29 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 if (address.isNotEmpty)
                   _businessDetail(Icons.location_on_outlined, address),
                 if (facility.isNotEmpty)
-                  _businessDetail(Icons.business_outlined, 'Facility: $facility'),
+                  _businessDetail(
+                    Icons.business_outlined,
+                    'Facility: $facility',
+                  ),
                 if (type == 'Sports' && category.isNotEmpty)
                   _businessDetail(Icons.sports_rounded, 'Sport: $category'),
                 if (type == 'Event' && category.isNotEmpty)
-                  _businessDetail(Icons.celebration_outlined, 'Event type: $category'),
+                  _businessDetail(
+                    Icons.celebration_outlined,
+                    'Event type: $category',
+                  ),
                 if (type == 'Fitness & Wellness' && category.isNotEmpty)
-                  _businessDetail(Icons.fitness_center_rounded, 'Class: $category'),
+                  _businessDetail(
+                    Icons.fitness_center_rounded,
+                    'Class: $category',
+                  ),
                 if (courts.isNotEmpty)
                   _businessDetail(Icons.grid_3x3, 'Courts: $courts'),
                 if (sessions.isNotEmpty)
-                  _businessDetail(Icons.event_available_outlined, 'Sessions: $sessions'),
+                  _businessDetail(
+                    Icons.event_available_outlined,
+                    'Sessions: $sessions',
+                  ),
                 if (hours.isNotEmpty)
                   _businessDetail(Icons.access_time, 'Hours: $hours'),
                 if (availability.isNotEmpty)
@@ -1040,8 +1209,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () =>
-                            _showMessage('Opening $name'),
+                        onPressed: () => _showMessage('Opening $name'),
                         icon: const Icon(Icons.language, size: 15),
                         label: const Text('Visit'),
                         style: OutlinedButton.styleFrom(
@@ -1098,20 +1266,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       });
 
   String _hourlyPrice(Map<String, dynamic> business) {
-    final isEvent = business['businessType'] == 'Event' ||
+    final isEvent =
+        business['businessType'] == 'Event' ||
         business['business_type'] == 'Event';
     final value = isEvent
         ? (business['eventFee'] ??
-            business['event_fee'] ??
-            business['pricePerHour'] ??
-            business['price_per_hour'])
+              business['event_fee'] ??
+              business['pricePerHour'] ??
+              business['price_per_hour'])
         : business['pricePerHour'] ??
-        business['price_per_hour'] ??
-        business['price'] ??
-        business['hourlyRate'];
-    final price = value is num
-        ? value.toDouble()
-        : double.tryParse('$value');
+              business['price_per_hour'] ??
+              business['price'] ??
+              business['hourlyRate'];
+    final price = value is num ? value.toDouble() : double.tryParse('$value');
     if (price == null || price <= 0) return '';
     final formatted = price == price.roundToDouble()
         ? price.toStringAsFixed(0)
@@ -1161,9 +1328,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       .join(', ');
 
   List<String> _businessTags(Map<String, dynamic> business) {
-    final value = business['tags'] ??
-        business['amenities'] ??
-        business['amenities_json'];
+    final value =
+        business['tags'] ?? business['amenities'] ?? business['amenities_json'];
     if (value is List) {
       return value.whereType<String>().where((tag) => tag.isNotEmpty).toList();
     }
@@ -1205,46 +1371,43 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ),
   );
 
-  Widget _priceBox(
-    String type,
-    String price, {
-    bool hasRatePeriods = false,
-  }) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFAFBFD),
-      border: Border.all(color: _merchantLine),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(
-            hasRatePeriods
-                ? 'Rate schedule'
-                : type == 'Fitness & Wellness'
-                ? 'Session price'
-                : type == 'Event'
-                ? 'Event package'
-                : 'Price / hour',
-            style: const TextStyle(
-              color: _merchantMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+  Widget _priceBox(String type, String price, {bool hasRatePeriods = false}) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFAFBFD),
+          border: Border.all(color: _merchantLine),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                hasRatePeriods
+                    ? 'Rate schedule'
+                    : type == 'Fitness & Wellness'
+                    ? 'Session price'
+                    : type == 'Event'
+                    ? 'Event package'
+                    : 'Price / hour',
+                style: const TextStyle(
+                  color: _merchantMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
-          ),
+            Text(
+              price,
+              style: const TextStyle(
+                color: _merchantInk,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ),
-        Text(
-          price,
-          style: const TextStyle(
-            color: _merchantInk,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    ),
-  );
+      );
 
   Widget _tag(String label) => DecoratedBox(
     decoration: BoxDecoration(
@@ -1325,10 +1488,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 owner: _owner,
                 profileImage: _imageProvider(_profileImage),
                 venueCount: _visibleBusinesses.length,
-                onEditProfile: () {
-                  Navigator.of(context).pop();
-                  setState(() => _profileSaved = false);
-                },
+                onEditProfile: _openMerchantEditPanel,
                 onLogout: widget.onLogout ?? (_) async {},
                 onNavigate: (index) {
                   setState(() => _merchantTab = index);
@@ -1410,7 +1570,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     } on Exception catch (error) {
       if (mounted) _showMessage('Could not load businesses: $error');
     }
-
   }
 
   Future<void> _loadBookings() async {
@@ -1435,7 +1594,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     } on Exception catch (error) {
       _showMessage('Could not approve booking: $error');
     }
-
   }
 
   Future<void> _finishMerchantBooking(int bookingId) async {
@@ -1463,7 +1621,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     String type = bookingTypes.contains(_businessTypeValue)
         ? _businessTypeValue!
         : 'Sports';
-    String category = (_categoriesByBusinessType[type] ?? const ['Other']).first;
+    String category =
+        (_categoriesByBusinessType[type] ?? const ['Other']).first;
     String facility = 'Indoor';
     String? image;
     final added = await showDialog<bool>(
@@ -1481,8 +1640,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     children: [
                       DropdownButtonFormField<String>(
                         initialValue: type,
-                        decoration:
-                            const InputDecoration(labelText: 'Booking type'),
+                        decoration: const InputDecoration(
+                          labelText: 'Booking type',
+                        ),
                         items: const [
                           DropdownMenuItem(
                             value: 'Sports',
@@ -1513,17 +1673,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         decoration: const InputDecoration(
                           labelText: 'Category',
                         ),
-                        items: <String>{
-                          ...(_categoriesByBusinessType[type] ?? const []),
-                          'Other',
-                        }
-                            .map(
-                              (value) => DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
+                        items:
+                            <String>{
+                                  ...(_categoriesByBusinessType[type] ??
+                                      const []),
+                                  'Other',
+                                }
+                                .map(
+                                  (value) => DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(value),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (value) {
                           if (value != null) {
                             setDialogState(() => category = value);
@@ -1535,16 +1697,16 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         decoration: const InputDecoration(
                           labelText: 'Business name',
                         ),
-                        validator: (value) => value == null || value.trim().isEmpty
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
                             ? 'Enter a business name'
                             : null,
                       ),
                       TextFormField(
                         controller: address,
-                        decoration: const InputDecoration(
-                          labelText: 'Address',
-                        ),
-                        validator: (value) => value == null || value.trim().isEmpty
+                        decoration: const InputDecoration(labelText: 'Address'),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
                             ? 'Enter an address'
                             : null,
                       ),
@@ -1634,7 +1796,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop(false);
                   }
-                  _showMessage('Your session has expired. Please log in again.');
+                  _showMessage(
+                    'Your session has expired. Please log in again.',
+                  );
                   return;
                 }
                 await _api.createMerchantBusiness(
@@ -1736,7 +1900,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               children: [
                 const Icon(Icons.check_circle_rounded, color: Colors.green),
                 TextButton(
-                  onPressed: _pickProfileImage,
+                  onPressed: () {
+                    _pickProfileImage();
+                  },
                   child: const Text('Change photo'),
                 ),
               ],
@@ -1787,16 +1953,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ],
   );
 
-  Future<void> _pickProfileImage() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 600,
-      maxHeight: 600,
-      imageQuality: 75,
-    );
-    if (image == null) return;
-    final bytes = await image.readAsBytes();
-    if (mounted) setState(() => _profileImage = _dataUri(bytes));
+  Future<String?> _pickProfileImage() async {
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 600,
+        maxHeight: 600,
+        imageQuality: 75,
+      );
+      if (image == null) return null;
+      final bytes = await image.readAsBytes();
+      final dataUri = _dataUri(bytes);
+      if (mounted) setState(() => _profileImage = dataUri);
+      return dataUri;
+    } on Exception catch (error) {
+      _showMessage('Could not select avatar: $error');
+      return null;
+    }
   }
 
   Future<void> _pickBusinessImage() async {
@@ -1931,9 +2104,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   controller: PageController(initialPage: 100000),
                   itemCount: 1000000,
                   onPageChanged: (index) {
-                    setDialogState(
-                      () => currentIndex = index % images.length,
-                    );
+                    setDialogState(() => currentIndex = index % images.length);
                   },
                   itemBuilder: (_, index) => Center(
                     child: Image(

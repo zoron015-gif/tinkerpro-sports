@@ -58,6 +58,12 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   Timer? _realtimeTimer;
   bool _realtimeRefreshInFlight = false;
 
+  int get _unreadMessageCount => _conversations.fold<int>(
+    0,
+    (total, conversation) =>
+        total + ((conversation['unreadCount'] as num?)?.toInt() ?? 0),
+  );
+
   @override
   void initState() {
     super.initState();
@@ -546,9 +552,33 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     final image = _safeString(user['avatarUrl']);
     return CircleAvatar(
       radius: radius,
-      backgroundImage: image.isEmpty ? null : NetworkImage(image),
-      child: image.isEmpty ? Text(_initials(user)) : null,
+      backgroundColor: _messageSoftOrange,
+      backgroundImage: _avatarImage(image),
+      child: image.trim().isEmpty || _avatarImage(image) == null
+          ? Text(
+              _initials(user),
+              style: const TextStyle(
+                color: _messageOrange,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          : null,
     );
+  }
+
+  ImageProvider<Object>? _avatarImage(String image) {
+    final value = image.trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('data:image/')) {
+      final separator = value.indexOf(',');
+      if (separator <= 0 || separator >= value.length - 1) return null;
+      try {
+        return MemoryImage(base64Decode(value.substring(separator + 1)));
+      } on FormatException {
+        return null;
+      }
+    }
+    return NetworkImage(value);
   }
 
   void _show(String message) {
@@ -703,9 +733,21 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
             ),
             label: isMerchant ? 'Add' : 'Saved',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.send_outlined),
-            selectedIcon: Icon(Icons.send_rounded),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: _unreadMessageCount > 0,
+              label: Text(
+                _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
+              ),
+              child: Icon(Icons.send_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: _unreadMessageCount > 0,
+              label: Text(
+                _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
+              ),
+              child: Icon(Icons.send_rounded),
+            ),
             label: 'Messages',
           ),
           NavigationDestination(

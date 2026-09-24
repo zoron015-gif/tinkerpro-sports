@@ -357,8 +357,8 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
     return Scaffold(
       backgroundColor: _fitnessPage,
       appBar: AppBar(
-        backgroundColor: _fitnessPage,
-        foregroundColor: _fitnessInk,
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           onPressed: () =>
@@ -374,7 +374,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
         ),
         title: const Text(
           'Fitness & Wellness',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -412,25 +412,21 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
       bottomNavigationBar: Theme(
         data: Theme.of(context).copyWith(
           navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
+            backgroundColor: Colors.black,
+            surfaceTintColor: Colors.black,
             shadowColor: Colors.transparent,
             indicatorColor: _fitnessSoftOrange,
             iconTheme: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);
               return IconThemeData(
-                color: selected
-                    ? const Color(0xFFFF8200)
-                    : const Color(0xFF68748A),
+                color: selected ? const Color(0xFFFF8200) : Colors.white,
                 size: 24,
               );
             }),
             labelTextStyle: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);
               return TextStyle(
-                color: selected
-                    ? const Color(0xFF101B33)
-                    : const Color(0xFF68748A),
+                color: selected ? Colors.white : Colors.white,
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               );
@@ -469,7 +465,9 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
             }
             if (index == 2) {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+                MaterialPageRoute(
+                  builder: (_) => const MessagesDashboardPage(),
+                ),
               );
               return;
             }
@@ -608,10 +606,7 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                       runSpacing: spacing,
                       children: [
                         for (final item in classes)
-                          SizedBox(
-                            width: itemWidth,
-                            child: _classCard(item),
-                          ),
+                          SizedBox(width: itemWidth, child: _classCard(item)),
                       ],
                     );
                   },
@@ -1040,109 +1035,106 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Text(
-                  item.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _fitnessInk,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _fitnessInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
                 ),
-                const SizedBox(height: 6),
-                _detail(Icons.location_on_outlined, item.address),
-                _detail(Icons.fitness_center, 'Class: ${item.category}'),
-                if (item.facility.isNotEmpty)
-                  _detail(
-                    Icons.business_outlined,
-                    'Facility: ${item.facility}',
-                  ),
-                if (item.sessions.isNotEmpty)
-                  _detail(Icons.event_available_outlined, item.sessions),
-                _detail(Icons.access_time, 'Hours: ${item.hours}'),
-                if (item.availability.isNotEmpty)
-                  _detail(
-                    Icons.check_circle_outline,
-                    'Availability: ${item.availability}',
-                  ),
-                if (item.specialRates.isNotEmpty)
-                  _detail(
-                    Icons.payments_outlined,
-                    'Special rates: ${item.specialRates}',
-                  ),
-                if (item.details.isNotEmpty)
-                  _detail(Icons.info_outline, item.details),
-                const SizedBox(height: 7),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFAFBFD),
-                    border: Border.all(color: _fitnessLine),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Session price',
-                          style: TextStyle(color: _fitnessMuted, fontSize: 11),
-                        ),
-                      ),
-                      Text(
-                        item.specialRates.isNotEmpty
-                            ? 'See special rates above'
-                            : item.price.isEmpty
-                            ? 'Price not set'
-                            : item.price,
-                        style: const TextStyle(
-                          color: _fitnessInk,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              const SizedBox(height: 6),
+              _detail(Icons.location_on_outlined, item.address),
+              _detail(Icons.fitness_center, 'Class: ${item.category}'),
+              if (item.facility.isNotEmpty)
+                _detail(Icons.business_outlined, 'Facility: ${item.facility}'),
+              if (item.sessions.isNotEmpty)
+                _detail(Icons.event_available_outlined, item.sessions),
+              _detail(Icons.access_time, 'Hours: ${item.hours}'),
+              if (item.availability.isNotEmpty)
+                _detail(
+                  Icons.check_circle_outline,
+                  'Availability: ${item.availability}',
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 4,
-                  children: [for (final tag in item.tags) _tag(tag)],
+              if (item.specialRates.isNotEmpty)
+                _detail(
+                  Icons.payments_outlined,
+                  'Special rates: ${item.specialRates}',
                 ),
-                const SizedBox(height: 10),
-                Row(
+              if (item.details.isNotEmpty)
+                _detail(Icons.info_outline, item.details),
+              const SizedBox(height: 7),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAFBFD),
+                  border: Border.all(color: _fitnessLine),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _openVisit(item.visitUrl, item.name),
-                        icon: const Icon(Icons.language, size: 15),
-                        label: const Text('Visit'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _fitnessNavy,
-                          side: const BorderSide(color: _fitnessNavy),
-                          minimumSize: const Size(0, 36),
-                        ),
+                    const Expanded(
+                      child: Text(
+                        'Session price',
+                        style: TextStyle(color: _fitnessMuted, fontSize: 11),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () =>
-                            _message('Booking ${item.name} is ready.'),
-                        icon: const Icon(Icons.calendar_month, size: 15),
-                        label: const Text('Book now'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _fitnessOrange,
-                          minimumSize: const Size(0, 36),
-                        ),
+                    Text(
+                      item.specialRates.isNotEmpty
+                          ? 'See special rates above'
+                          : item.price.isEmpty
+                          ? 'Price not set'
+                          : item.price,
+                      style: const TextStyle(
+                        color: _fitnessInk,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [for (final tag in item.tags) _tag(tag)],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openVisit(item.visitUrl, item.name),
+                      icon: const Icon(Icons.language, size: 15),
+                      label: const Text('Visit'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _fitnessNavy,
+                        side: const BorderSide(color: _fitnessNavy),
+                        minimumSize: const Size(0, 36),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          _message('Booking ${item.name} is ready.'),
+                      icon: const Icon(Icons.calendar_month, size: 15),
+                      label: const Text('Book now'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _fitnessOrange,
+                        minimumSize: const Size(0, 36),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
+        ),
       ],
     ),
   );

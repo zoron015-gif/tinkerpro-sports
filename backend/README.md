@@ -34,3 +34,8 @@ password or Gmail app password for `DB_PASSWORD`; those are only for SMTP.
 - `GET /api/auth/me` with `Authorization: Bearer <token>`
 
 Registration creates a pending account and sends a six-digit verification code by Gmail SMTP. The code expires after 10 minutes. Google login should exchange a provider token with a server-side provider SDK before inserting into `user_identities`. Do not trust a raw provider user ID supplied by an unverified client.
+
+News endpoints:
+- `GET /api/news/feed` returns published customer news with venue details and ratings.
+- `GET/POST /api/merchant/news` and `PUT/DELETE /api/merchant/news/:id` manage merchant posts.
+- `POST /api/reviews` accepts one review for each customer's completed booking.

@@ -3,9 +3,11 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
+import 'models/booking.dart';
+
 const apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.47:3000',
+  defaultValue: 'http://192.168.1.45:3000',
 );
 
 class AuthApiException implements Exception {
@@ -77,6 +79,28 @@ class AuthApi {
 
   Future<Map<String, dynamic>> merchantProfile(String token) =>
       _request('GET', '/api/merchant/profile', headers: _authHeaders(token));
+
+  Future<Map<String, dynamic>> updateCustomerProfile({
+    required String token,
+    required String firstName,
+    required String lastName,
+    required String phone,
+    required String address,
+    required String hobby,
+    String? avatarUrl,
+  }) => _request(
+    'PUT',
+    '/api/auth/profile',
+    body: {
+      'firstName': firstName,
+      'lastName': lastName,
+      'phone': phone,
+      'address': address,
+      'hobby': hobby,
+      'avatarUrl': avatarUrl,
+    },
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+  );
 
   Future<Map<String, dynamic>> saveMerchantProfile({
     required String token,
@@ -181,6 +205,105 @@ class AuthApi {
         .map((value) => Map<String, dynamic>.from(value))
         .toList();
   }
+
+  Future<List<Booking>> customerBookingModels(String token) async {
+    final response = await customerBookings(token);
+    return response.map(Booking.fromJson).toList();
+  }
+
+  Future<Map<String, dynamic>> createPayMongoCheckout({
+    required String token,
+    required int bookingId,
+    required String paymentMethod,
+  }) => _request(
+    'POST',
+    '/api/payments/paymongo/checkout',
+    body: {'bookingId': bookingId, 'paymentMethod': paymentMethod},
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+  );
+
+  Future<List<Map<String, dynamic>>> newsFeed(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/news-feed',
+      headers: _authHeaders(token),
+    );
+    return (response['posts'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> newsReviews(int businessId) async {
+    final response = await _request(
+      'GET',
+      '/api/news-feed/$businessId/reviews',
+    );
+    return (response['reviews'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<void> createNewsReview({
+    required String token,
+    required int businessId,
+    required int rating,
+    required String comment,
+  }) async {
+    await _request(
+      'POST',
+      '/api/news-feed/$businessId/reviews',
+      body: {'rating': rating, 'comment': comment},
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> merchantNewsPosts(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/merchant/news-posts',
+      headers: _authHeaders(token),
+    );
+    return (response['posts'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  Future<void> createMerchantNewsPost({
+    required String token,
+    required Map<String, dynamic> post,
+  }) async {
+    await _request(
+      'POST',
+      '/api/merchant/news-posts',
+      body: post,
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> updateMerchantNewsPost({
+    required String token,
+    required int id,
+    required Map<String, dynamic> post,
+  }) async {
+    await _request(
+      'PUT',
+      '/api/merchant/news-posts/$id',
+      body: post,
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> deleteMerchantNewsPost({
+    required String token,
+    required int id,
+  }) => _request(
+    'DELETE',
+    '/api/merchant/news-posts/$id',
+    headers: _authHeaders(token),
+  );
 
   Future<List<Map<String, dynamic>>> bookingAvailability({
     required String token,

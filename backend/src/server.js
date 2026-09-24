@@ -24,6 +24,73 @@ function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function normalizeText(value, max = 255) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function eventDetailsFromBody(body) {
+  const list = (value) =>
+    Array.isArray(value)
+      ? value.filter((item) => typeof item === 'string').slice(0, 20)
+      : [];
+  const integer = (value) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  };
+  return {
+    eventTypes: list(body.eventTypes),
+    attendanceMin: integer(body.attendanceMin),
+    attendanceMax: integer(body.attendanceMax),
+    accessibilityNeeds: list(body.accessibilityNeeds),
+    parkingNeeds: list(body.parkingNeeds),
+    securityNeeds: list(body.securityNeeds),
+  };
+}
+
+async function saveEventDetails(businessId, body) {
+  if (body.businessType !== 'Event') {
+    await pool.execute(
+      'DELETE FROM event_business_details WHERE business_id = ?',
+      [businessId],
+    );
+    return;
+  }
+  const details = eventDetailsFromBody(body);
+  await pool.execute(
+    `INSERT INTO event_business_details
+       (business_id, event_types_json, attendance_min, attendance_max,
+        accessibility_needs, parking_needs, security_needs)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       event_types_json = VALUES(event_types_json),
+       attendance_min = VALUES(attendance_min),
+       attendance_max = VALUES(attendance_max),
+       accessibility_needs = VALUES(accessibility_needs),
+       parking_needs = VALUES(parking_needs),
+       security_needs = VALUES(security_needs)`,
+    [
+      businessId,
+      JSON.stringify(details.eventTypes),
+      details.attendanceMin,
+      details.attendanceMax,
+      JSON.stringify(details.accessibilityNeeds),
+      JSON.stringify(details.parkingNeeds),
+      JSON.stringify(details.securityNeeds),
+    ],
+  );
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function isValidRole(role) {
   return role === 'customer' || role === 'merchant';
 }
@@ -44,6 +111,8 @@ function publicUser(user) {
     lastName: user.last_name,
     phone: user.phone || null,
     avatarUrl: user.avatar_url || null,
+    address: user.address || null,
+    hobby: user.hobby || null,
     role: user.role,
     status: user.status,
   };
@@ -57,12 +126,21 @@ function hashVerificationCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex');
 }
 
+function createBookingToken() {
+  return crypto.randomBytes(18).toString('hex').toUpperCase();
+}
+
+function hashBookingToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 function publicMessageUser(user) {
   return {
     id: user.id,
     email: user.email,
     firstName: user.first_name,
     lastName: user.last_name,
+    phone: user.phone || null,
     avatarUrl: user.avatar_url || null,
     role: user.role,
   };
@@ -433,7 +511,37 @@ app.post('/api/auth/login', async (req, res, next) => {
 app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, email, first_name, last_name, phone, avatar_url, role, status
+      `SELECT id, email, first_name, last_name, phone, avatar_url, address, hobby, role, status
+       FROM users WHERE id = ? LIMIT 1`,
+      [req.auth.sub],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+    return res.json({ user: publicUser(rows[0]) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put('/api/auth/profile', requireAuth, async (req, res, next) => {
+  const firstName = normalizeText(req.body.firstName, 100);
+  const lastName = normalizeText(req.body.lastName, 100);
+  const phone = normalizeText(req.body.phone, 30);
+  const address = normalizeText(req.body.address, 500);
+  const hobby = normalizeText(req.body.hobby, 255);
+  const avatarUrl = normalizeText(req.body.avatarUrl, 10 * 1024 * 1024);
+  if (!firstName) {
+    return res.status(400).json({ error: 'First name is required.' });
+  }
+
+  try {
+    await pool.execute(
+      'UPDATE users SET first_name = ?, last_name = ?, phone = ?, address = ?, hobby = ?, avatar_url = ? WHERE id = ?',
+      [firstName, lastName || null, phone || null, address || null, hobby || null, avatarUrl || null, req.auth.sub],
+    );
+    const [rows] = await pool.execute(
+      `SELECT id, email, first_name, last_name, phone, avatar_url, address, hobby, role, status
        FROM users WHERE id = ? LIMIT 1`,
       [req.auth.sub],
     );
@@ -832,16 +940,29 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
               b.opening_hours AS hours, b.availability,
               b.enabled,
               b.rate_periods AS ratePeriods,
+              e.event_types_json AS eventTypes, e.attendance_min AS attendanceMin,
+              e.attendance_max AS attendanceMax,
+              e.accessibility_needs AS accessibilityNeeds,
+              e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
        FROM merchant_businesses b
        JOIN users u ON u.id = b.merchant_id
+       LEFT JOIN event_business_details e ON e.business_id = b.id
        WHERE b.merchant_id = ? AND u.role = 'merchant'
        ORDER BY b.created_at DESC`,
       [req.auth.sub],
     );
     for (const business of businesses) {
+      for (const field of [
+        'eventTypes',
+        'accessibilityNeeds',
+        'parkingNeeds',
+        'securityNeeds',
+      ]) {
+        business[field] = parseJsonArray(business[field]);
+      }
       if (typeof business.imageUrls === 'string') {
         try {
           business.imageUrls = JSON.parse(business.imageUrls);
@@ -875,20 +996,37 @@ app.get('/api/businesses', async (req, res, next) => {
   try {
     const [businesses] = await pool.execute(
       `SELECT b.id, b.business_type AS businessType, b.name, b.category, b.address,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
+              u.first_name AS ownerFirstName, u.last_name AS ownerLastName,
+              u.email AS ownerEmail, u.phone AS ownerPhone,
+              u.avatar_url AS ownerAvatarUrl,
               b.facility_type AS facilityType, b.price_per_hour AS pricePerHour,
               b.event_fee AS eventFee,
               b.visit_url AS visitUrl,
               b.opening_hours AS hours, b.availability, b.enabled,
               b.rate_periods AS ratePeriods,
+              e.event_types_json AS eventTypes, e.attendance_min AS attendanceMin,
+              e.attendance_max AS attendanceMax,
+              e.accessibility_needs AS accessibilityNeeds,
+              e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
        FROM merchant_businesses b
        JOIN users u ON u.id = b.merchant_id
+       LEFT JOIN event_business_details e ON e.business_id = b.id
        WHERE b.enabled = 1 AND u.status = 'active'
        ORDER BY b.created_at DESC`,
     );
     for (const business of businesses) {
+      for (const field of [
+        'eventTypes',
+        'accessibilityNeeds',
+        'parkingNeeds',
+        'securityNeeds',
+      ]) {
+        business[field] = parseJsonArray(business[field]);
+      }
       for (const field of ['ratePeriods', 'tags']) {
         if (typeof business[field] === 'string') {
           try {
@@ -1023,6 +1161,7 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Business not found.' });
     }
+    await saveEventDetails(id, req.body);
     return res.json({ message: 'Business updated.' });
   } catch (error) {
     return next(error);
@@ -1110,7 +1249,7 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
     if (merchants.length === 0) {
       return res.status(403).json({ error: 'Only merchant accounts can add businesses.' });
     }
-    await pool.execute(
+    const [result] = await pool.execute(
       `INSERT INTO merchant_businesses
        (merchant_id, business_type, name, category, address, facility_type,
         price_per_hour, event_fee, opening_hours, availability, rate_periods,
@@ -1135,6 +1274,7 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         visitUrl || null,
       ],
     );
+    await saveEventDetails(result.insertId, req.body);
     return res.status(201).json({ message: 'Business added.' });
   } catch (error) {
     return next(error);
@@ -1421,12 +1561,79 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
   const players = Number(req.body.players);
   const paymentMethod = typeof req.body.paymentMethod === 'string'
     ? req.body.paymentMethod.trim().slice(0, 50) : '';
+  const allowedPaymentMethods = new Set(['online', 'cash_on_arrival']);
   if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
       !validTime(startTime) || !Number.isFinite(durationHours) ||
       durationHours <= 0 || durationHours > 24 || !Number.isSafeInteger(players) ||
-      players <= 0 || players > 1000 || !paymentMethod) {
+      players <= 0 || players > 1000 || !allowedPaymentMethods.has(paymentMethod)) {
     return res.status(400).json({
-      error: 'venueId, date, startTime, positive duration, players, and paymentMethod are required.',
+      error: 'Choose Online payment or Cash on Arrival (COA).',
+    });
+
+    app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer'), async (req, res, next) => {
+      const bookingId = Number(req.body.bookingId);
+      const paymentMethod = typeof req.body.paymentMethod === 'string'
+        ? req.body.paymentMethod.trim() : '';
+      if (!Number.isSafeInteger(bookingId) || bookingId <= 0 ||
+          !['gcash', 'paymaya'].includes(paymentMethod)) {
+        return res.status(400).json({
+          error: 'Choose GCash or PayMaya before starting online payment.',
+        });
+      }
+      if (!process.env.PAYMONGO_SECRET_KEY) {
+        return res.status(503).json({
+          error: 'Online payment is not configured. Add PAYMONGO_SECRET_KEY to the backend environment.',
+        });
+      }
+      try {
+        const [rows] = await pool.execute(
+          `SELECT id, total_amount AS totalAmount
+             FROM bookings
+            WHERE id = ? AND customer_id = ?
+            LIMIT 1`,
+          [bookingId, req.auth.sub],
+        );
+        const booking = rows[0];
+        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+        const response = await fetch('https://api.paymongo.com/v1/checkout_sessions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64')}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            data: {
+              attributes: {
+                line_items: [{
+                  currency: 'PHP',
+                  amount: Math.round(Number(booking.totalAmount) * 100),
+                  name: `TinkerPro booking #${booking.id}`,
+                  quantity: 1,
+                }],
+                payment_method_types: [paymentMethod],
+                success_url: process.env.PAYMONGO_SUCCESS_URL,
+                cancel_url: process.env.PAYMONGO_CANCEL_URL,
+                description: `TinkerPro booking #${booking.id}`,
+                metadata: { booking_id: String(booking.id) },
+              },
+            },
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          return res.status(502).json({
+            error: payload?.errors?.[0]?.detail || 'PayMongo could not create checkout.',
+          });
+        }
+        const checkoutUrl = payload?.data?.attributes?.checkout_url;
+        if (typeof checkoutUrl !== 'string' || checkoutUrl.trim().length === 0) {
+          return res.status(502).json({ error: 'PayMongo returned no checkout URL.' });
+        }
+        return res.json({ checkoutUrl });
+      } catch (error) {
+        return next(error);
+      }
     });
   }
 
@@ -1460,19 +1667,45 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     const pricePerHour = Number(venue.price_per_hour);
     const total = Number((pricePerHour * durationHours).toFixed(2));
     const downpayment = Number((total * 0.50).toFixed(2));
+    const bookingToken = createBookingToken();
     const [result] = await connection.execute(
       `INSERT INTO bookings
        (customer_id, venue_id, booking_date, start_time, duration_hours, players,
-        payment_method, price_per_hour, total_amount, downpayment_amount, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        payment_method, price_per_hour, total_amount, downpayment_amount,
+        booking_token_hash, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
-       paymentMethod, pricePerHour, total, downpayment],
+       paymentMethod, pricePerHour, total, downpayment, hashBookingToken(bookingToken)],
+    );
+    const [conversation] = await connection.execute(
+      'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+      ['direct', `Booking ${result.insertId}`, req.auth.sub],
+    );
+    const conversationId = conversation.insertId;
+    await connection.execute(
+      'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+      [conversationId, req.auth.sub, conversationId, venue.merchant_id],
+    );
+    await connection.execute(
+      `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+       VALUES (?, ?, ?, ?)`,
+      [
+        conversationId,
+        req.auth.sub,
+        `New booking request #${result.insertId} submitted. Booking token: ${bookingToken}`,
+        JSON.stringify({
+          type: 'booking',
+          bookingId: result.insertId,
+          status: 'pending',
+          bookingToken,
+        }),
+      ],
     );
     await connection.commit();
     return res.status(201).json({
       booking: { id: result.insertId, venueId, date: bookingDate, startTime,
         durationHours, players, paymentMethod, pricePerHour, total, downpayment,
-        status: 'pending' },
+        status: 'pending', bookingToken },
     });
   } catch (error) {
     if (connection) await connection.rollback();
@@ -1486,16 +1719,72 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
   try {
     const [bookings] = await pool.execute(
       `SELECT b.id, b.venue_id AS venueId, v.name AS venueName, v.address,
+              CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
               v.business_type AS businessType, v.category, v.facility_type AS facilityType,
-              v.opening_hours AS hours, v.availability, v.details,
+              v.opening_hours AS hours, v.availability, v.rate_periods AS ratePeriods,
+              e.event_types_json AS eventTypes, e.attendance_min AS attendanceMin,
+              e.attendance_max AS attendanceMax,
+              e.accessibility_needs AS accessibilityNeeds,
+              e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              v.details, v.visit_url AS visitUrl,
+              v.price_per_hour AS venuePricePerHour, v.event_fee AS eventFee,
+              v.amenities_json AS amenities,
+              v.image_url AS imageUrl, v.image_urls AS imageUrls,
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
               b.price_per_hour AS pricePerHour, b.total_amount AS total,
               b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt
-       FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
+       JOIN users u ON u.id = v.merchant_id
+       LEFT JOIN event_business_details e ON e.business_id = v.id
        WHERE b.customer_id = ? ORDER BY b.booking_date DESC, b.start_time DESC`,
       [req.auth.sub],
     );
+    for (const booking of bookings) {
+      for (const field of [
+        'eventTypes',
+        'accessibilityNeeds',
+        'parkingNeeds',
+        'securityNeeds',
+      ]) {
+        booking[field] = parseJsonArray(booking[field]);
+      }
+      for (const field of ['ratePeriods', 'amenities']) {
+        if (typeof booking[field] === 'string') {
+          try {
+            booking[field] = JSON.parse(booking[field]);
+          } catch {
+            booking[field] = [];
+          }
+        }
+        if (!Array.isArray(booking[field])) booking[field] = [];
+      }
+      if (typeof booking.imageUrls === 'string') {
+        try {
+          booking.imageUrls = JSON.parse(booking.imageUrls);
+        } catch {
+          booking.imageUrls = [];
+        }
+      }
+      if (!Array.isArray(booking.imageUrls)) booking.imageUrls = [];
+      if (booking.imageUrls.length === 0 && booking.imageUrl) {
+        try {
+          const legacyImages = JSON.parse(booking.imageUrl);
+          if (Array.isArray(legacyImages)) {
+            booking.imageUrls = legacyImages.filter(
+              (image) => typeof image === 'string' && image.length > 0,
+            );
+          }
+        } catch {}
+      }
+      if (booking.imageUrls.length === 0 && booking.imageUrl) {
+        booking.imageUrls = [booking.imageUrl];
+      }
+      if (booking.imageUrls.length > 0) {
+        booking.imageUrl = booking.imageUrls[0];
+      }
+    }
     return res.json({ bookings });
   } catch (error) { return next(error); }
 });
@@ -1521,15 +1810,71 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
 });
 
 app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  let connection;
   try {
-    const [result] = await pool.execute(
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const ticketCode = createBookingToken();
+    const [result] = await connection.execute(
       `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
-       SET b.status = 'approved' WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'`,
+       SET b.status = 'approved', b.ticket_token_hash = ?
+       WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'`,
+      [hashBookingToken(ticketCode), req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Pending booking not found.' });
+    }
+    const [rows] = await connection.execute(
+      `SELECT b.id, b.customer_id AS customerId, v.name AS venueName
+       FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.id = ? AND v.merchant_id = ? LIMIT 1`,
       [req.params.id, req.auth.sub],
     );
-    if (!result.affectedRows) return res.status(404).json({ error: 'Pending booking not found.' });
-    return res.json({ message: 'Booking approved.', status: 'approved' });
-  } catch (error) { return next(error); }
+    const booking = rows[0];
+    const [existingConversation] = await connection.execute(
+      'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
+      ['direct', `Booking ${booking.id}`],
+    );
+    let conversationId = existingConversation[0]?.id;
+    if (!conversationId) {
+      const [conversation] = await connection.execute(
+        'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+        ['direct', `Booking ${booking.id}`, req.auth.sub],
+      );
+      conversationId = conversation.insertId;
+      await connection.execute(
+        'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+        [conversationId, req.auth.sub, conversationId, booking.customerId],
+      );
+    }
+    await connection.execute(
+      `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+       VALUES (?, ?, ?, ?)`,
+      [
+        conversationId,
+        req.auth.sub,
+        `Booking #${booking.id} for ${booking.venueName} approved. Your ticket: ${ticketCode}`,
+        JSON.stringify({
+          type: 'booking_ticket',
+          bookingId: booking.id,
+          status: 'approved',
+          ticketCode,
+        }),
+      ],
+    );
+    await connection.commit();
+    return res.json({
+      message: 'Booking approved and ticket issued.',
+      status: 'approved',
+      ticketCode,
+    });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
 });
 
 app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchant'), async (req, res, next) => {
@@ -1543,6 +1888,259 @@ app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchan
     return res.json({ message: 'Booking marked finished.', status: 'finished' });
   } catch (error) { return next(error); }
 });
+
+// Merchant news posts and the customer news feed.
+function newsPostResponse(row) {
+  const parseArray = (value) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string' || value.trim() === '') return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  return {
+    id: Number(row.id),
+    businessId: Number(row.business_id),
+    title: row.title,
+    body: row.body,
+    imageUrl: row.image_url || null,
+    businessName: row.business_name || row.venue_name,
+    businessType: row.business_type || null,
+    category: row.business_category || null,
+    address: row.business_address || row.venue_address,
+    facilityType: row.facility_type || null,
+    hours: row.opening_hours || null,
+    availability: row.availability || null,
+    pricePerHour: row.price_per_hour ?? null,
+    eventFee: row.event_fee ?? null,
+    ratePeriods: parseArray(row.rate_periods),
+    tags: parseArray(row.amenities_json),
+    details: row.business_details || null,
+    imageUrls: parseArray(row.image_urls),
+    businessImageUrl: row.business_image_url || null,
+    visitUrl: row.visit_url || null,
+    merchantName: [row.merchant_first_name, row.merchant_last_name]
+      .filter(Boolean)
+      .join(' ') || 'Venue owner',
+    merchantEmail: row.merchant_email || null,
+    merchantPhone: row.merchant_phone || null,
+    merchantAvatarUrl: row.merchant_avatar_url || null,
+    averageRating: Number(row.average_rating || 0),
+    reviewCount: Number(row.review_count || 0),
+  };
+}
+
+async function merchantNewsPosts(req, res, next) {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT n.*, b.name AS business_name, b.business_type,
+              b.category AS business_category, b.address AS business_address,
+              b.facility_type, b.opening_hours, b.availability,
+              b.price_per_hour, b.event_fee, b.rate_periods,
+              b.amenities_json, b.details AS business_details,
+              b.image_url AS business_image_url, b.image_urls,
+              b.visit_url
+       FROM merchant_news n
+       INNER JOIN merchant_businesses b ON b.id = n.business_id
+       WHERE b.merchant_id = ? ORDER BY n.created_at DESC`,
+      [req.auth.sub],
+    );
+    return res.json({ posts: rows.map(newsPostResponse) });
+  } catch (error) { return next(error); }
+}
+
+async function createMerchantNewsPost(req, res, next) {
+  const businessId = Number(req.body.businessId ?? req.body.venueId);
+  const title = normalizeText(req.body.title, 255);
+  const body = normalizeText(req.body.body, 5000);
+  const status = req.body.status || 'published';
+  if (!Number.isSafeInteger(businessId) || businessId <= 0 || !title || !body ||
+      !['draft', 'published', 'archived'].includes(status)) {
+    return res.status(400).json({ error: 'businessId, title, body, and a valid status are required.' });
+  }
+  try {
+    const [businesses] = await pool.execute(
+      'SELECT id, image_url FROM merchant_businesses WHERE id = ? AND merchant_id = ? LIMIT 1',
+      [businessId, req.auth.sub],
+    );
+    if (!businesses[0]) return res.status(404).json({ error: 'Business not found.' });
+    const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024) || businesses[0].image_url || null;
+    const [result] = await pool.execute(
+      `INSERT INTO merchant_news (business_id, title, body, image_url, status)
+       VALUES (?, ?, ?, ?, ?)`,
+      [businessId, title, body, imageUrl, status],
+    );
+    return res.status(201).json({ id: result.insertId, message: 'News post created.' });
+  } catch (error) { return next(error); }
+}
+
+async function updateMerchantNewsPost(req, res, next) {
+  const id = Number(req.params.id);
+  const title = normalizeText(req.body.title, 255);
+  const body = normalizeText(req.body.body, 5000);
+  const status = req.body.status || 'draft';
+  if (!Number.isSafeInteger(id) || id <= 0 || !title || !body ||
+      !['draft', 'published', 'archived'].includes(status)) {
+    return res.status(400).json({ error: 'A valid title, body, and status are required.' });
+  }
+  try {
+    const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024);
+    const [result] = await pool.execute(
+      `UPDATE merchant_news n INNER JOIN merchant_businesses b ON b.id = n.business_id
+       SET n.title = ?, n.body = ?, n.status = ?, n.image_url = COALESCE(NULLIF(?, ''), b.image_url)
+       WHERE n.id = ? AND b.merchant_id = ?`,
+      [title, body, status, imageUrl, id, req.auth.sub],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'News post not found.' });
+    return res.json({ message: 'News post updated.' });
+  } catch (error) { return next(error); }
+}
+
+async function deleteMerchantNewsPost(req, res, next) {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid news post id.' });
+  try {
+    const [result] = await pool.execute(
+      `DELETE n FROM merchant_news n INNER JOIN merchant_businesses b ON b.id = n.business_id
+       WHERE n.id = ? AND b.merchant_id = ?`,
+      [id, req.auth.sub],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'News post not found.' });
+    return res.json({ message: 'News post deleted.' });
+  } catch (error) { return next(error); }
+}
+
+app.get('/api/merchant/news', requireAuth, requireRole('merchant'), merchantNewsPosts);
+app.post('/api/merchant/news', requireAuth, requireRole('merchant'), createMerchantNewsPost);
+app.put('/api/merchant/news/:id', requireAuth, requireRole('merchant'), updateMerchantNewsPost);
+app.delete('/api/merchant/news/:id', requireAuth, requireRole('merchant'), deleteMerchantNewsPost);
+app.get('/api/merchant/news-posts', requireAuth, requireRole('merchant'), merchantNewsPosts);
+app.post('/api/merchant/news-posts', requireAuth, requireRole('merchant'), createMerchantNewsPost);
+app.put('/api/merchant/news-posts/:id', requireAuth, requireRole('merchant'), updateMerchantNewsPost);
+app.delete('/api/merchant/news-posts/:id', requireAuth, requireRole('merchant'), deleteMerchantNewsPost);
+
+async function customerNewsFeed(req, res, next) {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT n.*, b.name AS business_name, b.business_type,
+              b.category AS business_category, b.address AS business_address,
+              b.facility_type, b.opening_hours, b.availability,
+              b.price_per_hour, b.event_fee, b.rate_periods,
+              b.amenities_json, b.details AS business_details,
+              b.image_url AS business_image_url, b.image_urls,
+              b.visit_url,
+              u.first_name AS merchant_first_name, u.last_name AS merchant_last_name,
+              u.email AS merchant_email, u.phone AS merchant_phone,
+              u.avatar_url AS merchant_avatar_url,
+              COALESCE((SELECT AVG(r.rating) FROM venue_reviews r WHERE r.business_id = b.id), 0) AS average_rating,
+              (SELECT COUNT(*) FROM venue_reviews r WHERE r.business_id = b.id) AS review_count
+       FROM merchant_news n
+       INNER JOIN merchant_businesses b ON b.id = n.business_id AND b.enabled = 1
+       INNER JOIN users u ON u.id = b.merchant_id
+       WHERE n.status = 'published'
+       ORDER BY n.created_at DESC`,
+    );
+    return res.json({ posts: rows.map(newsPostResponse) });
+  } catch (error) { return next(error); }
+}
+
+app.get('/api/news/feed', requireAuth, requireRole('customer'), customerNewsFeed);
+app.get('/api/customer/news', requireAuth, requireRole('customer'), customerNewsFeed);
+app.get('/api/news-feed', requireAuth, requireRole('customer'), customerNewsFeed);
+
+async function submitCustomerReview(req, res, next) {
+  const bookingId = Number(req.body.bookingId);
+  const rating = Number(req.body.rating);
+  const comment = normalizeText(req.body.comment, 2000) || null;
+  if (!Number.isSafeInteger(bookingId) || bookingId <= 0 || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'A valid bookingId and rating from 1 to 5 are required.' });
+  }
+  try {
+    const [bookings] = await pool.execute(
+      `SELECT id, venue_id FROM bookings
+       WHERE id = ? AND customer_id = ? AND status = 'finished' LIMIT 1`,
+      [bookingId, req.auth.sub],
+    );
+    if (!bookings[0]) return res.status(403).json({ error: 'Reviews are only allowed for your completed bookings.' });
+    const [existing] = await pool.execute(
+      'SELECT id FROM venue_reviews WHERE booking_id = ? AND customer_id = ? LIMIT 1',
+      [bookingId, req.auth.sub],
+    );
+    if (existing[0]) return res.status(409).json({ error: 'You have already reviewed this booking.' });
+    const [result] = await pool.execute(
+      `INSERT INTO venue_reviews (business_id, booking_id, customer_id, rating, comment)
+       VALUES (?, ?, ?, ?, ?)`,
+      [bookings[0].venue_id, bookingId, req.auth.sub, rating, comment],
+    );
+    return res.status(201).json({ id: result.insertId, message: 'Review submitted.' });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You have already reviewed this booking.' });
+    return next(error);
+  }
+}
+
+async function listBusinessReviews(req, res, next) {
+  const businessId = Number(req.params.businessId);
+  if (!Number.isSafeInteger(businessId) || businessId <= 0) {
+    return res.status(400).json({ error: 'Invalid business id.' });
+  }
+  try {
+    const [rows] = await pool.execute(
+      `SELECT r.id, r.business_id AS businessId, r.booking_id AS bookingId,
+              r.customer_id AS customerId, r.rating, r.comment, r.created_at AS createdAt,
+              u.first_name AS firstName, u.last_name AS lastName
+       FROM venue_reviews r INNER JOIN users u ON u.id = r.customer_id
+       WHERE r.business_id = ? ORDER BY r.created_at DESC`,
+      [businessId],
+    );
+    return res.json({ reviews: rows });
+  } catch (error) { return next(error); }
+}
+
+async function submitBusinessReview(req, res, next) {
+  const businessId = Number(req.params.businessId);
+  const rating = Number(req.body.rating);
+  const comment = normalizeText(req.body.comment, 2000) || null;
+  if (!Number.isSafeInteger(businessId) || businessId <= 0 ||
+      !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'A valid business id and rating from 1 to 5 are required.' });
+  }
+  try {
+    const [bookings] = await pool.execute(
+      `SELECT b.id FROM bookings b
+       LEFT JOIN venue_reviews r ON r.booking_id = b.id AND r.customer_id = b.customer_id
+       WHERE b.venue_id = ? AND b.customer_id = ? AND b.status = 'finished'
+         AND r.id IS NULL ORDER BY b.booking_date DESC, b.id DESC LIMIT 1`,
+      [businessId, req.auth.sub],
+    );
+    if (!bookings[0]) {
+      return res.status(403).json({ error: 'A completed, not-yet-reviewed booking is required.' });
+    }
+    const [result] = await pool.execute(
+      `INSERT INTO venue_reviews (business_id, booking_id, customer_id, rating, comment)
+       VALUES (?, ?, ?, ?, ?)`,
+      [businessId, bookings[0].id, req.auth.sub, rating, comment],
+    );
+    const [reviews] = await pool.execute(
+      `SELECT id, business_id AS businessId, booking_id AS bookingId, customer_id AS customerId,
+              rating, comment, created_at AS createdAt
+       FROM venue_reviews WHERE id = ?`,
+      [result.insertId],
+    );
+    return res.status(201).json({ review: reviews[0] });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You have already reviewed this booking.' });
+    return next(error);
+  }
+}
+
+app.get('/api/news-feed/:businessId/reviews', requireAuth, requireRole('customer'), listBusinessReviews);
+app.post('/api/news-feed/:businessId/reviews', requireAuth, requireRole('customer'), submitBusinessReview);
+app.post('/api/reviews', requireAuth, requireRole('customer'), submitCustomerReview);
+app.post('/api/customer/reviews', requireAuth, requireRole('customer'), submitCustomerReview);
 
 app.use((error, req, res, next) => {
   console.error(error);
@@ -1657,6 +2255,7 @@ async function ensureMerchantBusinessesSchema() {
       business_id BIGINT UNSIGNED NOT NULL,
       event_name VARCHAR(255) NULL,
       event_type VARCHAR(100) NULL,
+      event_types_json JSON NULL,
       event_date DATE NULL,
       start_time TIME NULL,
       end_time TIME NULL,
@@ -1665,6 +2264,10 @@ async function ensureMerchantBusinessesSchema() {
       estimated_attendance INT UNSIGNED NULL,
       accessibility_needs TEXT NULL,
       parking_security TEXT NULL,
+      attendance_min INT UNSIGNED NULL,
+      attendance_max INT UNSIGNED NULL,
+      parking_needs JSON NULL,
+      security_needs JSON NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (business_id),
@@ -1688,6 +2291,16 @@ async function ensureMerchantBusinessesSchema() {
         ON UPDATE CASCADE ON DELETE CASCADE
     ) ENGINE=InnoDB
   `);
+  for (const [name, definition] of [
+    ['event_types_json', 'JSON NULL'],
+    ['attendance_min', 'INT UNSIGNED NULL'],
+    ['attendance_max', 'INT UNSIGNED NULL'],
+    ['accessibility_needs', 'JSON NULL'],
+    ['parking_needs', 'JSON NULL'],
+    ['security_needs', 'JSON NULL'],
+  ]) {
+    await ensureTableColumn('event_business_details', name, definition);
+  }
 }
 
 async function ensureMessagingSchema() {
@@ -1759,6 +2372,8 @@ async function ensureBookingsSchema() {
       price_per_hour DECIMAL(10, 2) NOT NULL,
       total_amount DECIMAL(10, 2) NOT NULL,
       downpayment_amount DECIMAL(10, 2) NOT NULL,
+      booking_token_hash CHAR(64) NULL,
+      ticket_token_hash CHAR(64) NULL,
       status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1771,10 +2386,81 @@ async function ensureBookingsSchema() {
         ON UPDATE CASCADE ON DELETE CASCADE
     ) ENGINE=InnoDB
   `);
+  for (const [name, definition] of [
+    ['booking_token_hash', 'CHAR(64) NULL'],
+    ['ticket_token_hash', 'CHAR(64) NULL'],
+  ]) {
+    await ensureTableColumn('bookings', name, definition);
+  }
+}
+
+async function ensureTableColumn(tableName, columnName, definition) {
+  const [rows] = await pool.execute(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = ?
+        AND column_name = ?
+      LIMIT 1`,
+    [tableName, columnName],
+  );
+  if (rows.length > 0) return;
+  await pool.execute(
+    `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${definition}`,
+  );
+}
+
+async function ensureCustomerProfileSchema() {
+  await pool.execute('ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL');
+  await ensureTableColumn('users', 'address', 'VARCHAR(500) NULL');
+  await ensureTableColumn('users', 'hobby', 'VARCHAR(255) NULL');
+}
+
+async function ensureNewsAndReviewsSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS merchant_news (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      business_id BIGINT UNSIGNED NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      body TEXT NOT NULL,
+      image_url LONGTEXT NULL,
+      status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_merchant_news_business_status (business_id, status, created_at),
+      CONSTRAINT fk_merchant_news_business FOREIGN KEY (business_id)
+        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS venue_reviews (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      business_id BIGINT UNSIGNED NOT NULL,
+      booking_id BIGINT UNSIGNED NOT NULL,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      rating TINYINT UNSIGNED NOT NULL,
+      comment VARCHAR(2000) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_venue_reviews_booking_customer (booking_id, customer_id),
+      KEY idx_venue_reviews_business (business_id, created_at),
+      CONSTRAINT fk_venue_reviews_business FOREIGN KEY (business_id)
+        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_venue_reviews_booking FOREIGN KEY (booking_id)
+        REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_venue_reviews_customer FOREIGN KEY (customer_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT chk_venue_reviews_rating CHECK (rating BETWEEN 1 AND 5)
+    ) ENGINE=InnoDB
+  `);
 }
 
 Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
   .then(() => ensureBookingsSchema())
+  .then(() => ensureCustomerProfileSchema())
+  .then(() => ensureNewsAndReviewsSchema())
   .then(() => {
     app.listen(port, () => {
       console.log(`TinkerPro Sports API listening on http://localhost:${port}`);

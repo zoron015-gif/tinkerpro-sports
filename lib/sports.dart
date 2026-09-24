@@ -5,17 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
 import 'app_session.dart';
+import 'saved_items.dart';
+import 'messages_dashboard.dart';
 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-
-import 'profile_dashboard.dart';
-import 'reserve_dashboard.dart';
-import 'saved_dashboard.dart';
-import 'customer_bookings_page.dart';
-import 'saved_items.dart';
-import 'messages_dashboard.dart';
 
 typedef SportsVenue = ({
   int id,
@@ -27,6 +22,7 @@ typedef SportsVenue = ({
   String courts,
   String hours,
   String availability,
+  String details,
   String image,
   List<String> images,
   String priceDay,
@@ -34,9 +30,13 @@ typedef SportsVenue = ({
   List<String> priceLines,
   double maxPrice,
   List<String> tags,
+  List<String> rateLabels,
   double latitude,
   double longitude,
   String visitUrl,
+  String merchantEmail,
+  String merchantPhone,
+  String merchantAvatarUrl,
 });
 
 const _sportsNavy = Color(0xFF192B50);
@@ -48,10 +48,872 @@ const _sportsPage = Color(0xFFF7F9FC);
 const _sportsSurface = Colors.white;
 const _sportsSoftOrange = Color(0xFFFFF1E4);
 
+class SportsVenueDetailPage extends StatefulWidget {
+  const SportsVenueDetailPage({
+    super.key,
+    required this.venue,
+    required this.onReserve,
+  });
+
+  final SportsVenue venue;
+  final VoidCallback onReserve;
+
+  @override
+  State<SportsVenueDetailPage> createState() => _SportsVenueDetailPageState();
+}
+
+class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
+  final Map<String, int> _saveCounts = <String, int>{};
+  final Set<String> _savedKeys = <String>{};
+  late String _saveKey;
+  var _imageIndex = 0;
+  late final PageController _imageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _saveKey = _keyForVenue(widget.venue);
+    final imageCount = _usableImages(widget.venue).length;
+    _imageController = PageController(
+      initialPage: imageCount == 0 ? 0 : 50000 - (50000 % imageCount),
+    );
+    _loadSavedState();
+  }
+
+  @override
+  void didUpdateWidget(covariant SportsVenueDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.venue != widget.venue) {
+      _saveKey = _keyForVenue(widget.venue);
+      _loadSavedState();
+    }
+  }
+
+  String _keyForVenue(SportsVenue venue) => venue.id > 0
+      ? 'sports-${venue.id}'
+      : (venue.name.trim().isEmpty
+            ? 'sports-venue'
+            : 'sports-${venue.name.trim()}');
+
+  List<String> _usableImages(SportsVenue venue) {
+    return venue.images.map((image) => image.trim()).where((image) {
+      if (image.isEmpty) return false;
+      if (image.startsWith('data:image/')) {
+        final comma = image.indexOf(',');
+        if (comma <= 0 || image.substring(comma + 1).trim().isEmpty) {
+          return false;
+        }
+        try {
+          base64Decode(image.substring(comma + 1));
+          return true;
+        } on FormatException {
+          return false;
+        }
+      }
+      return image.startsWith('http://') || image.startsWith('https://');
+    }).toList();
+  }
+
+  Future<void> _loadSavedState() async {
+    try {
+      final saved = await SavedItemStore.list();
+      final counts = await SavedItemStore.counts('sports');
+      if (!mounted) return;
+      setState(() {
+        _savedKeys
+          ..clear()
+          ..addAll(
+            saved
+                .where((item) {
+                  final itemKey =
+                      '${item['itemKey'] ?? item['item_key'] ?? ''}';
+                  return itemKey.isNotEmpty;
+                })
+                .map((item) => '${item['itemKey'] ?? item['item_key']}'),
+          );
+        _saveCounts
+          ..clear()
+          ..addAll(counts);
+      });
+    } on Exception {
+      // Ignore backup load failures and keep the booking card usable.
+    }
+  }
+
+  Future<void> _toggleSaved() async {
+    try {
+      if (_savedKeys.contains(_saveKey)) {
+        await SavedItemStore.remove('sports', _saveKey);
+        if (!mounted) return;
+        setState(() {
+          _savedKeys.remove(_saveKey);
+          _saveCounts[_saveKey] = (_saveCounts[_saveKey] ?? 1) - 1;
+          if ((_saveCounts[_saveKey] ?? 0) < 0) {
+            _saveCounts[_saveKey] = 0;
+          }
+        });
+      } else {
+        await SavedItemStore.save(
+          type: 'sports',
+          key: _saveKey,
+          title: widget.venue.name,
+          subtitle: '${widget.venue.sport}\n${widget.venue.address}',
+          imageUrl: widget.venue.image,
+        );
+        if (!mounted) return;
+        setState(() {
+          _savedKeys.add(_saveKey);
+          _saveCounts[_saveKey] = (_saveCounts[_saveKey] ?? 0) + 1;
+        });
+      }
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update saved count: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final merchantName = widget.venue.ownerName.trim();
+    final isSaved = _savedKeys.contains(_saveKey);
+    final images = _usableImages(widget.venue);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F4F6),
+      body: SafeArea(
+        top: true,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (images.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF17213A),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: const Color(0xFF263A72),
+                      width: 1.5,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x26000000),
+                        blurRadius: 10,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    children: <Widget>[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 280,
+                        child: PageView.builder(
+                          controller: _imageController,
+                          itemCount: 100000,
+                          onPageChanged: (index) {
+                            final count = images.length;
+                            setState(
+                              () =>
+                                  _imageIndex = count == 0 ? 0 : index % count,
+                            );
+                          },
+                          itemBuilder: (_, index) {
+                            return Image(
+                              image: _imageProvider(
+                                images[index % images.length],
+                              ),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  Container(color: const Color(0xFFE5E7EB)),
+                            );
+                          },
+                        ),
+                      ),
+                      Positioned(
+                        top: 14,
+                        left: 14,
+                        child: _heroAction(
+                          icon: Icons.arrow_back_ios_new_rounded,
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                      Positioned(
+                        top: 14,
+                        right: 14,
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: _toggleSaved,
+                              child: Icon(
+                                isSaved
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                color: isSaved ? _sportsOrange : Colors.white,
+                                size: 30,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            _heroAction(
+                              icon: Icons.ios_share_rounded,
+                              onPressed: () {},
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (images.length > 1)
+                        Positioned(
+                          right: 14,
+                          bottom: 18,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.58),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              '${_imageIndex + 1}/${images.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.venue.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1B1C1E),
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -1.2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.venue.address,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _sportsMuted,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (widget.venue.availability.trim().isNotEmpty)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE9FBF2),
+                                borderRadius: BorderRadius.circular(99),
+                                border: Border.all(
+                                  color: const Color(0xFFA7E5C2),
+                                ),
+                              ),
+                              child: const Text(
+                                'OPEN NOW',
+                                style: TextStyle(
+                                  color: Color(0xFF07854B),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFFF59E0B),
+                            size: 17,
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            'New listing',
+                            style: TextStyle(
+                              color: Color(0xFF101B33),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Text(
+                            '  •  ',
+                            style: TextStyle(color: Color(0xFFCBD2DD)),
+                          ),
+                          Text(
+                            'Reviews available',
+                            style: TextStyle(
+                              color: _sportsOrange,
+                              fontSize: 14,
+                              decoration: TextDecoration.underline,
+                              decorationColor: _sportsOrange,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _detailRow(
+                        Icons.sports_volleyball_outlined,
+                        '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
+                      ),
+                      _detailRow(
+                        Icons.location_on_outlined,
+                        widget.venue.address,
+                      ),
+                      if (widget.venue.hours.trim().isNotEmpty)
+                        _detailRow(
+                          Icons.access_time_outlined,
+                          widget.venue.hours,
+                        ),
+                      if (widget.venue.availability.trim().isNotEmpty)
+                        _detailRow(
+                          Icons.check_circle_outlined,
+                          widget.venue.availability,
+                        ),
+                      if (widget.venue.details.trim().isNotEmpty)
+                        _detailRow(Icons.notes_outlined, widget.venue.details),
+                      if (widget.venue.tags.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        const Text(
+                          'COURT AMENITIES',
+                          style: TextStyle(
+                            color: Color(0xFF8A97AA),
+                            fontSize: 11,
+                            letterSpacing: .8,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: widget.venue.tags
+                              .where((tag) => tag.trim().isNotEmpty)
+                              .map(
+                                (tag) => DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEFE5),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0x33FED7AA),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    child: Text(
+                                      tag,
+                                      style: const TextStyle(
+                                        color: Color(0xFF263247),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      if (widget.venue.priceDay.trim().isNotEmpty)
+                        Text(
+                          widget.venue.priceDay,
+                          style: const TextStyle(
+                            color: Color(0xFF101B33),
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      const Divider(color: Color(0xFFD8DDE5), thickness: 1),
+                      const SizedBox(height: 18),
+                      if (merchantName.isNotEmpty ||
+                          widget.venue.merchantEmail.isNotEmpty ||
+                          widget.venue.merchantPhone.isNotEmpty) ...[
+                        const Text(
+                          'Hosted by merchant',
+                          style: TextStyle(
+                            color: Color(0xFF1B1C1E),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Verified venue manager • Fast responding',
+                          style: TextStyle(
+                            color: Color(0xFF778398),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFF8FAFC), Color(0xFFFFF7ED)],
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE2E7EF)),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 27,
+                                    backgroundColor: Colors.grey.shade300,
+                                    backgroundImage:
+                                        widget.venue.merchantAvatarUrl
+                                            .trim()
+                                            .isEmpty
+                                        ? null
+                                        : _imageProvider(
+                                            widget.venue.merchantAvatarUrl,
+                                          ),
+                                    child:
+                                        widget.venue.merchantAvatarUrl
+                                            .trim()
+                                            .isEmpty
+                                        ? const Icon(
+                                            Icons.person,
+                                            color: Colors.white,
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      merchantName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Color(0xFF1B1C1E),
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () =>
+                                        _contactMerchant(widget.venue),
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(52, 34),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      side: const BorderSide(
+                                        color: Color(0xFFD7DEE8),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Chat',
+                                      style: TextStyle(
+                                        color: Color(0xFF263247),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (widget.venue.merchantEmail.isNotEmpty ||
+                                  widget.venue.merchantPhone.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                const Divider(height: 1),
+                                const SizedBox(height: 10),
+                                if (widget.venue.merchantPhone.isNotEmpty)
+                                  _contactChip(
+                                    Icons.phone_outlined,
+                                    widget.venue.merchantPhone,
+                                  ),
+                                if (widget.venue.merchantEmail.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: _contactChip(
+                                      Icons.email_outlined,
+                                      widget.venue.merchantEmail,
+                                    ),
+                                  ),
+                              ],
+                              if (widget.venue.merchantPhone.isNotEmpty ||
+                                  widget.venue.merchantEmail.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .75),
+                                    borderRadius: BorderRadius.circular(9),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E7EF),
+                                    ),
+                                  ),
+                                  child: const Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '⚡ Typical reply: Within 15 minutes',
+                                        style: TextStyle(
+                                          color: Color(0xFF667389),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        '100% Booking Rate',
+                                        style: TextStyle(
+                                          color: Color(0xFF079455),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      if (widget.venue.rateLabels.isNotEmpty) ...[
+                        const Text(
+                          'Rates',
+                          style: TextStyle(
+                            color: Color(0xFF1B1C1E),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final rate in widget.venue.rateLabels)
+                          _detailRow(Icons.payments_outlined, rate),
+                        const SizedBox(height: 8),
+                      ],
+                      if (merchantName.isNotEmpty ||
+                          widget.venue.merchantEmail.isNotEmpty ||
+                          widget.venue.merchantPhone.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE8EDF3)),
+                          ),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Booking & Cancellation Policy',
+                                style: TextStyle(
+                                  color: Color(0xFF101B33),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Non-marking athletic footwear required on court. Instant confirmation provided upon receipt of booking.',
+                                style: TextStyle(
+                                  color: Color(0xFF718096),
+                                  fontSize: 11,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      if (widget.venue.visitUrl.trim().isNotEmpty)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () async {
+                              final uri = Uri.tryParse(widget.venue.visitUrl);
+                              if (uri == null || !await launchUrl(uri)) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Could not open venue link.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.open_in_new_rounded),
+                            label: const Text('Visit venue website'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 12, 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.97),
+            borderRadius: BorderRadius.circular(20),
+            border: const Border(top: BorderSide(color: Color(0xFFE2E7EF))),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x24000000),
+                blurRadius: 20,
+                offset: Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: FittedBox(
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.venue.priceDay,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Color(0xFF1B1C1E),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 132,
+                height: 48,
+                child: FilledButton(
+                  onPressed: widget.onReserve,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _sportsOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Reserve',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _heroAction({
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        shape: BoxShape.circle,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        icon: Icon(icon, size: 18, color: const Color(0xFF263247)),
+      ),
+    );
+  }
+
+  Future<void> _contactMerchant(SportsVenue venue) async {
+    try {
+      final session = await AppSession.load();
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException('Your session has expired.', 401);
+      }
+      final response = await AuthApi().messageOwner(
+        token: token,
+        businessKey: venue.id > 0 ? '${venue.id}' : venue.name,
+      );
+      final owner = response['owner'] as Map<String, dynamic>?;
+      if (!mounted) return;
+      if (owner == null) {
+        _showMerchantMessage(
+          'This merchant is not available for messages yet.',
+        );
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              MessagesDashboardPage(owner: owner, businessTitle: venue.name),
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      _showMerchantMessage('Could not open merchant messages: $error');
+    }
+  }
+
+  void _showMerchantMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _detailRow(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF1F3F6),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 17, color: const Color(0xFF4D596D)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF263247),
+              fontSize: 14,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _contactChip(IconData icon, String value) => Row(
+    mainAxisSize: MainAxisSize.max,
+    children: [
+      Icon(icon, size: 18, color: const Color(0xFF68748A)),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Text(
+          value,
+          softWrap: true,
+          style: const TextStyle(
+            color: Color(0xFF4D5666),
+            fontSize: 13,
+            height: 1.25,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  ImageProvider _imageProvider(String image) {
+    if (image.startsWith('data:image/')) {
+      final comma = image.indexOf(',');
+      if (comma >= 0) {
+        try {
+          return MemoryImage(base64Decode(image.substring(comma + 1)));
+        } on FormatException {
+          return const AssetImage('assets/venue/missing-image.png');
+        }
+      }
+    }
+    if (image.startsWith('http')) return NetworkImage(image);
+    return const AssetImage('assets/venue/missing-image.png');
+  }
+
+  @override
+  void dispose() {
+    _imageController.dispose();
+    super.dispose();
+  }
+}
+
+enum SportsDashboardAction { none, openMap }
+
 class SportsDashboardPage extends StatefulWidget {
-  const SportsDashboardPage({super.key, this.onLogout});
+  const SportsDashboardPage({
+    super.key,
+    this.onLogout,
+    this.initialAction = SportsDashboardAction.none,
+    this.initialVenue,
+  });
 
   final Future<void> Function(BuildContext context)? onLogout;
+  final SportsDashboardAction initialAction;
+  final SportsVenue? initialVenue;
 
   @override
   State<SportsDashboardPage> createState() => _SportsDashboardPageState();
@@ -61,7 +923,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   final _api = AuthApi();
   final _searchController = TextEditingController();
   final List<SportsVenue> _merchantVenues = [];
-  List<Map<String, dynamic>> _customerBookings = [];
   List<SportsVenue> get _allVenues => _merchantVenues;
 
   String _area = 'All areas';
@@ -72,9 +933,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   final Set<String> _selectedAmenities = <String>{};
   bool _locationLoading = false;
   Position? _position;
-  final Set<String> _savedKeys = <String>{};
-  final Map<String, int> _saveCounts = <String, int>{};
-  String _sortBy = 'Featured';
+  final String _sortBy = 'Featured';
 
   @override
   void didChangeDependencies() {
@@ -96,7 +955,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           venue.address.toLowerCase().contains(_area.toLowerCase());
       final matchesAvailability =
           _availability == 'Any' ||
-          (_availability == 'Open 24 hours' && venue.hours == 'Open 24 hours');
+          (venue.hours.toLowerCase().contains(_availability.toLowerCase()) ||
+              venue.availability.toLowerCase().contains(
+                _availability.toLowerCase(),
+              ));
       final matchesPrice = venue.maxPrice <= _maxPrice;
       final matchesAmenities = _selectedAmenities.every(
         (amenity) => venue.tags.any(
@@ -141,13 +1003,45 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     return venues;
   }
 
+  int get _activeFilterCount {
+    var count = 0;
+    if (_area != 'All areas') count++;
+    if (_sport != 'All sports') count++;
+    if (_courtType != 'All') count++;
+    if (_availability != 'Any') count++;
+    if (_maxPrice < 700) count++;
+    count += _selectedAmenities.length;
+    return count;
+  }
+
+  List<String> _merchantOptions(
+    String Function(SportsVenue venue) selector,
+    String allLabel,
+  ) {
+    final values =
+        _allVenues
+            .map(selector)
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    return [allLabel, ...values];
+  }
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_refresh);
-    _loadSavedState();
     _loadMerchantBusinesses();
-    _loadCustomerBookings();
+    if (widget.initialAction != SportsDashboardAction.none) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.initialAction == SportsDashboardAction.openMap) {
+          _openMap();
+        }
+      });
+    }
   }
 
   Future<void> _loadMerchantBusinesses() async {
@@ -173,18 +1067,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       if (mounted) {
         _showMessage('Could not load merchant Sports venues: $error');
       }
-    }
-  }
-
-  Future<void> _loadCustomerBookings() async {
-    try {
-      final session = await AppSession.load();
-      final token = session.apiToken;
-      if (token == null || token.isEmpty) return;
-      final bookings = await _api.customerBookings(token);
-      if (mounted) setState(() => _customerBookings = bookings);
-    } on Exception {
-      // The venue browser remains usable if booking status is unavailable.
     }
   }
 
@@ -216,6 +1098,22 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             return '$start - $end|PHP ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr';
           }).toList()
         : <String>[];
+    final rateValues = rawPeriods is List
+        ? rawPeriods
+              .whereType<Map>()
+              .map(
+                (period) => double.tryParse(
+                  '${period['pricePerHour'] ?? period['price_per_hour'] ?? 0}',
+                ),
+              )
+              .whereType<double>()
+              .where((value) => value > 0)
+              .toList()
+        : <double>[];
+    final maxPrice = [
+      price,
+      ...rateValues,
+    ].reduce((maximum, value) => value > maximum ? value : maximum);
     final images = _merchantImages(b);
     return (
       id: (b['id'] as num?)?.toInt() ?? 0,
@@ -227,18 +1125,24 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       courts: '${b['details'] ?? 'Sports facility'}',
       hours: '${b['hours'] ?? b['opening_hours'] ?? 'Open hours'}',
       availability: '${b['availability'] ?? b['availability_status'] ?? ''}',
+      details: '${b['details'] ?? ''}',
       image: _merchantImage(b),
       images: images,
-      priceDay: 'PHP ${price.toStringAsFixed(0)} / hr',
-      priceNight: 'PHP ${price.toStringAsFixed(0)} / hr',
+      priceDay: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
+      priceNight: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
       priceLines: periods.isEmpty
           ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
           : periods,
-      maxPrice: price,
+      maxPrice: maxPrice,
       tags: tags,
+      rateLabels: periods,
       latitude: 10.3157,
       longitude: 123.8854,
       visitUrl: '${b['visitUrl'] ?? b['visit_url'] ?? ''}',
+      merchantEmail: '${b['merchantEmail'] ?? b['merchant_email'] ?? ''}',
+      merchantPhone: '${b['merchantPhone'] ?? b['merchant_phone'] ?? ''}',
+      merchantAvatarUrl:
+          '${b['merchantAvatarUrl'] ?? b['merchant_avatar_url'] ?? ''}',
     );
   }
 
@@ -251,11 +1155,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         business['ownerFirstName'] ?? business['owner_first_name'] ?? '';
     final last = business['ownerLastName'] ?? business['owner_last_name'] ?? '';
     final name = '$first $last'.trim();
-    return name.isEmpty ? 'Venue owner' : name;
+    return name;
   }
 
   String _merchantImage(Map<String, dynamic> business) {
-    return _merchantImages(business).first;
+    final images = _merchantImages(business);
+    return images.isEmpty ? '' : images.first;
   }
 
   List<String> _merchantImages(Map<String, dynamic> business) {
@@ -290,41 +1195,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       }
       if (images.isEmpty) images.add(legacy);
     }
-    if (images.isEmpty) images.add('assets/court/pickle-court.jpg');
     return images;
-  }
-
-  ImageProvider _sportsImageProvider(String image) {
-    if (image.startsWith('data:image/')) {
-      final comma = image.indexOf(',');
-      if (comma >= 0) {
-        return MemoryImage(base64Decode(image.substring(comma + 1)));
-      }
-    }
-    if (image.startsWith('http')) return NetworkImage(image);
-    return AssetImage(image);
-  }
-
-  Future<void> _loadSavedState() async {
-    try {
-      final saved = await SavedItemStore.list();
-      final counts = await SavedItemStore.counts('sports');
-      if (!mounted) return;
-      setState(() {
-        _savedKeys
-          ..clear()
-          ..addAll(
-            saved
-                .where((item) => item['itemType'] == 'sports')
-                .map((item) => item['itemKey'] as String),
-          );
-        _saveCounts
-          ..clear()
-          ..addAll(counts);
-      });
-    } on Exception {
-      // The card remains usable even when saved-state refresh is unavailable.
-    }
   }
 
   @override
@@ -339,342 +1210,40 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _sportsPage,
-      appBar: AppBar(
-        backgroundColor: _sportsPage,
-        foregroundColor: _sportsInk,
-        elevation: 0,
-        leading: IconButton(
-          onPressed: () =>
-              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ReserveDashboardPage(onLogout: widget.onLogout),
-                ),
-                (_) => false,
-              ),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19),
-        ),
-        title: const Text(
-          'Sports Courts',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'View map',
-            onPressed: _openMap,
-            icon: const Icon(Icons.map_outlined),
-          ),
-          IconButton(
-            tooltip: 'Open filters sidebar',
-            onPressed: _openFilterDrawer,
-            icon: const Icon(Icons.tune_rounded),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_customerBookings.any(
-            (booking) =>
-                booking['status'] == 'approved' ||
-                booking['status'] == 'finished',
-          ))
-            _bookingStatusBanner(),
-          _mainSearchBar(),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 900;
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [Expanded(child: _results(wide))],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: Theme(
-        data: Theme.of(context).copyWith(
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: _sportsSurface,
-            surfaceTintColor: _sportsSurface,
-            shadowColor: Colors.transparent,
-            indicatorColor: _sportsSoftOrange,
-            iconTheme: WidgetStateProperty.resolveWith((states) {
-              final selected = states.contains(WidgetState.selected);
-              return IconThemeData(
-                color: selected
-                    ? const Color(0xFFFF8200)
-                    : const Color(0xFF68748A),
-                size: 24,
-              );
-            }),
-            labelTextStyle: WidgetStateProperty.resolveWith((states) {
-              final selected = states.contains(WidgetState.selected);
-              return TextStyle(
-                color: selected
-                    ? const Color(0xFF101B33)
-                    : const Color(0xFF68748A),
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              );
-            }),
-          ),
-        ),
-        child: NavigationBar(
-          height: 72,
-          elevation: 0,
-          indicatorShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          selectedIndex: 0,
-          onDestinationSelected: (index) {
-            if (index == 0) return;
-            if (index == 4) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ProfileDashboardPage(onLogout: widget.onLogout),
-                ),
-              );
-              return;
-            }
-
-            if (index == 1) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SavedDashboardPage(
-                    onLogout: widget.onLogout,
-                    itemType: 'sports',
-                  ),
-                ),
-              );
-              return;
-            }
-            if (index == 2) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const MessagesDashboardPage(),
-                ),
-              );
-              return;
-            }
-            if (index == 3) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      CustomerBookingsPage(onLogout: widget.onLogout),
-                ),
-              );
-              return;
-            }
-            _showMessage(switch (index) {
-              1 => 'Saved venues will appear here.',
-              2 => 'Messages will appear here.',
-              3 => 'Booking history will appear here.',
-              _ => 'Profile will appear here.',
-            });
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.location_on_outlined, size: 24),
-              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
-              label: 'Explore',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.favorite_border_rounded, size: 24),
-              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
-              label: 'Saved',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.send_outlined, size: 24),
-              selectedIcon: Icon(Icons.send_rounded, size: 24),
-              label: 'Messages',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined, size: 22),
-              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
-              label: 'Bookings',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded, size: 24),
-              selectedIcon: Icon(Icons.person_rounded, size: 24),
-              label: 'Profile',
-            ),
-          ],
-        ),
-      ),
+    final detailVenue =
+        widget.initialVenue ??
+        (_allVenues.isNotEmpty ? _allVenues.first : _defaultDetailVenue());
+    return SportsVenueDetailPage(
+      venue: detailVenue,
+      onReserve: () => _openBookingModal(detailVenue),
     );
   }
 
-  Widget _results(bool wide) {
-    final venues = _filteredVenues;
-    return RefreshIndicator(
-      onRefresh: () async {
-        await Future.wait([_loadSavedState(), _loadMerchantBusinesses()]);
-      },
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(wide ? 22 : 16, 14, wide ? 28 : 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${venues.length} of ${_allVenues.length} courts',
-                      style: const TextStyle(
-                        color: _sportsMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const Text(
-                    'Sort by',
-                    style: TextStyle(color: _sportsMuted, fontSize: 12),
-                  ),
-                  const SizedBox(width: 8),
-                  DropdownButton<String>(
-                    value: _sortBy,
-                    underline: const SizedBox.shrink(),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Featured',
-                        child: Text('Featured'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Nearest',
-                        child: Text('Nearest'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Name A-Z',
-                        child: Text('Name A-Z'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Price: low to high',
-                        child: Text('Price: low to high'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Price: high to low',
-                        child: Text('Price: high to low'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setState(() => _sortBy = value);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (venues.isEmpty)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Text('No sports courts match these filters.'),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                wide ? 22 : 16,
-                4,
-                wide ? 28 : 16,
-                28,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final columns = wide ? 2 : 1;
-                    const spacing = 16.0;
-                    final itemWidth =
-                        (constraints.maxWidth - spacing * (columns - 1)) /
-                        columns;
-                    return Wrap(
-                      spacing: spacing,
-                      runSpacing: spacing,
-                      children: [
-                        for (final venue in venues)
-                          SizedBox(width: itemWidth, child: _courtCard(venue)),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bookingStatusBanner() {
-    final booking = _customerBookings.firstWhere(
-      (item) => item['status'] == 'approved' || item['status'] == 'finished',
-    );
-    final finished = booking['status'] == 'finished';
-    return MaterialBanner(
-      backgroundColor: finished ? const Color(0xFFE7F6EC) : _sportsSoftOrange,
-      leading: Icon(
-        finished ? Icons.check_circle_rounded : Icons.event_available_rounded,
-        color: finished ? Colors.green.shade700 : _sportsOrange,
-      ),
-      content: Text(
-        finished
-            ? 'Booking at ${booking['venueName']} is finished.'
-            : 'Booking at ${booking['venueName']} was approved for '
-                  '${booking['date']} at ${booking['startTime']}.',
-        style: const TextStyle(color: _sportsInk, fontWeight: FontWeight.w700),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _loadCustomerBookings,
-          child: const Text('Refresh'),
-        ),
-      ],
-    );
-  }
-
-  Widget _mainSearchBar() => Container(
-    color: _sportsPage,
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-    child: TextField(
-      controller: _searchController,
-      decoration: InputDecoration(
-        hintText: 'Search courts, areas, or sports...',
-        prefixIcon: const Icon(Icons.search, size: 20),
-        suffixIcon: _searchController.text.isEmpty
-            ? null
-            : IconButton(
-                tooltip: 'Clear search',
-                onPressed: _searchController.clear,
-                icon: const Icon(Icons.close_rounded, size: 18),
-              ),
-        filled: true,
-        fillColor: _sportsSurface,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: _sportsLine),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: _sportsLine),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: _sportsOrange, width: 1.5),
-        ),
-      ),
-    ),
+  SportsVenue _defaultDetailVenue() => (
+    id: 0,
+    name: '',
+    sport: '',
+    address: '',
+    ownerName: '',
+    type: '',
+    courts: '',
+    hours: '',
+    availability: '',
+    details: '',
+    image: '',
+    images: const [],
+    priceDay: '',
+    priceNight: '',
+    priceLines: const [],
+    maxPrice: 0,
+    tags: const [],
+    rateLabels: const [],
+    latitude: 0,
+    longitude: 0,
+    visitUrl: '',
+    merchantEmail: '',
+    merchantPhone: '',
+    merchantAvatarUrl: '',
   );
 
   // Kept as a reusable desktop filter layout for future inline filter mode.
@@ -813,43 +1382,73 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     );
   }
 
+  // ignore: unused_element
   void _openFilterDrawer() {
-    showGeneralDialog<void>(
+    showModalBottomSheet<void>(
       context: context,
-      barrierLabel: 'Filters',
-      barrierDismissible: true,
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 240),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return StatefulBuilder(
-          builder: (context, dialogSetState) => Align(
-            alignment: Alignment.centerLeft,
-            child: Material(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, dialogSetState) {
+          final height = MediaQuery.sizeOf(context).height;
+          return Container(
+            height: height * .9,
+            decoration: const BoxDecoration(
               color: _sportsSurface,
-              child: SizedBox(
-                width: MediaQuery.sizeOf(context).width < 600
-                    ? MediaQuery.sizeOf(context).width * .86
-                    : 370,
-                height: double.infinity,
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
-                        child: Row(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 12, 12),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: _sportsLine,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
                           children: [
                             const Expanded(
                               child: Text(
                                 'Filters',
                                 style: TextStyle(
                                   color: _sportsInk,
-                                  fontSize: 18,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
                             ),
+                            if (_activeFilterCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _sportsSoftOrange,
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: Text(
+                                  '$_activeFilterCount active',
+                                  style: const TextStyle(
+                                    color: _sportsOrange,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             TextButton(
-                              onPressed: _resetFilters,
+                              onPressed: () {
+                                _resetFilters();
+                                dialogSetState(() {});
+                              },
                               child: const Text('Reset all'),
                             ),
                             IconButton(
@@ -859,48 +1458,42 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             ),
                           ],
                         ),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.only(bottom: 32),
-                          child: _filterContent(dialogSetState),
-                        ),
-                      ),
-                      SafeArea(
-                        top: false,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _sportsNavy,
-                                minimumSize: const Size.fromHeight(48),
-                              ),
-                              child: Text(
-                                'Apply Filters (${_filteredVenues.length})',
-                              ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: _filterContent(dialogSetState),
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _sportsNavy,
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
+                          child: Text('Show ${_filteredVenues.length} venues'),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ),
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final offset =
-            Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-            );
-        return SlideTransition(position: offset, child: child);
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -930,32 +1523,25 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           _label('AREA / CITY'),
           _dropdown(
             value: _area,
-            values: const ['All areas', 'Cebu City', 'Mandaue City', 'Talisay'],
+            values: _merchantOptions((venue) => venue.address, 'All areas'),
             onChanged: (value) => update(() => _area = value),
           ),
           _sectionGap(),
           _label('SPORT'),
           _dropdown(
             value: _sport,
-            values: const [
-              'All sports',
-              'Basketball',
-              'Badminton',
-              'Tennis',
-              'Padel',
-              'Volleyball',
-              'Pickleball',
-            ],
+            values: _merchantOptions((venue) => venue.sport, 'All sports'),
             onChanged: (value) => update(() => _sport = value),
           ),
           _sectionGap(),
           _label('COURT TYPE'),
           _chips(
-            const ['All', 'Indoor', 'Outdoor', 'Covered'],
+            _merchantOptions((venue) => venue.type, 'All'),
             _courtType,
             (value) => update(() => _courtType = value),
           ),
           _sectionGap(),
+
           _label('AMENITIES'),
           _amenityChips(const [
             'Parking',
@@ -1032,171 +1618,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     );
   }
 
-  Widget _courtCard(dynamic venue) => Card(
-    elevation: 1,
-    shadowColor: Colors.black12,
-    color: Colors.white,
-    clipBehavior: Clip.antiAlias,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AspectRatio(
-          aspectRatio: 16 / 10,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              GestureDetector(
-                onTap: () => _showSportsGallery(venue.images),
-                child: PageView.builder(
-                  itemCount: venue.images.length > 1 ? 10000 : 1,
-                  itemBuilder: (_, index) => Image(
-                    image: _sportsImageProvider(
-                      venue.images[index % venue.images.length],
-                    ),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, error, stackTrace) => Image.asset(
-                      'assets/court/pickle-court.jpg',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton.filled(
-                      tooltip: _savedKeys.contains(venue.name)
-                          ? 'Unsave venue'
-                          : 'Save venue',
-                      style: IconButton.styleFrom(
-                        backgroundColor: _savedKeys.contains(venue.name)
-                            ? _sportsOrange
-                            : Colors.white,
-                        foregroundColor: _savedKeys.contains(venue.name)
-                            ? Colors.white
-                            : _sportsNavy,
-                      ),
-                      onPressed: () => _toggleSaved(
-                        type: 'sports',
-                        key: venue.name,
-                        title: venue.name,
-                        subtitle: 'Sport: ${venue.sport}\n${venue.address}',
-                        imageUrl: venue.image,
-                      ),
-                      icon: Icon(
-                        _savedKeys.contains(venue.name)
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                      ),
-                    ),
-                    _saveCount(_saveCounts[venue.name] ?? 0),
-                  ],
-                ),
-              ),
-              if (venue.images.length > 1)
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: Text(
-                        '${venue.images.length} photos',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                venue.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _sportsInk,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 6),
-              _detail(Icons.location_on_outlined, venue.address),
-              _detail(Icons.sports_rounded, 'Sport: ${venue.sport}'),
-              _detail(Icons.business_center_outlined, 'Type: ${venue.type}'),
-              _detail(Icons.grid_3x3, 'Courts: ${venue.courts}'),
-              _detail(Icons.access_time, 'Hours: ${venue.hours}'),
-              if (venue.availability.isNotEmpty)
-                _detail(
-                  Icons.check_circle_outline,
-                  'Availability: ${venue.availability}',
-                ),
-              const SizedBox(height: 6),
-              _priceBox(venue),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 5,
-                runSpacing: 4,
-                children: [for (final tag in venue.tags) _tag(tag)],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openVisit(venue.visitUrl, venue.name),
-                      icon: const Icon(Icons.language, size: 15),
-                      label: const Text('Visit'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _sportsNavy,
-                        side: const BorderSide(color: _sportsNavy),
-                        minimumSize: const Size(0, 36),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => _openBookingModal(venue),
-                      icon: const Icon(Icons.calendar_month, size: 15),
-                      label: const Text('Book now'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _sportsOrange,
-                        minimumSize: const Size(0, 36),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
   Future<void> _openBookingModal(SportsVenue venue) async {
+    if (venue.id <= 0) {
+      _showMessage('This merchant venue is not available for booking yet.');
+      return;
+    }
     final rate = venue.maxPrice;
     if (!rate.isFinite || rate <= 0) {
       _showMessage('This venue does not have a valid merchant rate.');
@@ -1204,7 +1630,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     }
     var hours = 1;
     var players = 1;
-    var payment = 'gcash';
+    var payment = 'online';
     DateTime bookingDate = DateTime.now();
     TimeOfDay bookingTime = TimeOfDay.now();
     var occupiedBookings = <Map<String, dynamic>>[];
@@ -1228,12 +1654,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      backgroundColor: _sportsPage,
+      backgroundColor: const Color(0xFFF8F9FF),
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) {
           final total = rate * hours;
           final cashOnArrival = total / 2;
-          final dueNow = payment == 'cash' ? cashOnArrival : total;
+          final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
           final selectedSlotBooked = _bookingSlotOverlaps(
             bookingTime,
             hours,
@@ -1251,36 +1677,132 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Book ${venue.name}',
-                      style: const TextStyle(
-                        color: _sportsNavy,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
+                    Row(
+                      children: [
+                        _modalIconButton(
+                          Icons.arrow_back_rounded,
+                          () => Navigator.of(modalContext).pop(),
+                        ),
+                        const Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                'Book Court',
+                                style: TextStyle(
+                                  color: _sportsInk,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Step 2 of 2 • Checkout',
+                                style: TextStyle(
+                                  color: _sportsMuted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _modalIconButton(Icons.help_outline_rounded, () {}),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE8ECF3)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0D0F172A),
+                            blurRadius: 16,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF1E8),
+                                        borderRadius: BorderRadius.circular(99),
+                                      ),
+                                      child: Text(
+                                        venue.sport.isEmpty
+                                            ? 'VENUE'
+                                            : venue.sport.toUpperCase(),
+                                        style: const TextStyle(
+                                          color: _sportsOrange,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: .7,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 7),
+                                    Text(
+                                      venue.name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: _sportsInk,
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                'PHP ${rate.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: _sportsOrange,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _bookingDetail(
+                            Icons.person_outline,
+                            'Owner: ${venue.ownerName}',
+                          ),
+                          _bookingDetail(
+                            Icons.location_on_outlined,
+                            venue.address,
+                          ),
+                          _bookingDetail(
+                            Icons.access_time_outlined,
+                            'Venue hours: ${venue.hours}',
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Merchant rate: PHP ${rate.toStringAsFixed(2)} / hour',
-                      style: const TextStyle(color: _sportsMuted),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Owner: ${venue.ownerName}',
-                      style: const TextStyle(
-                        color: _sportsNavy,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _bookingDetail(Icons.location_on_outlined, venue.address),
-                    _bookingDetail(Icons.access_time_rounded, venue.hours),
-                    _bookingDetail(Icons.sports_rounded, venue.sport),
                     const SizedBox(height: 18),
                     const Text(
-                      'Choose date and time',
+                      'CHOOSE DATE AND TIME',
                       style: TextStyle(
-                        color: _sportsInk,
+                        color: _sportsMuted,
+                        fontSize: 11,
+                        letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -1289,6 +1811,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
+                            style: _bookingChoiceStyle(),
                             onPressed: () async {
                               final picked = await showDatePicker(
                                 context: context,
@@ -1344,6 +1867,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
+                            style: _bookingChoiceStyle(),
                             onPressed: () async {
                               final picked = await showTimePicker(
                                 context: context,
@@ -1425,18 +1949,20 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ],
                     const SizedBox(height: 18),
                     const Text(
-                      'Booking duration',
+                      'BOOKING CONFIGURATION',
                       style: TextStyle(
-                        color: _sportsInk,
+                        color: _sportsMuted,
+                        fontSize: 11,
+                        letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
                       initialValue: hours,
-                      decoration: const InputDecoration(
+                      decoration: _bookingInputDecoration(
                         prefixIcon: Icon(Icons.schedule_rounded),
-                        labelText: 'Hours',
+                        labelText: 'Duration',
                       ),
                       items: [
                         for (var value = 1; value <= 8; value++)
@@ -1452,7 +1978,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     const SizedBox(height: 14),
                     DropdownButtonFormField<int>(
                       initialValue: players,
-                      decoration: const InputDecoration(
+                      decoration: _bookingInputDecoration(
                         prefixIcon: Icon(Icons.groups_rounded),
                         labelText: 'Number of players',
                       ),
@@ -1473,27 +1999,40 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     const SizedBox(height: 18),
                     const Text(
-                      'Payment method',
+                      'PAYMENT METHOD',
                       style: TextStyle(
-                        color: _sportsInk,
+                        color: _sportsMuted,
+                        fontSize: 11,
+                        letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    const SizedBox(height: 8),
                     SegmentedButton<String>(
+                      style: ButtonStyle(
+                        backgroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? _sportsOrange
+                              : Colors.white,
+                        ),
+                        foregroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? Colors.white
+                              : _sportsInk,
+                        ),
+                        side: WidgetStateProperty.all(
+                          const BorderSide(color: Color(0xFFE2E7EF)),
+                        ),
+                      ),
                       segments: const [
                         ButtonSegment(
-                          value: 'gcash',
-                          label: Text('GCash'),
-                          icon: Icon(Icons.account_balance_wallet_rounded),
+                          value: 'online',
+                          label: Text('Online payment'),
+                          icon: Icon(Icons.lock_rounded),
                         ),
                         ButtonSegment(
-                          value: 'card',
-                          label: Text('Card'),
-                          icon: Icon(Icons.credit_card_rounded),
-                        ),
-                        ButtonSegment(
-                          value: 'cash',
-                          label: Text('Cash on arrival'),
+                          value: 'cash_on_arrival',
+                          label: Text('COA'),
                           icon: Icon(Icons.payments_outlined),
                         ),
                       ],
@@ -1504,11 +2043,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      payment == 'cash'
+                      payment == 'cash_on_arrival'
                           ? 'Pay PHP ${cashOnArrival.toStringAsFixed(2)} now and '
                                 'PHP ${cashOnArrival.toStringAsFixed(2)} on arrival.'
-                          : 'Pay the full PHP ${total.toStringAsFixed(2)} now by '
-                                '${payment == 'gcash' ? 'GCash' : 'card'}.',
+                          : 'Pay securely online. Amount due: '
+                                'PHP ${total.toStringAsFixed(2)}.',
                       style: const TextStyle(color: _sportsMuted),
                     ),
                     const Divider(height: 24),
@@ -1527,12 +2066,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     _bookingAmountRow('Booking total', total, ''),
                     _bookingAmountRow(
-                      payment == 'cash' ? 'Pay now' : 'Amount due',
+                      payment == 'cash_on_arrival' ? 'Pay now' : 'Amount due',
                       dueNow,
                       '',
                       strong: true,
                     ),
-                    if (payment == 'cash')
+                    if (payment == 'cash_on_arrival')
                       Text(
                         'Cash on Arrival is fixed at 50% of the booking total.',
                         style: TextStyle(
@@ -1541,7 +2080,24 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E7EF)),
+                      ),
+                      child: const Text(
+                        'Cancellation Policy: Free cancellation up to 6 hours before the slot. Proper sports footwear is required.',
+                        style: TextStyle(
+                          color: _sportsMuted,
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -1558,9 +2114,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   payment: payment,
                                 );
                               },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _sportsOrange,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 5,
+                          shadowColor: const Color(0x55FF8200),
+                        ),
                         icon: const Icon(Icons.lock_outline_rounded),
                         label: Text(
-                          payment == 'cash'
+                          payment == 'cash_on_arrival'
                               ? 'Continue · PHP ${dueNow.toStringAsFixed(2)}'
                               : 'Pay · PHP ${dueNow.toStringAsFixed(2)}',
                         ),
@@ -1573,6 +2139,57 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           );
         },
       ),
+    );
+  }
+
+  Widget _modalIconButton(IconData icon, VoidCallback onPressed) {
+    return SizedBox(
+      width: 38,
+      height: 38,
+      child: IconButton(
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFFF1F3F7),
+          foregroundColor: _sportsInk,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(11),
+          ),
+        ),
+        icon: Icon(icon, size: 19),
+      ),
+    );
+  }
+
+  InputDecoration _bookingInputDecoration({
+    required Icon prefixIcon,
+    required String labelText,
+  }) {
+    return InputDecoration(
+      prefixIcon: prefixIcon,
+      labelText: labelText,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+      ),
+    );
+  }
+
+  ButtonStyle _bookingChoiceStyle() {
+    return OutlinedButton.styleFrom(
+      foregroundColor: _sportsInk,
+      backgroundColor: Colors.white,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      side: const BorderSide(color: Color(0xFFE2E7EF), width: 1.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     );
   }
 
@@ -1650,6 +2267,21 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         '${bookingTime.hour.toString().padLeft(2, '0')}:'
         '${bookingTime.minute.toString().padLeft(2, '0')}:00';
     try {
+      final onlineProvider = payment == 'online'
+          ? await _chooseOnlineProvider()
+          : null;
+      if (payment == 'online' && onlineProvider == null) return;
+      final confirmed = await _confirmBookingDetails(
+        venue: venue,
+        bookingDate: bookingDate,
+        bookingTime: bookingTime,
+        hours: hours,
+        players: players,
+        payment: payment,
+        onlineProvider: onlineProvider,
+        total: venue.maxPrice * hours,
+      );
+      if (!confirmed) return;
       final response = await _api.createBooking(
         token: token,
         venueId: venue.id,
@@ -1662,6 +2294,32 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       if (!mounted || !modalContext.mounted) return;
       Navigator.of(modalContext).pop();
       final booking = response['booking'] as Map<String, dynamic>? ?? {};
+      if (payment == 'online') {
+        final checkout = await _api.createPayMongoCheckout(
+          token: token,
+          bookingId: int.tryParse('${booking['id']}') ?? 0,
+          paymentMethod: onlineProvider!,
+        );
+        final checkoutUrl = checkout['checkoutUrl'] as String?;
+        if (checkoutUrl == null || checkoutUrl.isEmpty) {
+          throw const AuthApiException(
+            'PayMongo did not return a checkout link.',
+            502,
+          );
+        }
+        final launched = await launchUrl(
+          Uri.parse(checkoutUrl),
+          mode: LaunchMode.externalApplication,
+        );
+        if (!launched) {
+          throw const AuthApiException(
+            'Could not open the PayMongo checkout page.',
+            0,
+          );
+        }
+        _showMessage('Complete your GCash or PayMaya payment to continue.');
+        return;
+      }
       final downpayment =
           booking['downpayment'] ?? (venue.maxPrice * hours / 2);
       _showMessage(
@@ -1671,6 +2329,129 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     } on Exception catch (error) {
       _showMessage('Could not submit booking: $error');
     }
+  }
+
+  Future<String?> _chooseOnlineProvider() => showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Choose online payment'),
+      content: const Text('Select a payment provider to continue securely.'),
+      actions: [
+        TextButton.icon(
+          onPressed: () => Navigator.pop(dialogContext, 'gcash'),
+          icon: const Icon(Icons.account_balance_wallet_rounded),
+          label: const Text('GCash'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
+          icon: const Icon(Icons.payments_rounded),
+          label: const Text('PayMaya'),
+        ),
+      ],
+    ),
+  );
+
+  Future<bool> _confirmBookingDetails({
+    required SportsVenue venue,
+    required DateTime bookingDate,
+    required TimeOfDay bookingTime,
+    required int hours,
+    required int players,
+    required String payment,
+    required String? onlineProvider,
+    required double total,
+  }) async {
+    final paymentLabel = payment == 'online'
+        ? onlineProvider == 'gcash'
+              ? 'Online payment · GCash'
+              : 'Online payment · PayMaya'
+        : 'Cash on Arrival (COA)';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm booking details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Please check that all information is correct before continuing.',
+                style: TextStyle(color: _sportsMuted),
+              ),
+              const SizedBox(height: 16),
+              _confirmationRow('Venue', venue.name),
+              _confirmationRow('Date', _bookingDateLabel(bookingDate)),
+              _confirmationRow('Time', _timeLabel(bookingTime)),
+              _confirmationRow(
+                'Duration',
+                '$hours hour${hours == 1 ? '' : 's'}',
+              ),
+              _confirmationRow(
+                'Players',
+                '$players player${players == 1 ? '' : 's'}',
+              ),
+              _confirmationRow('Payment', paymentLabel),
+              _confirmationRow(
+                'Booking total',
+                'PHP ${total.toStringAsFixed(2)}',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Edit details'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm and continue'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Widget _confirmationRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 98,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _sportsMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: _sportsInk,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  String _bookingDateLabel(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  String _timeLabel(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${time.period == DayPeriod.am ? 'AM' : 'PM'}';
   }
 
   Widget _bookingAmountRow(
@@ -1749,58 +2530,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     ),
   );
 
-  Future<void> _toggleSaved({
-    required String type,
-    required String key,
-    required String title,
-    required String subtitle,
-    String? imageUrl,
-  }) async {
-    try {
-      if (_savedKeys.contains(key)) {
-        await SavedItemStore.remove(type, key);
-        setState(() {
-          _savedKeys.remove(key);
-          _saveCounts[key] = (_saveCounts[key] ?? 1) - 1;
-        });
-        _showMessage('$title removed from Saved.');
-      } else {
-        await SavedItemStore.save(
-          type: type,
-          key: key,
-          title: title,
-          subtitle: subtitle,
-          imageUrl: imageUrl,
-        );
-        setState(() {
-          _savedKeys.add(key);
-          _saveCounts[key] = (_saveCounts[key] ?? 0) + 1;
-        });
-        _showMessage('$title saved.');
-      }
-    } on Exception catch (error) {
-      _showMessage('Could not update Saved: $error');
-    }
-  }
-
-  Widget _saveCount(int count) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      child: Text(
-        '$count',
-        style: const TextStyle(
-          color: _sportsNavy,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    ),
-  );
-
   double _distanceSquared(
     double latitude,
     double longitude,
@@ -1811,178 +2540,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     final longitudeDelta = longitude - otherLongitude;
     return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta;
   }
-
-  Widget _detail(IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 3),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 14, color: _sportsInk),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _sportsMuted, fontSize: 10.5),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _priceBox(dynamic venue) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(8),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFAFBFD),
-      border: Border.all(color: _sportsLine),
-      borderRadius: BorderRadius.circular(9),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '🏷 Price',
-          style: TextStyle(
-            color: _sportsInk,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        for (final line in venue.priceLines)
-          _priceLine(
-            line.split('|').first,
-            line.contains('|') ? line.split('|').skip(1).join('|') : '',
-          ),
-      ],
-    ),
-  );
-
-  Future<void> _showSportsGallery(List<String> images) async {
-    if (images.isEmpty) return;
-    var index = 0;
-    final galleryController = PageController(
-      initialPage: images.length > 1 ? images.length * 1000 : 0,
-    );
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (_, setState) => Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(12),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                height: MediaQuery.sizeOf(context).height * .78,
-                child: PageView.builder(
-                  onPageChanged: (value) =>
-                      setState(() => index = value % images.length),
-                  itemCount: images.length > 1 ? 10000 : 1,
-                  controller: galleryController,
-                  itemBuilder: (_, page) => InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 3,
-                    child: Image(
-                      image: _sportsImageProvider(images[page % images.length]),
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: IconButton.filled(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ),
-              Positioned(
-                bottom: 10,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .65),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    child: Text(
-                      '${index + 1} of ${images.length}',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-              ),
-              if (images.length > 1) ...[
-                Positioned(
-                  left: 8,
-                  child: IconButton.filled(
-                    onPressed: () => galleryController.previousPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                    ),
-                    icon: const Icon(Icons.chevron_left),
-                  ),
-                ),
-                Positioned(
-                  right: 8,
-                  child: IconButton.filled(
-                    onPressed: () => galleryController.nextPage(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                    ),
-                    icon: const Icon(Icons.chevron_right),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-    galleryController.dispose();
-  }
-
-  Widget _priceLine(String label, String value) => Row(
-    children: [
-      Expanded(
-        child: Text(
-          label,
-          style: const TextStyle(color: _sportsMuted, fontSize: 9.5),
-        ),
-      ),
-      Text(
-        value,
-        style: const TextStyle(
-          color: _sportsInk,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    ],
-  );
-
-  Widget _tag(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-    decoration: BoxDecoration(
-      color: _sportsSoftOrange,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Text(
-      text,
-      style: const TextStyle(
-        color: _sportsInk,
-        fontSize: 9.5,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
 
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 7),
@@ -2252,19 +2809,5 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _openVisit(String rawUrl, String name) async {
-    final uri = Uri.tryParse(rawUrl.trim());
-    if (uri == null ||
-        !uri.hasScheme ||
-        (uri.scheme != 'http' && uri.scheme != 'https') ||
-        uri.host.isEmpty) {
-      _showMessage('$name does not have a visit link yet.');
-      return;
-    }
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _showMessage('Could not open the visit link for $name.');
-    }
   }
 }

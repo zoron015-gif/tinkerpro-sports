@@ -13,6 +13,16 @@ const _addSoftOrange = Color(0xFFFFE8D2);
 const _addMuted = Color(0xFF68748A);
 const _addLine = Color(0xFFE2E7EF);
 
+List<String> _stringList(dynamic value) {
+  if (value is List) {
+    return value
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty && item != 'null')
+        .toList();
+  }
+  return const [];
+}
+
 class _MerchantBusinessFormPanel extends StatefulWidget {
   const _MerchantBusinessFormPanel({required this.builder});
 
@@ -86,6 +96,55 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
   final _api = AuthApi();
   bool _saving = false;
   String _selectedBusinessType = 'All';
+  String _selectedAddSection = 'Booking cards';
+  List<Map<String, dynamic>> _newsPosts = [];
+  bool _newsLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNewsPosts();
+  }
+
+  @override
+  void didUpdateWidget(covariant MerchantAddPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.businesses != widget.businesses) {
+      _loadNewsPosts();
+    }
+  }
+
+  int? _id(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse('$value');
+
+  int? _businessId(Map<String, dynamic> business) =>
+      _id(business['id'] ?? business['businessId']);
+
+  int? _postBusinessId(Map<String, dynamic> post) =>
+      _id(post['businessId'] ?? post['business_id']);
+
+  Future<void> _loadNewsPosts() async {
+    final token = (await AppSession.load()).apiToken;
+    if (!mounted || token == null || token.isEmpty) return;
+    setState(() => _newsLoading = true);
+    try {
+      final posts = await _api.merchantNewsPosts(token);
+      if (mounted) setState(() => _newsPosts = posts);
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load news posts: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _newsLoading = false);
+    }
+  }
+
+  Future<void> _refreshAddPage() async {
+    await widget.onBusinessesChanged();
+    await _loadNewsPosts();
+  }
 
   Future<void> _openForm([Map<String, dynamic>? editingBusiness]) async {
     final editing = editingBusiness != null;
@@ -110,7 +169,8 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         ? widget.initialBusinessType!
         : 'Sports';
     final existingCategory = editingBusiness?['category'] as String?;
-    String category = {..._categories[type]!, 'Other'}.contains(existingCategory)
+    String category =
+        {..._categories[type]!, 'Other'}.contains(existingCategory)
         ? existingCategory ?? _categories[type]!.first
         : 'Other';
     if (category == 'Other' && existingCategory != null) {
@@ -182,12 +242,16 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     final existingImages =
         editingBusiness?['imageUrls'] ?? editingBusiness?['image_urls'];
     if (existingImages is List) {
-      images.addAll(existingImages.whereType<String>().where((value) => value.isNotEmpty));
+      images.addAll(
+        existingImages.whereType<String>().where((value) => value.isNotEmpty),
+      );
     } else if (existingImages is String && existingImages.isNotEmpty) {
       try {
         final decoded = jsonDecode(existingImages);
         if (decoded is List) {
-          images.addAll(decoded.whereType<String>().where((value) => value.isNotEmpty));
+          images.addAll(
+            decoded.whereType<String>().where((value) => value.isNotEmpty),
+          );
         }
       } on FormatException {
         // Fall back to the legacy single-image field below.
@@ -199,7 +263,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         try {
           final decoded = jsonDecode(legacyImage);
           if (decoded is List) {
-            images.addAll(decoded.whereType<String>().where((value) => value.isNotEmpty));
+            images.addAll(
+              decoded.whereType<String>().where((value) => value.isNotEmpty),
+            );
           }
         } on FormatException {
           images.add(legacyImage);
@@ -214,11 +280,28 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         editingBusiness?['visit_url'] as String? ??
         '';
     price.text =
-        '${editingBusiness?['eventFee'] ??
-        editingBusiness?['event_fee'] ??
-        editingBusiness?['pricePerHour'] ??
-        ''}';
+        '${editingBusiness?['eventFee'] ?? editingBusiness?['event_fee'] ?? editingBusiness?['pricePerHour'] ?? ''}';
     details.text = editingBusiness?['details'] as String? ?? '';
+    dynamic existingEventTypes = editingBusiness?['eventTypes'];
+    if (existingEventTypes is String) {
+      try {
+        existingEventTypes = jsonDecode(existingEventTypes);
+      } on FormatException {
+        existingEventTypes = null;
+      }
+    }
+    if (existingEventTypes is List) {
+      eventTypes.addAll(existingEventTypes.whereType<String>());
+    }
+    eventAttendanceMin.text =
+        '${editingBusiness?['attendanceMin'] ?? editingBusiness?['estimatedAttendanceMin'] ?? ''}';
+    eventAttendanceMax.text =
+        '${editingBusiness?['attendanceMax'] ?? editingBusiness?['estimatedAttendanceMax'] ?? ''}';
+    accessibilityNeeds.addAll(
+      _stringList(editingBusiness?['accessibilityNeeds']),
+    );
+    parkingNeeds.addAll(_stringList(editingBusiness?['parkingNeeds']));
+    securityNeeds.addAll(_stringList(editingBusiness?['securityNeeds']));
     String eventDetailValue(String label) {
       final match = RegExp(
         '^${RegExp.escape(label)}:\\s*(.*)\$',
@@ -228,12 +311,14 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     }
 
     if (editing && type == 'Event') {
-      eventTypes.addAll(
-        eventDetailValue('Event types')
-            .split(',')
-            .map((value) => value.trim())
-            .where((value) => value.isNotEmpty),
-      );
+      if (eventTypes.isEmpty) {
+        eventTypes.addAll(
+          eventDetailValue('Event types')
+              .split(',')
+              .map((value) => value.trim())
+              .where((value) => value.isNotEmpty),
+        );
+      }
       if (eventTypes.isEmpty) {
         eventTypes.addAll(
           eventDetailValue('Event type')
@@ -243,7 +328,9 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         );
       }
       final customEventType = eventTypes
-          .where((value) => !eventTypeOptions.contains(value) || value == 'Other')
+          .where(
+            (value) => !eventTypeOptions.contains(value) || value == 'Other',
+          )
           .firstWhere((value) => value != 'Other', orElse: () => '');
       if (customEventType.isNotEmpty) {
         eventTypes
@@ -258,16 +345,23 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
           .split('-')
           .map((value) => value.trim())
           .toList();
-      if (attendance.isNotEmpty) eventAttendanceMin.text = attendance.first;
-      if (attendance.length > 1) eventAttendanceMax.text = attendance[1];
-      List<String> parseNeeds(String label) => eventDetailValue(label)
-          .split(',')
-          .map((value) => value.trim())
-          .where((value) => value.isNotEmpty)
-          .toList();
-      accessibilityNeeds.addAll(parseNeeds('Accessibility needs'));
-      parkingNeeds.addAll(parseNeeds('Parking needs'));
-      securityNeeds.addAll(parseNeeds('Security needs'));
+      if (eventAttendanceMin.text.isEmpty && attendance.isNotEmpty) {
+        eventAttendanceMin.text = attendance.first;
+      }
+      if (eventAttendanceMax.text.isEmpty && attendance.length > 1) {
+        eventAttendanceMax.text = attendance[1];
+      }
+      List<String> parseNeeds(String label) =>
+          eventDetailValue(label)
+              .split(',')
+              .map((value) => value.trim())
+              .where((value) => value.isNotEmpty)
+              .toList();
+      if (accessibilityNeeds.isEmpty) {
+        accessibilityNeeds.addAll(parseNeeds('Accessibility needs'));
+      }
+      if (parkingNeeds.isEmpty) parkingNeeds.addAll(parseNeeds('Parking needs'));
+      if (securityNeeds.isEmpty) securityNeeds.addAll(parseNeeds('Security needs'));
       const eventLabels = [
         'Event type:',
         'Event types:',
@@ -278,9 +372,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       ];
       details.text = details.text
           .split('\n')
-          .where(
-            (line) => !eventLabels.any((label) => line.startsWith(label)),
-          )
+          .where((line) => !eventLabels.any((label) => line.startsWith(label)))
           .join('\n')
           .trim();
     }
@@ -338,985 +430,1004 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
           : 'Close add business panel',
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
-          _MerchantBusinessFormPanel(
-            builder: (context, setDialogState) => PopScope<bool>(
-              onPopInvokedWithResult: (didPop, result) {
-                if (didPop) panelOpen = false;
-              },
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: MediaQuery.sizeOf(context).width < 600
-                      ? .94
-                      : .52,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: const BorderRadius.horizontal(
-                      right: Radius.circular(24),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: AlertDialog(
-                      insetPadding: EdgeInsets.zero,
-                      title: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) => _MerchantBusinessFormPanel(
+        builder: (context, setDialogState) => PopScope<bool>(
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) panelOpen = false;
+          },
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: MediaQuery.sizeOf(context).width < 600 ? .94 : .52,
+              child: Material(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(24),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: AlertDialog(
+                  insetPadding: EdgeInsets.zero,
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                editing
-                                    ? Icons.edit_outlined
-                                    : Icons.add_business_rounded,
-                                color: _addOrange,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  editing ? 'Edit business' : 'Add business',
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Close',
-                                onPressed: () {
-                                  panelOpen = false;
-                                  Navigator.pop(dialogContext, false);
-                                },
-                                icon: const Icon(Icons.close_rounded),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
+                          Icon(
                             editing
-                                ? 'Update this venue for customers'
-                                : 'Publish a new venue for customers',
-                            style: TextStyle(
-                              color: _addMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.normal,
+                                ? Icons.edit_outlined
+                                : Icons.add_business_rounded,
+                            color: _addOrange,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              editing ? 'Edit business' : 'Add business',
                             ),
+                          ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () {
+                              panelOpen = false;
+                              Navigator.pop(dialogContext, false);
+                            },
+                            icon: const Icon(Icons.close_rounded),
                           ),
                         ],
                       ),
-                      content: SizedBox(
-                        width: double.infinity,
-                        child: SingleChildScrollView(
-                          child: Form(
-                            key: formKey,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (validationMessage != null) ...[
-                                  Container(
-                                    width: double.infinity,
-                                    margin: const EdgeInsets.only(bottom: 10),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFE8E8),
-                                      border: Border.all(
-                                        color: const Color(0xFFE09A9A),
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Icon(
-                                          Icons.error_outline_rounded,
-                                          color: Color(0xFFB42318),
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            validationMessage!,
-                                            style: const TextStyle(
-                                              color: Color(0xFFB42318),
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Dismiss validation message',
-                                          onPressed: () => setDialogState(
-                                            () => validationMessage = null,
-                                          ),
-                                          icon: const Icon(
-                                            Icons.close,
-                                            color: Color(0xFFB42318),
-                                            size: 18,
-                                          ),
-                                          visualDensity: VisualDensity.compact,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                _sectionLabel('BASIC INFORMATION'),
-                                DropdownButtonFormField<String>(
-                                  initialValue: type,
-                                  decoration: InputDecoration(
-                                    labelText: 'Booking type',
-                                  ),
-                                  items: [
-                                    for (final item in types)
-                                      DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value == null) return;
-                                    setDialogState(() {
-                                      type = value;
-                                      category = _categories[type]!.first;
-                                      if (type == 'Event') {
-                                        for (final period in ratePeriods) {
-                                          period.dispose();
-                                        }
-                                        ratePeriods.clear();
-                                      }
-                                    });
-                                  },
-                                ),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(
-                                      top: 6,
-                                      bottom: 2,
-                                    ),
-                                    child: Text(
-                                      type == 'Sports'
-                                          ? 'Add courts, fields, and sports facilities for customers to book.'
-                                          : type == 'Event'
-                                          ? 'Add an event venue with the space and amenities needed for gatherings.'
-                                          : 'Add a wellness space for classes, sessions, and fitness activities.',
-                                      style: const TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                DropdownButtonFormField<String>(
-                                  initialValue: category,
-                                  decoration: InputDecoration(
-                                    labelText: 'Category / activity',
-                                  ),
-                                  items: [
-                                    for (final item in {
-                                      ..._categories[type]!,
-                                      'Other',
-                                    })
-                                      DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() => category = value);
-                                    }
-                                  },
-                                ),
-                                if (category == 'Other')
-                                  TextFormField(
-                                    controller: categoryOther,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Custom category',
-                                      hintText: 'Enter the venue category',
-                                    ),
-                                  ),
-                                TextFormField(
-                                  controller: name,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Venue name',
-                                  ),
-                                  validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                      ? 'Enter a business name'
-                                      : null,
-                                ),
-                                if (type == 'Event') ...[
-                                  const SizedBox(height: 12),
-                                  _sectionLabel('EVENT BOOKING DETAILS'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Event types this venue can hold',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 4,
-                                    children: [
-                                      for (final option in eventTypeOptions)
-                                        FilterChip(
-                                          label: Text(
-                                            option,
-                                            style: TextStyle(
-                                              color: eventTypes.contains(option)
-                                                  ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  eventTypes.contains(option)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
-                                            ),
-                                          ),
-                                          selected: eventTypes.contains(option),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 6,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: eventTypes.contains(option)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) =>
-                                              setDialogState(() {
-                                                if (selected) {
-                                                  eventTypes.add(option);
-                                                } else {
-                                                  eventTypes.remove(option);
-                                                  if (option == 'Other') {
-                                                    eventTypeOther.clear();
-                                                  }
-                                                }
-                                              }),
-                                        ),
-                                    ],
-                                  ),
-                                  if (eventTypes.contains('Other'))
-                                    TextFormField(
-                                      controller: eventTypeOther,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Other event type',
-                                        hintText: 'Enter another event type',
-                                      ),
-                                    ),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: eventAttendanceMin,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Minimum guests',
-                                            hintText: '40',
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: eventAttendanceMax,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Maximum guests',
-                                            hintText: '250',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  _repeatableEventNeeds(
-                                    label: 'Accessibility needs (optional)',
-                                    hint: 'Wheelchair ramp or specialized seating',
-                                    controller: accessibilityInput,
-                                    values: accessibilityNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                  _repeatableEventNeeds(
-                                    label: 'Parking needs (optional)',
-                                    hint: 'Reserved parking or VIP parking',
-                                    controller: parkingInput,
-                                    values: parkingNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                  _repeatableEventNeeds(
-                                    label: 'Security needs (optional)',
-                                    hint: 'Dedicated security personnel or VIP access',
-                                    controller: securityInput,
-                                    values: securityNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                ],
-                                const SizedBox(height: 12),
-                                _sectionLabel('SCHEDULE AND PRICING'),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _timePickerField(
-                                        context: context,
-                                        label: 'Opens',
-                                        value: openingTime,
-                                        onChanged: (value) =>
-                                            panelOpen && context.mounted
-                                            ? setDialogState(
-                                                () => openingTime = value,
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: _timePickerField(
-                                        context: context,
-                                        label: 'Closes',
-                                        value: closingTime,
-                                        onChanged: (value) =>
-                                            panelOpen && context.mounted
-                                            ? setDialogState(
-                                                () => closingTime = value,
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                TextFormField(
-                                  controller: address,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Venue address',
-                                  ),
-                                  validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                      ? 'Enter an address'
-                                      : null,
-                                ),
-                                TextFormField(
-                                    controller: visitUrl,
-                                    keyboardType: TextInputType.url,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Visit link (optional)',
-                                      hintText: 'https://example.com',
-                                      helperText: 'Customers open this link from Visit.',
-                                    ),
-                                    validator: (value) {
-                                      final text = value?.trim() ?? '';
-                                      if (text.isEmpty) return null;
-                                      final uri = Uri.tryParse(text);
-                                      if (uri == null ||
-                                          !uri.hasScheme ||
-                                          (uri.scheme != 'http' &&
-                                              uri.scheme != 'https') ||
-                                          uri.host.isEmpty) {
-                                        return 'Enter a valid http:// or https:// link';
-                                      }
-                                      return null;
-                                    },
-                                ),
-                                TextFormField(
-                                  controller: price,
-                                  enabled: type == 'Event' || ratePeriods.isEmpty,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Event'
-                                        ? 'Fee per event booking'
-                                        : type == 'Fitness & Wellness'
-                                        ? 'Session price'
-                                        : 'Booking price per hour',
-                                    prefixText: '₱ ',
-                                    hintText: type == 'Event'
-                                        ? '25000 (one complete event)'
-                                        : type == 'Fitness & Wellness'
-                                        ? '500 (per session)'
-                                        : '300.00 (base booking rate)',
-                                  ),
-                                  validator: (value) {
-                                    if (type != 'Event' && ratePeriods.isNotEmpty) {
-                                      return null;
-                                    }
-                                    final amount = double.tryParse(
-                                      value?.trim() ?? '',
-                                    );
-                                    return amount == null || amount <= 0
-                                        ? type == 'Event'
-                                            ? 'Enter an event fee greater than ₱0'
-                                            : 'Enter a price greater than 0'
-                                        : null;
-                                  },
-                                ),
-                                if (type != 'Event') ...[
-                                  const SizedBox(height: 12),
-                                  _sectionLabel('OPTIONAL RATE PERIODS'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Add different hourly prices for specific time ranges. '
-                                      'When used, the base price is disabled.',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  for (
-                                    var index = 0;
-                                    index < ratePeriods.length;
-                                    index++
-                                  )
-                                    _ratePeriodRow(
-                                      context: context,
-                                      period: ratePeriods[index],
-                                      onStartChanged: (value) => setDialogState(
-                                        () => ratePeriods[index].start = value,
-                                      ),
-                                      onEndChanged: (value) => setDialogState(
-                                        () => ratePeriods[index].end = value,
-                                      ),
-                                      onRemove: () {
-                                        final period = ratePeriods.removeAt(
-                                          index,
-                                        );
-                                        period.dispose();
-                                        setDialogState(() {});
-                                      },
-                                    ),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: TextButton.icon(
-                                      onPressed: () {
-                                        setDialogState(
-                                          () => ratePeriods.add(_RatePeriod()),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.add),
-                                      label: const Text('Add rate period'),
-                                    ),
-                                  ),
-                                ],
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.calendar_month_rounded,
-                                        color: _addNavy,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Availability / booking schedule',
-                                        style: TextStyle(
-                                          color: _addMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      for (final day in _weekdays)
-                                        FilterChip(
-                                          label: Text(
-                                            day,
-                                            style: TextStyle(
-                                              color: availableDays.contains(day)
-                                                  ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  availableDays.contains(day)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
-                                            ),
-                                          ),
-                                          selected: availableDays.contains(day),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 6,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: availableDays.contains(day)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) {
-                                            setDialogState(() {
-                                              if (selected) {
-                                                availableDays.add(day);
-                                              } else {
-                                                availableDays.remove(day);
-                                              }
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _sectionLabel('FACILITY DETAILS'),
-                                DropdownButtonFormField<String>(
-                                  initialValue: facility,
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Sports'
-                                        ? 'Court / field type'
-                                        : type == 'Event'
-                                        ? 'Event space type'
-                                        : 'Studio / wellness space type',
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'Indoor',
-                                      child: Text('Indoor'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Outdoor',
-                                      child: Text('Outdoor'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Covered',
-                                      child: Text('Covered'),
-                                    ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() => facility = value);
-                                    }
-                                  },
-                                ),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: _sectionLabel('Amenities'),
-                                ),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 2,
-                                    children: [
-                                      for (final amenity in amenityOptions)
-                                        FilterChip(
-                                          label: Text(
-                                            amenity,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: amenities.contains(amenity)
-                                                  ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  amenities.contains(amenity)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
-                                            ),
-                                          ),
-                                          selected: amenities.contains(amenity),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 6,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: amenities.contains(amenity)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) {
-                                            setDialogState(() {
-                                              if (selected) {
-                                                amenities.add(amenity);
-                                              } else {
-                                                amenities.remove(amenity);
-                                                if (amenity == 'Other') {
-                                                  amenityOther.clear();
-                                                }
-                                              }
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                if (amenities.contains('Other'))
-                                  TextField(
-                                    controller: amenityOther,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Other amenity',
-                                      hintText: 'Example: Water station',
-                                    ),
-                                  ),
-                                TextField(
-                                  controller: details,
-                                  maxLines: 2,
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Sports'
-                                        ? 'Court or facility details (optional)'
-                                        : type == 'Event'
-                                        ? 'Additional event venue details (optional)'
-                                        : 'Classes, sessions & capacity',
-                                    hintText: type == 'Event'
-                                        ? 'Example: Banquet package • 250 guests'
-                                        : type == 'Fitness & Wellness'
-                                        ? 'Example: 12 classes today • 20 participants/session'
-                                        : 'Example: 2 courts • Equipment included',
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: () async {
-                                    try {
-                                      final picked = await ImagePicker()
-                                          .pickMultiImage(
-                                            maxWidth: 700,
-                                            maxHeight: 500,
-                                            imageQuality: 50,
-                                          );
-                                      if (picked.isEmpty) return;
-                                      final selected = <String>[];
-                                      for (final file in picked.take(3)) {
-                                        selected.add(
-                                          _dataUri(await file.readAsBytes()),
-                                        );
-                                      }
-                                      if (panelOpen && context.mounted) {
-                                        setDialogState(
-                                          () => images
-                                            ..clear()
-                                            ..addAll(selected),
-                                        );
-                                      }
-                                    } on Exception catch (error) {
-                                      if (panelOpen && context.mounted) {
-                                        setDialogState(
-                                          () => validationMessage =
-                                              'Could not load the selected images: $error',
-                                        );
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.add_a_photo_outlined),
-                                  label: Text(
-                                    images.isEmpty
-                                        ? 'Add images'
-                                        : '${images.length} images selected',
-                                  ),
-                                ),
-                                if (images.isNotEmpty)
-                                  SizedBox(
-                                    height: 84,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        for (var index = 0;
-                                            index < images.length;
-                                            index++) ...[
-                                          Stack(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image(
-                                                  image: _imageProvider(
-                                                    images[index],
-                                                  )!,
-                                                  width: 84,
-                                                  height: 84,
-                                                  fit: BoxFit.cover,
-                                                ),
-                                              ),
-                                              Positioned(
-                                                left: 4,
-                                                bottom: 4,
-                                                child: DecoratedBox(
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black54,
-                                                    borderRadius:
-                                                        BorderRadius.circular(8),
-                                                  ),
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 5,
-                                                          vertical: 2,
-                                                        ),
-                                                    child: Text(
-                                                      '${index + 1} of ${images.length}',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          if (index < images.length - 1)
-                                            const SizedBox(width: 8),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
+                      const SizedBox(height: 2),
+                      Text(
+                        editing
+                            ? 'Update this venue for customers'
+                            : 'Publish a new venue for customers',
+                        style: TextStyle(
+                          color: _addMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.normal,
                         ),
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            panelOpen = false;
-                            Navigator.pop(dialogContext, false);
-                          },
-                          child: const Text('Cancel'),
-                        ),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _addNavy,
-                            minimumSize: const Size(150, 46),
-                            shape: const StadiumBorder(),
-                          ),
-                          onPressed: () async {
-                            setDialogState(() => validationMessage = null);
-                            if (!(formKey.currentState?.validate() ?? false)) {
-                              return;
-                            }
-                            if (openingTime == null || closingTime == null) {
-                              setDialogState(
-                                () => validationMessage =
-                                    'Select both opening and closing times.',
-                              );
-                              return;
-                            }
-                            if (type != 'Event') {
-                              for (final period in ratePeriods) {
-                                final amount = double.tryParse(
-                                  period.price.text.trim(),
-                                );
-                                if (period.start == null ||
-                                    period.end == null ||
-                                    amount == null ||
-                                    amount <= 0) {
-                                  setDialogState(
-                                    () => validationMessage =
-                                        'Complete each rate period with a start time, '
-                                        'end time, and a price greater than ₱0.',
-                                  );
-                                  return;
-                                }
-                              }
-                            }
-                            if (availableDays.isEmpty) {
-                              setDialogState(
-                                () => validationMessage =
-                                    'Select at least one available day.',
-                              );
-                              return;
-                            }
-                            if (type == 'Event') {
-                              final minimum = int.tryParse(
-                                eventAttendanceMin.text.trim(),
-                              );
-                              final maximum = int.tryParse(
-                                eventAttendanceMax.text.trim(),
-                              );
-                              if (eventTypes.isEmpty) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Select at least one event type this venue can hold.',
-                                );
-                                return;
-                              }
-                              if (eventTypes.contains('Other') &&
-                                  eventTypeOther.text.trim().isEmpty) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Enter the custom event type.',
-                                );
-                                return;
-                              }
-                              if (minimum == null ||
-                                  maximum == null ||
-                                  minimum < 1 ||
-                                  maximum < minimum) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Enter a valid estimated attendance range.',
-                                );
-                                return;
-                              }
-                            }
-                            if (category == 'Other' &&
-                                categoryOther.text.trim().isEmpty) {
-                              setDialogState(
-                                () => validationMessage =
-                                    'Enter the custom category.',
-                              );
-                              return;
-                            }
-                            setDialogState(() => _saving = true);
-                            try {
-                              final selectedEventTypes = eventTypes
-                                  .map(
-                                    (value) => value == 'Other'
-                                        ? eventTypeOther.text.trim()
-                                        : value,
-                                  )
-                                  .where((value) => value.isNotEmpty)
-                                  .toList();
-                              final selectedCategory = category == 'Other'
-                                  ? categoryOther.text.trim()
-                                  : category;
-                              final selectedAmenities = amenities
-                                  .map(
-                                    (value) => value == 'Other'
-                                        ? amenityOther.text.trim()
-                                        : value,
-                                  )
-                                  .where((value) => value.isNotEmpty)
-                                  .toList();
-                              if (amenities.contains('Other') &&
-                                  amenityOther.text.trim().isEmpty) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Enter the other amenity before saving.',
-                                );
-                                return;
-                              }
-                              final submittedDetails = type == 'Event'
-                                  ? [
-                                      if (eventTypes.isNotEmpty)
-                                        'Event types: ${selectedEventTypes.join(', ')}',
-                                      if (eventAttendanceMin.text.trim().isNotEmpty ||
-                                          eventAttendanceMax.text.trim().isNotEmpty)
-                                        'Estimated attendance: ${eventAttendanceMin.text.trim().isEmpty ? '?' : eventAttendanceMin.text.trim()} - ${eventAttendanceMax.text.trim().isEmpty ? '?' : eventAttendanceMax.text.trim()} guests',
-                                      if (accessibilityNeeds.isNotEmpty)
-                                        'Accessibility needs: ${accessibilityNeeds.join(', ')}',
-                                      if (parkingNeeds.isNotEmpty)
-                                        'Parking needs: ${parkingNeeds.join(', ')}',
-                                      if (securityNeeds.isNotEmpty)
-                                        'Security needs: ${securityNeeds.join(', ')}',
-                                      if (details.text.trim().isNotEmpty)
-                                        details.text.trim(),
-                                    ].join('\n')
-                                  : details.text.trim();
-                              final session = await AppSession.load();
-                              final token = session.apiToken;
-                              if (token == null || token.isEmpty) {
-                                throw const AuthApiException(
-                                  'Your session has expired.',
-                                  401,
-                                );
-                              }
-                              final payload = <String, dynamic>{
-                                'businessType': type,
-                                'name': name.text.trim(),
-                                'category': selectedCategory,
-                                'address': address.text.trim(),
-                                'visitUrl': visitUrl.text.trim(),
-                                'pricePerHour': type == 'Event'
-                                    ? double.parse(price.text.trim())
-                                    : ratePeriods.isEmpty
-                                    ? double.parse(price.text.trim())
-                                    : 0,
-                                'eventFee': type == 'Event'
-                                    ? double.parse(price.text.trim())
-                                    : 0,
-                                'ratePeriods': [
-                                  for (final period in ratePeriods)
-                                    {
-                                      'start': _formatTime(period.start!),
-                                      'end': _formatTime(period.end!),
-                                      'pricePerHour': double.parse(
-                                        period.price.text.trim(),
-                                      ),
-                                    },
-                                ],
-                                'hours': _formatHours(openingTime, closingTime),
-                                'availability': _weekdays
-                                    .where(availableDays.contains)
-                                    .join(', '),
-                                'tags': selectedAmenities,
-                                'facilityType': facility,
-                                'details': submittedDetails,
-                                'imageUrl': images.isEmpty
-                                    ? null
-                                    : jsonEncode(images),
-                                'imageUrls': images,
-                              };
-                              if (editing) {
-                                await _api.updateMerchantBusiness(
-                                  token: token,
-                                  id: (editingBusiness['id'] as num).toInt(),
-                                  business: payload,
-                                );
-                              } else {
-                                await _api.createMerchantBusiness(
-                                  token: token,
-                                  business: payload,
-                                );
-                              }
-                              if (dialogContext.mounted) {
-                                submitted = true;
-                                await Navigator.of(
-                                  dialogContext,
-                                ).maybePop(true);
-                              }
-                            } on Exception catch (error) {
-                              if (dialogContext.mounted) {
-                                setDialogState(
-                                  () => validationMessage =
-                                      'Could not ${editing ? 'update' : 'add'} business: $error',
-                                );
-                              }
-                            } finally {
-                              if (!submitted && dialogContext.mounted) {
-                                setDialogState(() => _saving = false);
-                              }
-                            }
-                          },
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                    ],
+                  ),
+                  content: SizedBox(
+                    width: double.infinity,
+                    child: SingleChildScrollView(
+                      child: Form(
+                        key: formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (validationMessage != null) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFE8E8),
+                                  border: Border.all(
+                                    color: const Color(0xFFE09A9A),
                                   ),
-                                )
-                              : Text(editing ? 'Save changes' : 'Add business'),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.error_outline_rounded,
+                                      color: Color(0xFFB42318),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        validationMessage!,
+                                        style: const TextStyle(
+                                          color: Color(0xFFB42318),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Dismiss validation message',
+                                      onPressed: () => setDialogState(
+                                        () => validationMessage = null,
+                                      ),
+                                      icon: const Icon(
+                                        Icons.close,
+                                        color: Color(0xFFB42318),
+                                        size: 18,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            _sectionLabel('BASIC INFORMATION'),
+                            DropdownButtonFormField<String>(
+                              initialValue: type,
+                              decoration: InputDecoration(
+                                labelText: 'Booking type',
+                              ),
+                              items: [
+                                for (final item in types)
+                                  DropdownMenuItem(
+                                    value: item,
+                                    child: Text(item),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setDialogState(() {
+                                  type = value;
+                                  category = _categories[type]!.first;
+                                  if (type == 'Event') {
+                                    for (final period in ratePeriods) {
+                                      period.dispose();
+                                    }
+                                    ratePeriods.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 6,
+                                  bottom: 2,
+                                ),
+                                child: Text(
+                                  type == 'Sports'
+                                      ? 'Add courts, fields, and sports facilities for customers to book.'
+                                      : type == 'Event'
+                                      ? 'Add an event venue with the space and amenities needed for gatherings.'
+                                      : 'Add a wellness space for classes, sessions, and fitness activities.',
+                                  style: const TextStyle(
+                                    color: _addMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            DropdownButtonFormField<String>(
+                              initialValue: category,
+                              decoration: InputDecoration(
+                                labelText: 'Category / activity',
+                              ),
+                              items: [
+                                for (final item in {
+                                  ..._categories[type]!,
+                                  'Other',
+                                })
+                                  DropdownMenuItem(
+                                    value: item,
+                                    child: Text(item),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setDialogState(() => category = value);
+                                }
+                              },
+                            ),
+                            if (category == 'Other')
+                              TextFormField(
+                                controller: categoryOther,
+                                decoration: const InputDecoration(
+                                  labelText: 'Custom category',
+                                  hintText: 'Enter the venue category',
+                                ),
+                              ),
+                            TextFormField(
+                              controller: name,
+                              decoration: const InputDecoration(
+                                labelText: 'Venue name',
+                              ),
+                              validator: (value) =>
+                                  value == null || value.trim().isEmpty
+                                  ? 'Enter a business name'
+                                  : null,
+                            ),
+                            if (type == 'Event') ...[
+                              const SizedBox(height: 12),
+                              _sectionLabel('EVENT BOOKING DETAILS'),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Event types this venue can hold',
+                                  style: TextStyle(
+                                    color: _addMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  for (final option in eventTypeOptions)
+                                    FilterChip(
+                                      label: Text(
+                                        option,
+                                        style: TextStyle(
+                                          color: eventTypes.contains(option)
+                                              ? _addOrange
+                                              : _addInk,
+                                          fontWeight:
+                                              eventTypes.contains(option)
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                      selected: eventTypes.contains(option),
+                                      showCheckmark: false,
+                                      selectedColor: _addSoftOrange,
+                                      backgroundColor: Colors.white,
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      checkmarkColor: _addOrange,
+                                      side: BorderSide(
+                                        color: eventTypes.contains(option)
+                                            ? _addOrange
+                                            : _addLine,
+                                      ),
+                                      onSelected: (selected) =>
+                                          setDialogState(() {
+                                            if (selected) {
+                                              eventTypes.add(option);
+                                            } else {
+                                              eventTypes.remove(option);
+                                              if (option == 'Other') {
+                                                eventTypeOther.clear();
+                                              }
+                                            }
+                                          }),
+                                    ),
+                                ],
+                              ),
+                              if (eventTypes.contains('Other'))
+                                TextFormField(
+                                  controller: eventTypeOther,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Other event type',
+                                    hintText: 'Enter another event type',
+                                  ),
+                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: eventAttendanceMin,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Minimum guests',
+                                        hintText: '40',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: eventAttendanceMax,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Maximum guests',
+                                        hintText: '250',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              _repeatableEventNeeds(
+                                label: 'Accessibility needs (optional)',
+                                hint: 'Wheelchair ramp or specialized seating',
+                                controller: accessibilityInput,
+                                values: accessibilityNeeds,
+                                setDialogState: setDialogState,
+                              ),
+                              _repeatableEventNeeds(
+                                label: 'Parking needs (optional)',
+                                hint: 'Reserved parking or VIP parking',
+                                controller: parkingInput,
+                                values: parkingNeeds,
+                                setDialogState: setDialogState,
+                              ),
+                              _repeatableEventNeeds(
+                                label: 'Security needs (optional)',
+                                hint: 'Dedicated security personnel or VIP access',
+                                controller: securityInput,
+                                values: securityNeeds,
+                                setDialogState: setDialogState,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _sectionLabel('SCHEDULE AND PRICING'),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _timePickerField(
+                                    context: context,
+                                    label: 'Opens',
+                                    value: openingTime,
+                                    onChanged: (value) =>
+                                        panelOpen && context.mounted
+                                        ? setDialogState(
+                                            () => openingTime = value,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _timePickerField(
+                                    context: context,
+                                    label: 'Closes',
+                                    value: closingTime,
+                                    onChanged: (value) =>
+                                        panelOpen && context.mounted
+                                        ? setDialogState(
+                                            () => closingTime = value,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            TextFormField(
+                              controller: address,
+                              decoration: const InputDecoration(
+                                labelText: 'Venue address',
+                              ),
+                              validator: (value) =>
+                                  value == null || value.trim().isEmpty
+                                  ? 'Enter an address'
+                                  : null,
+                            ),
+                            TextFormField(
+                              controller: visitUrl,
+                              keyboardType: TextInputType.url,
+                              decoration: const InputDecoration(
+                                labelText: 'Visit link (optional)',
+                                hintText: 'https://example.com',
+                                helperText:
+                                    'Customers open this link from Visit.',
+                              ),
+                              validator: (value) {
+                                final text = value?.trim() ?? '';
+                                if (text.isEmpty) return null;
+                                final uri = Uri.tryParse(text);
+                                if (uri == null ||
+                                    !uri.hasScheme ||
+                                    (uri.scheme != 'http' &&
+                                        uri.scheme != 'https') ||
+                                    uri.host.isEmpty) {
+                                  return 'Enter a valid http:// or https:// link';
+                                }
+                                return null;
+                              },
+                            ),
+                            TextFormField(
+                              controller: price,
+                              enabled: type == 'Event' || ratePeriods.isEmpty,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText: type == 'Event'
+                                    ? 'Fee per event booking'
+                                    : type == 'Fitness & Wellness'
+                                    ? 'Session price'
+                                    : 'Booking price per hour',
+                                prefixText: '₱ ',
+                                hintText: type == 'Event'
+                                    ? '25000 (one complete event)'
+                                    : type == 'Fitness & Wellness'
+                                    ? '500 (per session)'
+                                    : '300.00 (base booking rate)',
+                              ),
+                              validator: (value) {
+                                if (type != 'Event' && ratePeriods.isNotEmpty) {
+                                  return null;
+                                }
+                                final amount = double.tryParse(
+                                  value?.trim() ?? '',
+                                );
+                                return amount == null || amount <= 0
+                                    ? type == 'Event'
+                                          ? 'Enter an event fee greater than ₱0'
+                                          : 'Enter a price greater than 0'
+                                    : null;
+                              },
+                            ),
+                            if (type != 'Event') ...[
+                              const SizedBox(height: 12),
+                              _sectionLabel('OPTIONAL RATE PERIODS'),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Add different hourly prices for specific time ranges. '
+                                  'When used, the base price is disabled.',
+                                  style: TextStyle(
+                                    color: _addMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              for (
+                                var index = 0;
+                                index < ratePeriods.length;
+                                index++
+                              )
+                                _ratePeriodRow(
+                                  context: context,
+                                  period: ratePeriods[index],
+                                  onStartChanged: (value) => setDialogState(
+                                    () => ratePeriods[index].start = value,
+                                  ),
+                                  onEndChanged: (value) => setDialogState(
+                                    () => ratePeriods[index].end = value,
+                                  ),
+                                  onRemove: () {
+                                    final period = ratePeriods.removeAt(index);
+                                    period.dispose();
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () {
+                                    setDialogState(
+                                      () => ratePeriods.add(_RatePeriod()),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add rate period'),
+                                ),
+                              ),
+                            ],
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.calendar_month_rounded,
+                                    color: _addNavy,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Availability / booking schedule',
+                                    style: TextStyle(
+                                      color: _addMuted,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final day in _weekdays)
+                                    FilterChip(
+                                      label: Text(
+                                        day,
+                                        style: TextStyle(
+                                          color: availableDays.contains(day)
+                                              ? _addOrange
+                                              : _addInk,
+                                          fontWeight:
+                                              availableDays.contains(day)
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                      selected: availableDays.contains(day),
+                                      showCheckmark: false,
+                                      selectedColor: _addSoftOrange,
+                                      backgroundColor: Colors.white,
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      checkmarkColor: _addOrange,
+                                      side: BorderSide(
+                                        color: availableDays.contains(day)
+                                            ? _addOrange
+                                            : _addLine,
+                                      ),
+                                      onSelected: (selected) {
+                                        setDialogState(() {
+                                          if (selected) {
+                                            availableDays.add(day);
+                                          } else {
+                                            availableDays.remove(day);
+                                          }
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _sectionLabel('FACILITY DETAILS'),
+                            DropdownButtonFormField<String>(
+                              initialValue: facility,
+                              decoration: InputDecoration(
+                                labelText: type == 'Sports'
+                                    ? 'Court / field type'
+                                    : type == 'Event'
+                                    ? 'Event space type'
+                                    : 'Studio / wellness space type',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'Indoor',
+                                  child: Text('Indoor'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Outdoor',
+                                  child: Text('Outdoor'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'Covered',
+                                  child: Text('Covered'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setDialogState(() => facility = value);
+                                }
+                              },
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: _sectionLabel('Amenities'),
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 2,
+                                children: [
+                                  for (final amenity in amenityOptions)
+                                    FilterChip(
+                                      label: Text(
+                                        amenity,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: amenities.contains(amenity)
+                                              ? _addOrange
+                                              : _addInk,
+                                          fontWeight:
+                                              amenities.contains(amenity)
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                      selected: amenities.contains(amenity),
+                                      showCheckmark: false,
+                                      selectedColor: _addSoftOrange,
+                                      backgroundColor: Colors.white,
+                                      shape: const StadiumBorder(),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      checkmarkColor: _addOrange,
+                                      side: BorderSide(
+                                        color: amenities.contains(amenity)
+                                            ? _addOrange
+                                            : _addLine,
+                                      ),
+                                      onSelected: (selected) {
+                                        setDialogState(() {
+                                          if (selected) {
+                                            amenities.add(amenity);
+                                          } else {
+                                            amenities.remove(amenity);
+                                            if (amenity == 'Other') {
+                                              amenityOther.clear();
+                                            }
+                                          }
+                                        });
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (amenities.contains('Other'))
+                              TextField(
+                                controller: amenityOther,
+                                decoration: const InputDecoration(
+                                  labelText: 'Other amenity',
+                                  hintText: 'Example: Water station',
+                                ),
+                              ),
+                            TextField(
+                              controller: details,
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                labelText: type == 'Sports'
+                                    ? 'Court or facility details (optional)'
+                                    : type == 'Event'
+                                    ? 'Additional event venue details (optional)'
+                                    : 'Classes, sessions & capacity',
+                                hintText: type == 'Event'
+                                    ? 'Example: Banquet package • 250 guests'
+                                    : type == 'Fitness & Wellness'
+                                    ? 'Example: 12 classes today • 20 participants/session'
+                                    : 'Example: 2 courts • Equipment included',
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () async {
+                                try {
+                                  final picked = await ImagePicker()
+                                      .pickMultiImage(
+                                        maxWidth: 700,
+                                        maxHeight: 500,
+                                        imageQuality: 50,
+                                      );
+                                  if (picked.isEmpty) return;
+                                  final selected = <String>[];
+                                  for (final file in picked.take(3)) {
+                                    selected.add(
+                                      _dataUri(await file.readAsBytes()),
+                                    );
+                                  }
+                                  if (panelOpen && context.mounted) {
+                                    setDialogState(
+                                      () => images
+                                        ..clear()
+                                        ..addAll(selected),
+                                    );
+                                  }
+                                } on Exception catch (error) {
+                                  if (panelOpen && context.mounted) {
+                                    setDialogState(
+                                      () => validationMessage =
+                                          'Could not load the selected images: $error',
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.add_a_photo_outlined),
+                              label: Text(
+                                images.isEmpty
+                                    ? 'Add images'
+                                    : '${images.length} images selected',
+                              ),
+                            ),
+                            if (images.isNotEmpty)
+                              SizedBox(
+                                height: 84,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < images.length;
+                                      index++
+                                    ) ...[
+                                      Stack(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image(
+                                              image: _imageProvider(
+                                                images[index],
+                                              )!,
+                                              width: 84,
+                                              height: 84,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                          Positioned(
+                                            left: 4,
+                                            bottom: 4,
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                color: Colors.black54,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2,
+                                                    ),
+                                                child: Text(
+                                                  '${index + 1} of ${images.length}',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (index < images.length - 1)
+                                        const SizedBox(width: 8),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        panelOpen = false;
+                        Navigator.pop(dialogContext, false);
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _addNavy,
+                        minimumSize: const Size(150, 46),
+                        shape: const StadiumBorder(),
+                      ),
+                      onPressed: () async {
+                        setDialogState(() => validationMessage = null);
+                        if (!(formKey.currentState?.validate() ?? false)) {
+                          return;
+                        }
+                        if (openingTime == null || closingTime == null) {
+                          setDialogState(
+                            () => validationMessage =
+                                'Select both opening and closing times.',
+                          );
+                          return;
+                        }
+                        if (type != 'Event') {
+                          for (final period in ratePeriods) {
+                            final amount = double.tryParse(
+                              period.price.text.trim(),
+                            );
+                            if (period.start == null ||
+                                period.end == null ||
+                                amount == null ||
+                                amount <= 0) {
+                              setDialogState(
+                                () => validationMessage =
+                                    'Complete each rate period with a start time, '
+                                    'end time, and a price greater than ₱0.',
+                              );
+                              return;
+                            }
+                          }
+                        }
+                        if (availableDays.isEmpty) {
+                          setDialogState(
+                            () => validationMessage =
+                                'Select at least one available day.',
+                          );
+                          return;
+                        }
+                        if (type == 'Event') {
+                          final minimum = int.tryParse(
+                            eventAttendanceMin.text.trim(),
+                          );
+                          final maximum = int.tryParse(
+                            eventAttendanceMax.text.trim(),
+                          );
+                          if (eventTypes.isEmpty) {
+                            setDialogState(
+                              () => validationMessage = 'Select at least one event type this venue can hold.',
+                            );
+                            return;
+                          }
+                          if (eventTypes.contains('Other') &&
+                              eventTypeOther.text.trim().isEmpty) {
+                            setDialogState(
+                              () => validationMessage =
+                                  'Enter the custom event type.',
+                            );
+                            return;
+                          }
+                          if (minimum == null ||
+                              maximum == null ||
+                              minimum < 1 ||
+                              maximum < minimum) {
+                            setDialogState(
+                              () => validationMessage =
+                                  'Enter a valid estimated attendance range.',
+                            );
+                            return;
+                          }
+                        }
+                        if (category == 'Other' &&
+                            categoryOther.text.trim().isEmpty) {
+                          setDialogState(
+                            () => validationMessage =
+                                'Enter the custom category.',
+                          );
+                          return;
+                        }
+                        setDialogState(() => _saving = true);
+                        try {
+                          final selectedEventTypes = eventTypes
+                              .map(
+                                (value) => value == 'Other'
+                                    ? eventTypeOther.text.trim()
+                                    : value,
+                              )
+                              .where((value) => value.isNotEmpty)
+                              .toList();
+                          final selectedCategory = category == 'Other'
+                              ? categoryOther.text.trim()
+                              : category;
+                          final selectedAmenities = amenities
+                              .map(
+                                (value) => value == 'Other'
+                                    ? amenityOther.text.trim()
+                                    : value,
+                              )
+                              .where((value) => value.isNotEmpty)
+                              .toList();
+                          if (amenities.contains('Other') &&
+                              amenityOther.text.trim().isEmpty) {
+                            setDialogState(
+                              () => validationMessage =
+                                  'Enter the other amenity before saving.',
+                            );
+                            return;
+                          }
+                          final submittedDetails = type == 'Event'
+                              ? [
+                                  if (eventTypes.isNotEmpty)
+                                    'Event types: ${selectedEventTypes.join(', ')}',
+                                  if (eventAttendanceMin.text
+                                          .trim()
+                                          .isNotEmpty ||
+                                      eventAttendanceMax.text.trim().isNotEmpty)
+                                    'Estimated attendance: ${eventAttendanceMin.text.trim().isEmpty ? '?' : eventAttendanceMin.text.trim()} - ${eventAttendanceMax.text.trim().isEmpty ? '?' : eventAttendanceMax.text.trim()} guests',
+                                  if (accessibilityNeeds.isNotEmpty)
+                                    'Accessibility needs: ${accessibilityNeeds.join(', ')}',
+                                  if (parkingNeeds.isNotEmpty)
+                                    'Parking needs: ${parkingNeeds.join(', ')}',
+                                  if (securityNeeds.isNotEmpty)
+                                    'Security needs: ${securityNeeds.join(', ')}',
+                                  if (details.text.trim().isNotEmpty)
+                                    details.text.trim(),
+                                ].join('\n')
+                              : details.text.trim();
+                          final session = await AppSession.load();
+                          final token = session.apiToken;
+                          if (token == null || token.isEmpty) {
+                            throw const AuthApiException(
+                              'Your session has expired.',
+                              401,
+                            );
+                          }
+                          final payload = <String, dynamic>{
+                            'businessType': type,
+                            'name': name.text.trim(),
+                            'category': selectedCategory,
+                            'address': address.text.trim(),
+                            'visitUrl': visitUrl.text.trim(),
+                            'pricePerHour': type == 'Event'
+                                ? double.parse(price.text.trim())
+                                : ratePeriods.isEmpty
+                                ? double.parse(price.text.trim())
+                                : 0,
+                            'eventFee': type == 'Event'
+                                ? double.parse(price.text.trim())
+                                : 0,
+                            'ratePeriods': [
+                              for (final period in ratePeriods)
+                                {
+                                  'start': _formatTime(period.start!),
+                                  'end': _formatTime(period.end!),
+                                  'pricePerHour': double.parse(
+                                    period.price.text.trim(),
+                                  ),
+                                },
+                            ],
+                            'hours': _formatHours(openingTime, closingTime),
+                            'availability': _weekdays
+                                .where(availableDays.contains)
+                                .join(', '),
+                            'tags': selectedAmenities,
+                            'facilityType': facility,
+                            'details': submittedDetails,
+                            'eventTypes': type == 'Event'
+                                ? selectedEventTypes
+                                : const [],
+                            'attendanceMin': type == 'Event'
+                                ? int.tryParse(eventAttendanceMin.text.trim())
+                                : null,
+                            'attendanceMax': type == 'Event'
+                                ? int.tryParse(eventAttendanceMax.text.trim())
+                                : null,
+                            'accessibilityNeeds': type == 'Event'
+                                ? accessibilityNeeds
+                                : const [],
+                            'parkingNeeds': type == 'Event'
+                                ? parkingNeeds
+                                : const [],
+                            'securityNeeds': type == 'Event'
+                                ? securityNeeds
+                                : const [],
+                            'imageUrl': images.isEmpty
+                                ? null
+                                : jsonEncode(images),
+                            'imageUrls': images,
+                          };
+                          if (editing) {
+                            await _api.updateMerchantBusiness(
+                              token: token,
+                              id: _businessId(editingBusiness)!,
+                              business: payload,
+                            );
+                          } else {
+                            await _api.createMerchantBusiness(
+                              token: token,
+                              business: payload,
+                            );
+                            await widget.onBusinessesChanged();
+                            await _loadNewsPosts();
+                            if (mounted) {
+                              setState(
+                                () => _selectedAddSection = 'News cards',
+                              );
+                            }
+                          }
+                          if (dialogContext.mounted) {
+                            submitted = true;
+                            await Navigator.of(dialogContext).maybePop(true);
+                          }
+                        } on Exception catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(
+                              () => validationMessage =
+                                  'Could not ${editing ? 'update' : 'add'} business: $error',
+                            );
+                          }
+                        } finally {
+                          if (!submitted && dialogContext.mounted) {
+                            setDialogState(() => _saving = false);
+                          }
+                        }
+                      },
+                      child: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(editing ? 'Save changes' : 'Add business'),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
+        ),
+      ),
       transitionBuilder: (context, animation, secondaryAnimation, child) =>
           SlideTransition(
             position:
@@ -1528,7 +1639,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
 
   @override
   Widget build(BuildContext context) => RefreshIndicator(
-    onRefresh: widget.onBusinessesChanged,
+    onRefresh: _refreshAddPage,
     child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
@@ -1555,44 +1666,441 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Businesses you add are shown here and published in Venues.',
+          'Complete a News Card for each business before its Booking Card is published.',
           style: TextStyle(color: _addMuted),
         ),
         const SizedBox(height: 18),
-        _businessTypeTabs(),
-        const SizedBox(height: 16),
-        if (_filteredBusinesses.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
-            child: Column(
-              children: [
-                Icon(Icons.storefront_outlined, size: 42, color: _addMuted),
-                SizedBox(height: 8),
-                Text(
-                  'No businesses in this category',
-                  style: TextStyle(color: _addInk, fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-          )
-        else
-          for (final business in _filteredBusinesses) ...[
-            _businessCard(business),
-            const SizedBox(height: 12),
-          ],
+        _addSectionTabs(),
+        if (_selectedAddSection == 'News cards') ...[
+          const SizedBox(height: 16),
+          _newsCards(),
+        ] else ...[
+          _businessTypeTabs(),
+          const SizedBox(height: 16),
+          if (_newsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_filteredBusinesses.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Column(
+                children: [
+                  Icon(Icons.storefront_outlined, size: 42, color: _addMuted),
+                  SizedBox(height: 8),
+                  Text(
+                    'No businesses in this category',
+                    style: TextStyle(
+                      color: _addInk,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            for (final business in _filteredBusinesses) ...[
+              _businessCard(business),
+              const SizedBox(height: 12),
+            ],
+        ],
       ],
     ),
   );
 
+  Widget _addSectionTabs() => SegmentedButton<String>(
+    segments: const [
+      ButtonSegment(value: 'Booking cards', label: Text('Booking cards')),
+      ButtonSegment(value: 'News cards', label: Text('News cards')),
+    ],
+    selected: {_selectedAddSection},
+    onSelectionChanged: (value) {
+      setState(() => _selectedAddSection = value.first);
+      if (value.first == 'News cards' && _newsPosts.isEmpty) {
+        _loadNewsPosts();
+      }
+    },
+  );
+
+  Widget _newsCards() {
+    if (_newsLoading) return const Center(child: CircularProgressIndicator());
+    final postsByBusiness = <int, Map<String, dynamic>>{
+      for (final post in _newsPosts)
+        if (_postBusinessId(post) != null) _postBusinessId(post)!: post,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FilledButton.icon(
+          onPressed: _openNewsForm,
+          icon: const Icon(Icons.post_add_rounded),
+          label: const Text('Create news card'),
+        ),
+        const SizedBox(height: 12),
+        if (widget.businesses.isEmpty)
+          const Text(
+            'Add a business first to create its News Card.',
+            style: TextStyle(color: _addMuted),
+          )
+        else
+          for (final business in widget.businesses) ...[
+            if (postsByBusiness[_businessId(business)] == null)
+              _incompleteNewsCard(business),
+            if (postsByBusiness[_businessId(business)] != null)
+              _publishedNewsCard(postsByBusiness[_businessId(business)]!),
+            const SizedBox(height: 8),
+          ],
+      ],
+    );
+  }
+
+  Widget _incompleteNewsCard(Map<String, dynamic> business) => Card(
+    color: const Color(0xFFFFF8F0),
+    child: ListTile(
+      leading: const Icon(Icons.edit_note_rounded, color: _addOrange),
+      title: Text('${business['name'] ?? 'Business'}'),
+      subtitle: const Text('News Card incomplete — add a short venue update.'),
+      trailing: FilledButton(
+        onPressed: () => _openNewsFormForBusiness(business),
+        child: const Text('Complete'),
+      ),
+    ),
+  );
+
+  Widget _publishedNewsCard(Map<String, dynamic> post) => Card(
+    child: ListTile(
+      title: Text('${post['title'] ?? 'News post'}'),
+      subtitle: Text(
+        '${post['body'] ?? ''}\nView info is available on the Booking Card.',
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: PopupMenuButton<String>(
+        onSelected: (value) {
+          if (value == 'edit') _openNewsForm(post);
+          if (value == 'delete') _deleteNewsPost(post);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'edit', child: Text('Edit')),
+          PopupMenuItem(value: 'delete', child: Text('Delete')),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _openNewsFormForBusiness(Map<String, dynamic> business) async {
+    final id = _businessId(business);
+    if (id == null) return;
+    await _openNewsForm({'businessId': id, '_incomplete': true});
+  }
+
+  Future<void> _openNewsForm([Map<String, dynamic>? editing]) async {
+    final isIncomplete = editing?['_incomplete'] == true;
+    final body = TextEditingController(
+      text: isIncomplete ? '' : '${editing?['body'] ?? ''}',
+    );
+    var businessId = _id(editing?['businessId']);
+    final selected = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        title: Text(
+          isIncomplete
+              ? 'Complete news card'
+              : editing == null
+              ? 'Create news card'
+              : 'Edit news card',
+        ),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .68,
+          ),
+          child: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<int>(
+                    initialValue: businessId,
+                    decoration: const InputDecoration(
+                      labelText: 'Booking card',
+                    ),
+                    items: [
+                      for (final business in widget.businesses)
+                        DropdownMenuItem(
+                          value: _businessId(business),
+                          child: Text('${business['name'] ?? 'Business'}'),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => businessId = value),
+                  ),
+                  if (businessId != null)
+                    _newsVenuePreview(businessId!, body.text),
+                  TextField(
+                    controller: body,
+                    maxLines: 3,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Short venue news',
+                      hintText: 'Add a short update about this venue',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (selected != true || businessId == null || body.text.trim().isEmpty) {
+      body.dispose();
+      return;
+    }
+    final token = (await AppSession.load()).apiToken;
+    if (token == null || token.isEmpty) {
+      body.dispose();
+      return;
+    }
+    final business = widget.businesses.firstWhere(
+      (item) => _businessId(item) == businessId,
+      orElse: () => <String, dynamic>{},
+    );
+    final image = _businessPrimaryImage(business);
+    final venueName = '${business['name'] ?? 'Venue'}';
+    final payload = {
+      'businessId': businessId,
+      'title': editing?['title'] as String? ?? '$venueName update',
+      'body': body.text.trim(),
+      'imageUrl': image,
+    };
+    try {
+      if (editing == null || isIncomplete) {
+        await _api.createMerchantNewsPost(token: token, post: payload);
+      } else {
+        await _api.updateMerchantNewsPost(
+          token: token,
+          id: _id(editing['id'])!,
+          post: payload,
+        );
+      }
+      await _loadNewsPosts();
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+      }
+    } finally {
+      body.dispose();
+    }
+  }
+
+  Widget _newsVenuePreview(int businessId, String newsText) {
+    final business = widget.businesses.firstWhere(
+      (item) => _businessId(item) == businessId,
+      orElse: () => <String, dynamic>{},
+    );
+    final image = _businessPrimaryImage(business);
+    final name = '${business['name'] ?? 'Venue'}';
+    final type = '${business['businessType'] ?? 'Booking'}';
+    final category = '${business['category'] ?? ''}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'News Feed preview',
+              style: TextStyle(
+                color: _addMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _addLine),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  color: Colors.black,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  child: const Text(
+                    'News Feed',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  height: 170,
+                  child:
+                      image == null ||
+                          image.isEmpty ||
+                          _safeImageProvider(image) == null
+                      ? const ColoredBox(
+                          color: Color(0xFFFFE8D2),
+                          child: Icon(
+                            Icons.storefront_rounded,
+                            size: 48,
+                            color: _addOrange,
+                          ),
+                        )
+                      : Image(
+                          image: _safeImageProvider(image)!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: Color(0xFFFFE8D2),
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              size: 42,
+                              color: _addOrange,
+                            ),
+                          ),
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _addInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        category.isEmpty ? type : '$type · $category',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _addOrange,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        newsText.trim().isEmpty
+                            ? 'Your short venue news will appear here.'
+                            : newsText.trim(),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: _addMuted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Colors.amber,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            'No ratings yet',
+                            style: TextStyle(
+                              color: _addInk,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF2F4F7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'View info: Booking Card',
+                              style: TextStyle(
+                                color: _addMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteNewsPost(Map<String, dynamic> post) async {
+    final token = (await AppSession.load()).apiToken;
+    final id = _id(post['id']);
+    if (token == null || token.isEmpty || id == null) return;
+    await _api.deleteMerchantNewsPost(token: token, id: id);
+    await _loadNewsPosts();
+  }
+
   List<Map<String, dynamic>> get _filteredBusinesses {
-    if (_selectedBusinessType == 'All') return widget.businesses;
     return widget.businesses
         .where(
           (business) =>
-              business['businessType'] == _selectedBusinessType ||
-              business['business_type'] == _selectedBusinessType,
+              _hasCompleteNewsCard(business) &&
+              (_selectedBusinessType == 'All' ||
+                  business['businessType'] == _selectedBusinessType ||
+                  business['business_type'] == _selectedBusinessType),
         )
         .toList();
+  }
+
+  bool _hasCompleteNewsCard(Map<String, dynamic> business) {
+    final id = _businessId(business);
+    if (id == null) return false;
+    return _newsPosts.any(
+      (post) =>
+          _postBusinessId(post) == id &&
+          '${post['body'] ?? ''}'.trim().isNotEmpty &&
+          '${post['title'] ?? ''}'.trim().isNotEmpty &&
+          '${post['imageUrl'] ?? ''}'.trim().isNotEmpty,
+    );
   }
 
   Widget _businessTypeTabs() {
@@ -1638,7 +2146,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   Widget _businessCard(Map<String, dynamic> business) {
-    final id = (business['id'] as num?)?.toInt();
+    final id = _businessId(business);
     final enabled =
         business['enabled'] != false &&
         business['enabled'] != 0 &&
@@ -1814,7 +2322,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     Map<String, dynamic> business,
     bool enabled,
   ) async {
-    final id = (business['id'] as num?)?.toInt();
+    final id = _businessId(business);
     if (id == null) {
       return;
     }
@@ -1840,48 +2348,47 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   Future<void> _confirmDeleteBusiness(int id, String name) async {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Delete business?'),
-          content: Text(
-            'This will permanently delete "$name" and its venue details. '
-            'This action cannot be undone.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB42318),
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Delete'),
-            ),
-          ],
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete business?'),
+        content: Text(
+          'This will permanently delete "$name" and its venue details. '
+          'This action cannot be undone.',
         ),
-      );
-      if (confirmed != true || !mounted) return;
-      try {
-        final session = await AppSession.load();
-        final token = session.apiToken;
-        if (token == null || token.isEmpty) {
-          throw const AuthApiException('Your session has expired.', 401);
-        }
-        await _api.deleteMerchantBusiness(token: token, id: id);
-        await widget.onBusinessesChanged();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"$name" was deleted.')),
-        );
-      } on Exception catch (error) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not delete business: $error')),
-        );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB42318),
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final session = await AppSession.load();
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException('Your session has expired.', 401);
       }
+      await _api.deleteMerchantBusiness(token: token, id: id);
+      await widget.onBusinessesChanged();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('"$name" was deleted.')));
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete business: $error')),
+      );
+    }
   }
 
   String _formatPrice(dynamic value, {bool hourly = true}) {
@@ -2026,6 +2533,14 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     return NetworkImage(value);
   }
 
+  ImageProvider<Object>? _safeImageProvider(String value) {
+    try {
+      return _imageProvider(value);
+    } on FormatException {
+      return null;
+    }
+  }
+
   String? _businessPrimaryImage(Map<String, dynamic> business) {
     final value = business['imageUrl'];
     if (value is! String || value.isEmpty) return null;
@@ -2047,14 +2562,14 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       'data:image/jpeg;base64,${base64Encode(bytes)}';
 
   String _formatRatePeriods(List<Map<String, dynamic>> periods) => periods
-        .whereType<Map>()
-        .map((period) {
-          final start = period['start'] ?? '';
-          final end = period['end'] ?? '';
-          final price = _formatPrice(
-            period['pricePerHour'] ?? period['price_per_hour'] ?? period['price'],
-          );
-          return '$start - $end${price.isEmpty ? '' : ' ($price)'}';
-        })
-        .join(', ');
+      .whereType<Map>()
+      .map((period) {
+        final start = period['start'] ?? '';
+        final end = period['end'] ?? '';
+        final price = _formatPrice(
+          period['pricePerHour'] ?? period['price_per_hour'] ?? period['price'],
+        );
+        return '$start - $end${price.isEmpty ? '' : ' ($price)'}';
+      })
+      .join(', ');
 }

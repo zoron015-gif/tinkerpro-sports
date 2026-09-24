@@ -42,24 +42,35 @@ class _SavedDashboardPageState extends State<SavedDashboardPage> {
   }
 
   Future<List<Map<String, dynamic>>> _loadSavedItems() async {
+    final session = await AppSession.load();
+    final requestedType = _savedBusinessType(
+      widget.itemType ?? session.lastBookingType,
+    );
     final saved = await SavedItemStore.list();
     final businesses = await AuthApi().customerBusinesses();
-    return saved.map((item) {
-      final key = item['itemKey'];
-      final savedType = _savedBusinessType(item['itemType']);
-      final business = businesses.cast<Map<String, dynamic>?>().firstWhere(
-        (candidate) =>
-            _businessType(candidate) == savedType &&
-            (candidate?['id']?.toString() == key ||
-                candidate?['name']?.toString() == key ||
-                candidate?['name']?.toString() == item['title']?.toString()),
-        orElse: () => null,
-      );
-      return {
-        ...item,
-        ...?business == null ? null : {'business': business},
-      };
-    }).toList();
+    return saved
+        .where((item) {
+          return requestedType.isEmpty ||
+              _savedBusinessType(item['itemType']) == requestedType;
+        })
+        .map((item) {
+          final key = item['itemKey'];
+          final savedType = _savedBusinessType(item['itemType']);
+          final business = businesses.cast<Map<String, dynamic>?>().firstWhere(
+            (candidate) =>
+                _businessType(candidate) == savedType &&
+                (candidate?['id']?.toString() == key ||
+                    candidate?['name']?.toString() == key ||
+                    candidate?['name']?.toString() ==
+                        item['title']?.toString()),
+            orElse: () => null,
+          );
+          return {
+            ...item,
+            ...?business == null ? null : {'business': business},
+          };
+        })
+        .toList();
   }
 
   String _savedBusinessType(dynamic value) {
@@ -117,11 +128,6 @@ class _SavedDashboardPageState extends State<SavedDashboardPage> {
             );
           }
           final savedItems = (snapshot.data ?? [])
-              .where(
-                (item) =>
-                    widget.itemType == null ||
-                    item['itemType'] == widget.itemType,
-              )
               .where(
                 (item) => !_optimisticallyRemoved.contains(
                   _savedItemId(
@@ -217,16 +223,17 @@ class _SavedDashboardPageState extends State<SavedDashboardPage> {
             }
             if (index == 2) {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+                MaterialPageRoute(
+                  builder: (_) => const MessagesDashboardPage(),
+                ),
               );
               return;
             }
             if (index == 3) {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => CustomerBookingsPage(
-                    onLogout: widget.onLogout,
-                  ),
+                  builder: (_) =>
+                      CustomerBookingsPage(onLogout: widget.onLogout),
                 ),
               );
               return;
@@ -1547,10 +1554,8 @@ class _SavedDashboardPageState extends State<SavedDashboardPage> {
       if (!context.mounted || owner == null) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => MessagesDashboardPage(
-            owner: owner,
-            businessTitle: title,
-          ),
+          builder: (_) =>
+              MessagesDashboardPage(owner: owner, businessTitle: title),
         ),
       );
     } on Exception catch (error) {

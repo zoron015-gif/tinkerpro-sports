@@ -2,29 +2,46 @@ import 'package:flutter/material.dart';
 
 const _profileInk = Color(0xFF101B33);
 const _profileMuted = Color(0xFF68748A);
-const _profileOrange = Color(0xFFFF8200);
 const _profileLine = Color(0xFFE2E7EF);
 
-class MerchantProfileDashboardPage extends StatelessWidget {
+class MerchantProfileDashboardPage extends StatefulWidget {
   const MerchantProfileDashboardPage({
     super.key,
     required this.owner,
     required this.profileImage,
     required this.venueCount,
-    required this.onEditProfile,
     required this.onLogout,
+    required this.onEditProfile,
     this.onNavigate,
   });
 
   final Map<String, dynamic> owner;
   final ImageProvider<Object>? profileImage;
   final int venueCount;
-  final VoidCallback onEditProfile;
   final Future<void> Function(BuildContext context) onLogout;
+  final Future<Map<String, dynamic>?> Function() onEditProfile;
   final ValueChanged<int>? onNavigate;
 
   @override
+  State<MerchantProfileDashboardPage> createState() =>
+      _MerchantProfileDashboardPageState();
+}
+
+class _MerchantProfileDashboardPageState
+    extends State<MerchantProfileDashboardPage> {
+  late Map<String, dynamic> _owner;
+  late ImageProvider<Object>? _profileImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _owner = widget.owner;
+    _profileImage = widget.profileImage;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final owner = _owner;
     final name = '${owner['firstName'] ?? ''} ${owner['lastName'] ?? ''}'
         .trim();
     final email = owner['email'] as String? ?? 'Account email';
@@ -42,8 +59,21 @@ class MerchantProfileDashboardPage extends StatelessWidget {
         elevation: 0,
         actions: [
           IconButton(
+            tooltip: 'Edit profile',
+            onPressed: () async {
+              final updated = await widget.onEditProfile();
+              if (!mounted || updated == null) return;
+              setState(() {
+                _owner = Map<String, dynamic>.from(updated['owner'] as Map);
+                _profileImage =
+                    updated['profileImage'] as ImageProvider<Object>?;
+              });
+            },
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
             tooltip: 'Log out',
-            onPressed: () => onLogout(context),
+            onPressed: () => widget.onLogout(context),
             icon: const Icon(Icons.logout_rounded),
           ),
         ],
@@ -54,16 +84,6 @@ class MerchantProfileDashboardPage extends StatelessWidget {
           _profileCard(name, email, phone),
           const SizedBox(height: 14),
           _performanceCard(),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: onEditProfile,
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Edit merchant profile'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _profileOrange,
-              minimumSize: const Size.fromHeight(48),
-            ),
-          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -72,7 +92,7 @@ class MerchantProfileDashboardPage extends StatelessWidget {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
           if (index == 4) return;
-          onNavigate?.call(index);
+          widget.onNavigate?.call(index);
           Navigator.of(context).pop();
         },
         destinations: const [
@@ -118,8 +138,8 @@ class MerchantProfileDashboardPage extends StatelessWidget {
         CircleAvatar(
           radius: 34,
           backgroundColor: const Color(0xFFFFE8D2),
-          backgroundImage: profileImage,
-          child: profileImage == null
+          backgroundImage: _profileImage,
+          child: _profileImage == null
               ? Text(
                   _initials(name),
                   style: const TextStyle(
@@ -199,7 +219,7 @@ class MerchantProfileDashboardPage extends StatelessWidget {
           children: [
             _metric('Revenue', '₱0'),
             _metric('Booked Slots', '0'),
-            _metric('Active Venues', '$venueCount'),
+            _metric('Active Venues', '${widget.venueCount}'),
           ],
         ),
       ],
