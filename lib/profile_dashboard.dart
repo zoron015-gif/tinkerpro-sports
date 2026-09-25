@@ -384,8 +384,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       backgroundColor: _profilePage,
       appBar: AppBar(
         backgroundColor: _profilePage,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: _profileInk,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
@@ -490,7 +492,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           navigationBarTheme: NavigationBarThemeData(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
-            shadowColor: Colors.transparent,
+            shadowColor: const Color(0x14000000),
+            elevation: 2,
             indicatorColor: const Color(0xFFFFE8D2),
             iconTheme: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);

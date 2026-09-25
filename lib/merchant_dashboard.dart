@@ -436,8 +436,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         backgroundColor: _merchantPage,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: _merchantInk,
         elevation: 0,
+        scrolledUnderElevation: 0,
         actions: [
           if (widget.onLogout != null)
             TextButton.icon(
@@ -1447,7 +1449,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        shadowColor: Colors.transparent,
+        shadowColor: const Color(0x14000000),
+        elevation: 2,
+        height: 72,
         indicatorColor: const Color(0xFFFFE8D2),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
@@ -1849,6 +1853,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         color: Colors.white,
         border: Border.all(color: _merchantLine),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D192B50),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
       ),
       child: Row(
         children: [

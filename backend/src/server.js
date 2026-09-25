@@ -1733,11 +1733,13 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
               b.price_per_hour AS pricePerHour, b.total_amount AS total,
-              b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt
+              b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt,
+              r.id AS reviewId, r.rating AS reviewRating
        FROM bookings b
        JOIN merchant_businesses v ON v.id = b.venue_id
        JOIN users u ON u.id = v.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = v.id
+       LEFT JOIN venue_reviews r ON r.booking_id = b.id AND r.customer_id = b.customer_id
        WHERE b.customer_id = ? ORDER BY b.booking_date DESC, b.start_time DESC`,
       [req.auth.sub],
     );
@@ -1928,8 +1930,23 @@ function newsPostResponse(row) {
     merchantEmail: row.merchant_email || null,
     merchantPhone: row.merchant_phone || null,
     merchantAvatarUrl: row.merchant_avatar_url || null,
+    enabled: !(
+      row.enabled === false ||
+      row.enabled === 0 ||
+      row.enabled === '0' ||
+      row.enabled === 'false' ||
+      row.enabled === 'FALSE'
+    ),
+    businessEnabled: !(
+      row.enabled === false ||
+      row.enabled === 0 ||
+      row.enabled === '0' ||
+      row.enabled === 'false' ||
+      row.enabled === 'FALSE'
+    ),
     averageRating: Number(row.average_rating || 0),
     reviewCount: Number(row.review_count || 0),
+    ratingUserCount: Number(row.rating_user_count || 0),
   };
 }
 
@@ -1941,7 +1958,7 @@ async function merchantNewsPosts(req, res, next) {
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
               b.amenities_json, b.details AS business_details,
-              b.image_url AS business_image_url, b.image_urls,
+              b.image_url AS business_image_url, b.image_urls, b.enabled,
               b.visit_url
        FROM merchant_news n
        INNER JOIN merchant_businesses b ON b.id = n.business_id
@@ -2030,15 +2047,16 @@ async function customerNewsFeed(req, res, next) {
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
               b.amenities_json, b.details AS business_details,
-              b.image_url AS business_image_url, b.image_urls,
+              b.image_url AS business_image_url, b.image_urls, b.enabled,
               b.visit_url,
               u.first_name AS merchant_first_name, u.last_name AS merchant_last_name,
               u.email AS merchant_email, u.phone AS merchant_phone,
               u.avatar_url AS merchant_avatar_url,
               COALESCE((SELECT AVG(r.rating) FROM venue_reviews r WHERE r.business_id = b.id), 0) AS average_rating,
-              (SELECT COUNT(*) FROM venue_reviews r WHERE r.business_id = b.id) AS review_count
+              (SELECT COUNT(*) FROM venue_reviews r WHERE r.business_id = b.id) AS review_count,
+              (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r WHERE r.business_id = b.id) AS rating_user_count
        FROM merchant_news n
-       INNER JOIN merchant_businesses b ON b.id = n.business_id AND b.enabled = 1
+       INNER JOIN merchant_businesses b ON b.id = n.business_id
        INNER JOIN users u ON u.id = b.merchant_id
        WHERE n.status = 'published'
        ORDER BY n.created_at DESC`,

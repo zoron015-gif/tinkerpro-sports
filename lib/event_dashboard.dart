@@ -292,6 +292,8 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         leading: IconButton(
           onPressed: () =>
               Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
@@ -346,7 +348,8 @@ class _EventDashboardPageState extends State<EventDashboardPage> {
           navigationBarTheme: NavigationBarThemeData(
             backgroundColor: Colors.black,
             surfaceTintColor: Colors.black,
-            shadowColor: Colors.transparent,
+            shadowColor: const Color(0x33000000),
+            elevation: 2,
             indicatorColor: _eventSoftOrange,
             iconTheme: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);

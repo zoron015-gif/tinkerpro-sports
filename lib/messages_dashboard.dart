@@ -8,7 +8,7 @@ import 'app_session.dart';
 import 'auth_api.dart';
 import 'profile_dashboard.dart';
 import 'saved_dashboard.dart';
-import 'sports.dart';
+import 'news_feed.dart';
 import 'customer_bookings_page.dart';
 
 const _messageBackground = Color(0xFFF7F9FC);
@@ -596,6 +596,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         backgroundColor: _messageBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         titleTextStyle: const TextStyle(
           color: _messageNavy,
           fontSize: 23,
@@ -659,7 +660,8 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
-          shadowColor: Colors.transparent,
+          shadowColor: const Color(0x14000000),
+          elevation: 2,
           indicatorColor: _messageSoftOrange,
           iconTheme: WidgetStateProperty.resolveWith((states) {
             final selected = states.contains(WidgetState.selected);
@@ -697,7 +699,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
             return;
           }
           final page = switch (index) {
-            0 => SportsDashboardPage(onLogout: (_) async {}),
+            0 => NewsFeedPage(onLogout: (_) async {}),
             1 => SavedDashboardPage(onLogout: (_) async {}),
             3 => CustomerBookingsPage(onLogout: (_) async {}),
             4 => ProfileDashboardPage(onLogout: (_) async {}),

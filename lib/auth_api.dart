@@ -234,10 +234,14 @@ class AuthApi {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> newsReviews(int businessId) async {
+  Future<List<Map<String, dynamic>>> newsReviews({
+    required String token,
+    required int businessId,
+  }) async {
     final response = await _request(
       'GET',
       '/api/news-feed/$businessId/reviews',
+      headers: _authHeaders(token),
     );
     return (response['reviews'] as List<dynamic>? ?? [])
         .whereType<Map>()
@@ -255,6 +259,24 @@ class AuthApi {
       'POST',
       '/api/news-feed/$businessId/reviews',
       body: {'rating': rating, 'comment': comment},
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> submitCustomerReview({
+    required String token,
+    required int bookingId,
+    required int rating,
+    String comment = '',
+  }) async {
+    await _request(
+      'POST',
+      '/api/customer/reviews',
+      body: {
+        'bookingId': bookingId,
+        'rating': rating,
+        'comment': comment,
+      },
       headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }

@@ -52,9 +52,11 @@ class MyApp extends StatelessWidget {
         textTheme: GoogleFonts.montserratTextTheme(),
         appBarTheme: const AppBarTheme(
           backgroundColor: _page,
+          surfaceTintColor: Colors.transparent,
           foregroundColor: _ink,
           elevation: 0,
           centerTitle: false,
+          scrolledUnderElevation: 0,
           titleTextStyle: TextStyle(
             color: _ink,
             fontSize: 20,
@@ -64,11 +66,29 @@ class MyApp extends StatelessWidget {
         cardTheme: CardThemeData(
           color: Colors.white,
           surfaceTintColor: Colors.transparent,
-          elevation: 1,
+          elevation: 2,
           shadowColor: Color(0x1A192B50),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(14)),
+            borderRadius: BorderRadius.all(Radius.circular(18)),
           ),
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: const Color(0xFFF3F5F8),
+          selectedColor: const Color(0xFFFFE8D2),
+          disabledColor: const Color(0xFFEFF2F5),
+          side: const BorderSide(color: Color(0xFFE2E7EF)),
+          shape: const StadiumBorder(),
+          labelStyle: const TextStyle(
+            color: _ink,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+          secondaryLabelStyle: const TextStyle(
+            color: _navy,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -122,10 +142,38 @@ class MyApp extends StatelessWidget {
         ),
         navigationBarTheme: const NavigationBarThemeData(
           backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          shadowColor: Color(0x14000000),
+          elevation: 2,
+          height: 72,
           indicatorColor: Color(0xFFFFE8D2),
           labelTextStyle: WidgetStatePropertyAll(
             TextStyle(color: _ink, fontWeight: FontWeight.w600),
           ),
+        ),
+        tabBarTheme: const TabBarThemeData(
+          dividerColor: Colors.transparent,
+          indicatorColor: _orange,
+          indicatorSize: TabBarIndicatorSize.label,
+          labelColor: _navy,
+          unselectedLabelColor: _muted,
+          labelStyle: TextStyle(fontWeight: FontWeight.w800),
+          unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _navy,
+          contentTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: _orange,
+          linearTrackColor: Color(0xFFFFE8D2),
         ),
         dividerTheme: const DividerThemeData(
           color: Color(0xFFE2E7EF),

@@ -94,6 +94,8 @@ class Booking {
     this.downpayment = 0,
     this.status = 'pending',
     this.createdAt = '',
+    this.reviewId,
+    this.reviewRating,
   });
 
   final int? id;
@@ -108,6 +110,8 @@ class Booking {
   final double downpayment;
   final String status;
   final String createdAt;
+  final int? reviewId;
+  final int? reviewRating;
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
     id: _intValue(json['id']),
@@ -122,6 +126,8 @@ class Booking {
     downpayment: _doubleValue(json['downpayment']),
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
     createdAt: _text(json['createdAt']),
+    reviewId: _intValue(json['reviewId']),
+    reviewRating: _intValue(json['reviewRating']),
   );
 
   dynamic operator [](String key) => switch (key) {
@@ -159,6 +165,8 @@ class Booking {
     'downpayment' => downpayment,
     'status' => status,
     'createdAt' => createdAt,
+    'reviewId' => reviewId,
+    'reviewRating' => reviewRating,
     _ => null,
   };
 }

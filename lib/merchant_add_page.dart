@@ -360,8 +360,12 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
       if (accessibilityNeeds.isEmpty) {
         accessibilityNeeds.addAll(parseNeeds('Accessibility needs'));
       }
-      if (parkingNeeds.isEmpty) parkingNeeds.addAll(parseNeeds('Parking needs'));
-      if (securityNeeds.isEmpty) securityNeeds.addAll(parseNeeds('Security needs'));
+      if (parkingNeeds.isEmpty) {
+        parkingNeeds.addAll(parseNeeds('Parking needs'));
+      }
+      if (securityNeeds.isEmpty) {
+        securityNeeds.addAll(parseNeeds('Security needs'));
+      }
       const eventLabels = [
         'Event type:',
         'Event types:',
@@ -1667,7 +1671,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         const SizedBox(height: 6),
         const Text(
           'Complete a News Card for each business before its Booking Card is published.',
-          style: TextStyle(color: _addMuted),
+          style: TextStyle(color: _addMuted, height: 1.35),
         ),
         const SizedBox(height: 18),
         _addSectionTabs(),

@@ -55,8 +55,10 @@ class _MerchantProfileDashboardPageState
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         backgroundColor: const Color(0xFFF7F9FC),
+        surfaceTintColor: Colors.transparent,
         foregroundColor: _profileInk,
         elevation: 0,
+        scrolledUnderElevation: 0,
         actions: [
           IconButton(
             tooltip: 'Edit profile',
@@ -79,8 +81,17 @@ class _MerchantProfileDashboardPageState
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
+          const Text(
+            'Keep your account and venue presence up to date.',
+            style: TextStyle(
+              color: _profileMuted,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
           _profileCard(name, email, phone),
           const SizedBox(height: 14),
           _performanceCard(),
@@ -88,6 +99,10 @@ class _MerchantProfileDashboardPageState
       ),
       bottomNavigationBar: NavigationBar(
         height: 72,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shadowColor: const Color(0x14000000),
+        elevation: 2,
         selectedIndex: 4,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
@@ -132,6 +147,13 @@ class _MerchantProfileDashboardPageState
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(color: _profileLine),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D192B50),
+          blurRadius: 16,
+          offset: Offset(0, 6),
+        ),
+      ],
     ),
     child: Row(
       children: [
@@ -202,6 +224,13 @@ class _MerchantProfileDashboardPageState
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(color: _profileLine),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D192B50),
+          blurRadius: 16,
+          offset: Offset(0, 6),
+        ),
+      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,

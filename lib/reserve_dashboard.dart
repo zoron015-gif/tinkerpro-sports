@@ -1,12 +1,10 @@
-// The legacy booking-type picker remains in this file for the View info
-// navigation flow, while Explore now opens the customer News Feed first.
+// The booking-type picker remains in this file for the customer reservation flow.
 // ignore_for_file: unused_element
 
 import 'package:flutter/material.dart';
 
 import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
-import 'sports.dart';
 import 'app_session.dart';
 import 'news_feed.dart';
 
@@ -52,7 +50,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
     if (_selected == 'Sports') {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => SportsDashboardPage(onLogout: widget.onLogout),
+          builder: (_) => NewsFeedPage(onLogout: widget.onLogout),
         ),
       );
       return;
@@ -87,8 +85,6 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return NewsFeedPage(onLogout: widget.onLogout);
-    /*
     return Scaffold(
       backgroundColor: _background,
       body: SafeArea(
@@ -96,7 +92,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
           onRefresh: () async {},
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -249,7 +245,6 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
         ),
       ),
     );
-    */
   }
 }
 
