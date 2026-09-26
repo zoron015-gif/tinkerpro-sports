@@ -4,8 +4,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'app_session.dart';
-import 'auth_api.dart';
+import 'messages_service.dart';
+import 'messages_ui.dart';
+import 'messages_conversation_list.dart';
+import 'messages_chat_view.dart';
+import 'messages_controller.dart';
 import 'profile_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
@@ -34,161 +37,101 @@ class MessagesDashboardPage extends StatefulWidget {
 }
 
 class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
-  final _api = AuthApi();
+  final _messagesService = MessagesService();
+  final _controller = MessagesController();
   final _composer = TextEditingController();
   final _conversationSearch = TextEditingController();
   final _contactSearch = TextEditingController();
   final _imagePicker = ImagePicker();
-  String? _token;
-  String? _role;
-  int? _currentUserId;
-  int? _selectedConversation;
-  List<Map<String, dynamic>> _conversations = [];
-  List<Map<String, dynamic>> _contacts = [];
-  List<Map<String, dynamic>> _messages = [];
-  bool _loading = true;
-  bool _sending = false;
   XFile? _pendingImage;
   String? _pendingImageData;
   bool _ownerConversationOpened = false;
-  String _conversationQuery = '';
-  bool _showChat = false;
-  int _loadRequestId = 0;
-  int _messageRequestId = 0;
-  Timer? _realtimeTimer;
-  bool _realtimeRefreshInFlight = false;
 
-  int get _unreadMessageCount => _conversations.fold<int>(
-    0,
-    (total, conversation) =>
-        total + ((conversation['unreadCount'] as num?)?.toInt() ?? 0),
-  );
+  int get _unreadMessageCount => _controller.unreadMessageCount;
+
+  String? get _token => _controller.token;
+  String? get _role => _controller.role;
+  int? get _currentUserId => _controller.currentUserId;
+  int? get _selectedConversation => _controller.selectedConversationId;
+  List<Map<String, dynamic>> get _conversations => _controller.conversations;
+  List<Map<String, dynamic>> get _contacts => _controller.contacts;
+  List<Map<String, dynamic>> get _messages => _controller.messages;
+  bool get _loading => _controller.loading;
+  bool get _sending => _controller.sending;
+  bool get _showChat => _controller.showChat;
+  String get _conversationQuery => _controller.conversationQuery;
+  bool get _showArchived => _controller.showArchivedConversations;
+  bool get _showBlocked => _controller.showBlockedConversations;
+
+  void _setConversationQuery(String value) {
+    _controller.setConversationQuery(value);
+  }
+
+  void _clearConversationQuery() {
+    _controller.clearConversationQuery();
+  }
 
   @override
   void initState() {
     super.initState();
+    _controller.addListener(_handleControllerChange);
     _load();
   }
 
   @override
   void dispose() {
-    _realtimeTimer?.cancel();
+    _controller.removeListener(_handleControllerChange);
+    _controller.disposeController();
     _composer.dispose();
     _conversationSearch.dispose();
     _contactSearch.dispose();
     super.dispose();
   }
 
+  void _handleControllerChange() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<void> _load() async {
-    final requestId = ++_loadRequestId;
     try {
-      final session = await AppSession.load();
-      final token = session.apiToken;
-      if (token == null || token.isEmpty) {
-        throw const AuthApiException('Your session has expired.', 401);
-      }
-      final conversations = await _api.conversations(token);
-      final contacts = await _api.messageContacts(token);
-      final currentUser = await _api.me(token);
-      if (!mounted || requestId != _loadRequestId) return;
-      setState(() {
-        _token = token;
-        _role = session.role;
-        _currentUserId =
-            ((currentUser['user'] as Map<String, dynamic>?)?['id'] as num?)
-                ?.toInt();
-        _conversations = conversations;
-        _contacts = contacts;
-        _loading = false;
-      });
-      _startRealtimeUpdates();
+      await _controller.load();
+      if (!mounted) return;
       if (widget.owner != null && !_ownerConversationOpened) {
         _ownerConversationOpened = true;
         final ownerId = _asInt(widget.owner?['id']);
-        if (ownerId == null) {
-          return;
-        }
+        if (ownerId == null) return;
 
-        final id = await _api.openConversation(
-          token: token,
-          recipientId: ownerId,
-          title: widget.businessTitle,
+        final id = await _controller.openOwnerConversation(
+          ownerId: ownerId,
+          businessTitle: widget.businessTitle,
         );
-        if (!mounted || requestId != _loadRequestId) return;
+        if (!mounted || id == null) return;
         await _select(id);
       }
     } on Exception catch (error) {
-      if (mounted && requestId == _loadRequestId) {
-        setState(() => _loading = false);
+      if (mounted) {
         _show(error.toString());
       }
-    }
-  }
-
-  void _startRealtimeUpdates() {
-    _realtimeTimer ??= Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => unawaited(_refreshRealtime()),
-    );
-  }
-
-  Future<void> _refreshRealtime() async {
-    final token = _token;
-    if (token == null || _realtimeRefreshInFlight) return;
-
-    _realtimeRefreshInFlight = true;
-    try {
-      final selectedConversation = _selectedConversation;
-      final conversationsFuture = _api.conversations(token);
-      final messagesFuture = selectedConversation == null
-          ? null
-          : _api.conversationMessages(
-              token: token,
-              conversationId: selectedConversation,
-            );
-      final conversations = await conversationsFuture;
-      final messages = messagesFuture == null ? null : await messagesFuture;
-
-      if (!mounted || token != _token) return;
-      setState(() {
-        _conversations = conversations;
-        if (selectedConversation != null &&
-            selectedConversation == _selectedConversation &&
-            messages != null) {
-          _messages = messages;
-        }
-      });
-    } on AuthApiException catch (error) {
-      if (mounted && error.statusCode == 401) {
-        _show(error.toString());
-      }
-    } on Exception catch (error) {
-      debugPrint('Realtime message refresh failed: $error');
-    } finally {
-      _realtimeRefreshInFlight = false;
     }
   }
 
   Future<void> _select(int id) async {
     final token = _token;
     if (token == null) return;
-    final requestId = ++_messageRequestId;
+    final requestId = ++_controller.messageRequestId;
     if (!mounted) return;
-    setState(() {
-      _selectedConversation = id;
-      _messages = [];
-      _showChat = true;
-    });
+    _controller.setSelectedConversation(id);
     try {
-      final messages = await _api.conversationMessages(
+      final messages = await _messagesService.fetchMessages(
         token: token,
         conversationId: id,
       );
-      if (!mounted || requestId != _messageRequestId) return;
-      if (_selectedConversation != id) return;
-      setState(() => _messages = messages);
+      if (!mounted || requestId != _controller.messageRequestId) return;
+      if (_controller.selectedConversationId != id) return;
+      _controller.setMessages(messages);
     } on Exception catch (error) {
-      if (mounted && requestId == _messageRequestId) {
+      if (mounted && requestId == _controller.messageRequestId) {
         _show(error.toString());
       }
     }
@@ -204,9 +147,9 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         _sending) {
       return;
     }
-    setState(() => _sending = true);
+    _controller.setSending(true);
     try {
-      await _api.sendConversationMessage(
+      await _messagesService.sendMessage(
         token: token,
         conversationId: id,
         body: text,
@@ -230,7 +173,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     } on Exception catch (error) {
       _show(error.toString());
     } finally {
-      if (mounted) setState(() => _sending = false);
+      _controller.setSending(false);
     }
   }
 
@@ -260,7 +203,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await _api.deleteConversationMessage(
+      await _messagesService.deleteMessage(
         token: token,
         conversationId: conversationId,
         messageId: messageId,
@@ -272,6 +215,95 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
       _show('Message deleted.');
     } on Exception catch (error) {
       _show('Could not delete message: $error');
+    }
+  }
+
+  Future<void> _handleConversationAction(
+    Map<String, dynamic> conversation,
+    String action,
+  ) async {
+    final token = _token;
+    final conversationId = _asInt(conversation['id']);
+    if (token == null || conversationId == null) return;
+
+    try {
+      switch (action) {
+        case 'archive':
+          await _messagesService.setConversationState(
+            token: token,
+            conversationId: conversationId,
+            archived: !(conversation['archived'] == true ||
+                conversation['archived'] == 1),
+          );
+          break;
+        case 'unread':
+          final markUnread = !(conversation['manuallyUnread'] == true ||
+              conversation['manuallyUnread'] == 1);
+          await _messagesService.setConversationState(
+            token: token,
+            conversationId: conversationId,
+            unread: markUnread,
+          );
+          if (markUnread && _selectedConversation == conversationId) {
+            _controller.backToInbox();
+          }
+          break;
+        case 'delete':
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Delete conversation for you?'),
+              content: const Text(
+                'This removes the conversation from your inbox only. '
+                'Other participants will still have their messages.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Delete for me'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !mounted) return;
+          await _messagesService.deleteConversation(
+            token: token,
+            conversationId: conversationId,
+          );
+          if (_selectedConversation == conversationId) {
+            _controller.backToInbox();
+          }
+          break;
+        case 'block':
+          final members = (conversation['members'] as List<dynamic>? ?? [])
+              .whereType<Map>()
+              .map((member) => Map<String, dynamic>.from(member))
+              .where((member) => _asInt(member['id']) != _currentUserId)
+              .toList();
+          if (members.length != 1) return;
+          final userId = _asInt(members.first['id']);
+          if (userId == null) return;
+          final isBlocked = conversation['blockedByMe'] == true ||
+              conversation['blockedByMe'] == 1;
+          if (isBlocked) {
+            await _messagesService.unblockUser(token: token, userId: userId);
+          } else {
+            await _messagesService.blockUser(token: token, userId: userId);
+          }
+          break;
+        default:
+          return;
+      }
+
+      if (!mounted) return;
+      await _controller.load();
+      if (mounted) _show('Conversation updated.');
+    } on Exception catch (error) {
+      _show('Could not update conversation: $error');
     }
   }
 
@@ -313,11 +345,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
 
   void _backToInbox() {
     FocusScope.of(context).unfocus();
-    setState(() {
-      _showChat = false;
-      _selectedConversation = null;
-      _messages = [];
-    });
+    _controller.backToInbox();
   }
 
   Future<void> _startConversation() async {
@@ -468,7 +496,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     _contactSearch.clear();
     if (created != true || selected.isEmpty || _token == null) return;
     try {
-      final id = await _api.openConversation(
+      final id = await _messagesService.openConversation(
         token: _token!,
         participantIds: selected.toList(),
         title: selected.length > 1
@@ -506,80 +534,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         .toList();
   }
 
-  String _displayName(Map<String, dynamic> user) {
-    final first = _safeString(user['firstName']);
-    final last = _safeString(user['lastName']);
-    final name = '$first $last'.trim();
-    if (name.isNotEmpty) return name;
-    final email = _safeString(user['email']);
-    if (email.isNotEmpty) return email;
-    return 'User';
-  }
+  String _displayName(Map<String, dynamic> user) => displayName(user);
 
-  String _initials(Map<String, dynamic> user) {
-    final name = _displayName(user);
-    if (name.isEmpty) return '?';
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
-        .toUpperCase();
-  }
+  int? _asInt(Object? value) => asInt(value);
 
-  int? _asInt(Object? value) {
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value);
-    return null;
-  }
+  String _safeString(Object? value, [String fallback = '']) =>
+      safeString(value, fallback);
 
-  String _safeString(Object? value, [String fallback = '']) {
-    if (value == null) return fallback;
-    if (value is String) return value;
-    return value.toString();
-  }
-
-  Map<String, dynamic>? _attachmentValue(Map<String, dynamic> message) {
-    final raw = message['attachment'];
-    if (raw is Map) {
-      return Map<String, dynamic>.from(raw);
-    }
-    return null;
-  }
-
-  String _messageBody(Map<String, dynamic> message) =>
-      _safeString(message['body']);
-
-  Widget _avatar(Map<String, dynamic> user, {double radius = 22}) {
-    final image = _safeString(user['avatarUrl']);
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: _messageSoftOrange,
-      backgroundImage: _avatarImage(image),
-      child: image.trim().isEmpty || _avatarImage(image) == null
-          ? Text(
-              _initials(user),
-              style: const TextStyle(
-                color: _messageOrange,
-                fontWeight: FontWeight.w800,
-              ),
-            )
-          : null,
-    );
-  }
-
-  ImageProvider<Object>? _avatarImage(String image) {
-    final value = image.trim();
-    if (value.isEmpty) return null;
-    if (value.startsWith('data:image/')) {
-      final separator = value.indexOf(',');
-      if (separator <= 0 || separator >= value.length - 1) return null;
-      try {
-        return MemoryImage(base64Decode(value.substring(separator + 1)));
-      } on FormatException {
-        return null;
-      }
-    }
-    return NetworkImage(value);
-  }
+  Widget _avatar(Map<String, dynamic> user, {double radius = 22}) =>
+      MessagesAvatar(user, radius: radius);
 
   void _show(String message) {
     if (!mounted) return;
@@ -627,15 +590,61 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
+              color: _messageOrange,
+              backgroundColor: Colors.white,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final wide = constraints.maxWidth >= 700;
-                  final list = _conversationList();
+                  final list = MessagesConversationList(
+                    conversations: _conversations,
+                    selectedConversationId: _selectedConversation,
+                    searchController: _conversationSearch,
+                    conversationQuery: _conversationQuery,
+                    onSearchChanged: _setConversationQuery,
+                    onClearSearch: () {
+                      _conversationSearch.clear();
+                      _clearConversationQuery();
+                    },
+                    onNewConversation: _startConversation,
+                    onSelectConversation: _select,
+                    onOpenContact: (contact) async {
+                      if (_token == null) return;
+                      try {
+                        final id = await _messagesService.openConversation(
+                          token: _token!,
+                          recipientId: (contact['id'] as num).toInt(),
+                        );
+                        await _load();
+                        await _select(id);
+                      } on Exception catch (error) {
+                        _show(error.toString());
+                      }
+                    },
+                    onConversationAction: _handleConversationAction,
+                    showArchived: _showArchived,
+                    showBlocked: _showBlocked,
+                    onToggleArchived: () => _controller
+                        .setShowArchivedConversations(!_showArchived),
+                    onToggleBlocked: () => _controller
+                        .setShowBlockedConversations(!_showBlocked),
+                    currentUserId: _currentUserId,
+                  );
                   final chat = _selectedConversation == null
                       ? const Center(
                           child: Text('Select a conversation to start.'),
                         )
-                      : _chat();
+                      : MessagesChatView(
+                          messages: _messages,
+                          currentUserId: _currentUserId,
+                          blocked: _selectedConversationIsBlocked,
+                          composer: _composer,
+                          pendingImageData: _pendingImageData,
+                          sending: _sending,
+                          onDeleteMessage: _deleteMessage,
+                          onPickImage: _pickImage,
+                          onRemovePendingImage: _removePendingImage,
+                          onSend: _send,
+                        );
                   return wide
                       ? Row(
                           children: [
@@ -775,117 +784,6 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     );
   }
 
-  Widget _conversationList() {
-    final query = _conversationQuery.trim().toLowerCase();
-    final conversations = _conversations.where((conversation) {
-      final title = _conversationTitle(conversation).toLowerCase();
-      final latest = (conversation['lastMessage'] as String? ?? '')
-          .toLowerCase();
-      return query.isEmpty || title.contains(query) || latest.contains(query);
-    }).toList();
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: TextField(
-            controller: _conversationSearch,
-            onChanged: (value) => setState(() => _conversationQuery = value),
-            decoration: InputDecoration(
-              hintText: 'Search messages',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _conversationQuery.isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: () {
-                        _conversationSearch.clear();
-                        setState(() => _conversationQuery = '');
-                      },
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-              filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 104,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            scrollDirection: Axis.horizontal,
-            children: [
-              _newMessageBubble(),
-              ..._contacts.take(12).map(_contactBubble),
-            ],
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.forum_outlined),
-          title: const Text(
-            'Chats',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          trailing: Text(
-            '${conversations.length}',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-        ),
-        Expanded(
-          child: conversations.isEmpty
-              ? Center(
-                  child: Text(
-                    _conversations.isEmpty
-                        ? 'No conversations yet. Tap the edit icon to start.'
-                        : 'No matching conversations.',
-                    textAlign: TextAlign.center,
-                  ),
-                )
-              : ListView(
-                  children: conversations.map((conversation) {
-                    final id = (conversation['id'] as num).toInt();
-                    final unread =
-                        (conversation['unreadCount'] as num?)?.toInt() ?? 0;
-                    final members = _otherMembers(conversation);
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                      ),
-                      leading: members.isNotEmpty
-                          ? _avatar(members.first, radius: 25)
-                          : const CircleAvatar(
-                              child: Icon(Icons.groups_rounded),
-                            ),
-                      selected: id == _selectedConversation,
-                      title: Text(
-                        _conversationTitle(conversation),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(
-                        conversation['lastMessage'] as String? ??
-                            'Start a conversation',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: unread > 0
-                          ? CircleAvatar(
-                              radius: 11,
-                              child: Text(
-                                '$unread',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            )
-                          : null,
-                      onTap: () => _select(id),
-                    );
-                  }).toList(),
-                ),
-        ),
-      ],
-    );
-  }
-
   String _selectedConversationTitle() {
     for (final conversation in _conversations) {
       if ((conversation['id'] as num?)?.toInt() == _selectedConversation) {
@@ -895,185 +793,14 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     return 'Chat';
   }
 
-  Widget _newMessageBubble() => GestureDetector(
-    onTap: _startConversation,
-    child: Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: Column(
-        children: [
-          const CircleAvatar(radius: 27, child: Icon(Icons.add_rounded)),
-          const SizedBox(height: 5),
-          Text('New', style: TextStyle(color: Colors.grey.shade700)),
-        ],
-      ),
-    ),
-  );
-
-  Widget _contactBubble(Map<String, dynamic> contact) => GestureDetector(
-    onTap: () async {
-      if (_token == null) return;
-      try {
-        final id = await _api.openConversation(
-          token: _token!,
-          recipientId: (contact['id'] as num).toInt(),
-        );
-        await _load();
-        await _select(id);
-      } on Exception catch (error) {
-        _show(error.toString());
+  bool get _selectedConversationIsBlocked {
+    for (final conversation in _conversations) {
+      if (_asInt(conversation['id']) == _selectedConversation) {
+        final value = conversation['blockedByMe'];
+        return value == true || value == 1 || value == '1';
       }
-    },
-    child: Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _avatar(contact, radius: 27),
-          const SizedBox(height: 5),
-          SizedBox(
-            width: 64,
-            child: Text(
-              _displayName(contact).split(' ').first,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _chat() => Column(
-    children: [
-      Expanded(
-        child: _messages.isEmpty
-            ? const Center(child: Text('Write the first message.'))
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final message = _messages[index];
-                  final mine = _asInt(message['senderId']) == _currentUserId;
-                  final attachment = _attachmentValue(message);
-                  final body = _messageBody(message);
-                  final bubble = Card(
-                    color: mine ? const Color(0xFFFFE8D2) : Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if ((attachment != null &&
-                              _safeString(attachment['type']) == 'image'))
-                            _messageImage(attachment),
-                          if (body.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(body),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                  return Align(
-                    alignment: mine
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: mine
-                        ? GestureDetector(
-                            onLongPress: () => _deleteMessage(message),
-                            child: bubble,
-                          )
-                        : bubble,
-                  );
-                },
-              ),
-      ),
-      SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_pendingImageData != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          base64Decode(_pendingImageData!.split(',').last),
-                          width: 84,
-                          height: 84,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: IconButton(
-                          visualDensity: VisualDensity.compact,
-                          onPressed: _removePendingImage,
-                          icon: const Icon(Icons.close_rounded),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: _messageNavy,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Attach image',
-                  onPressed: _sending ? null : _pickImage,
-                  icon: const Icon(Icons.image_outlined),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _composer,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                      hintText: 'Write a message...',
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: _sending ? null : _send,
-                  icon: const Icon(Icons.send_rounded),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ],
-  );
-
-  Widget _messageImage(dynamic rawAttachment) {
-    final attachment = rawAttachment is Map
-        ? Map<String, dynamic>.from(rawAttachment)
-        : <String, dynamic>{};
-    final data = _safeString(attachment['data']);
-    if (data.isEmpty || !data.startsWith('data:image/')) {
-      return const Text('Image unavailable');
     }
-    try {
-      final encoded = data.contains(',') ? data.split(',').last : data;
-      final bytes = base64Decode(encoded);
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.memory(bytes, width: 220, height: 220, fit: BoxFit.cover),
-      );
-    } on FormatException {
-      return const Text('Image unavailable');
-    }
+    return false;
   }
+
 }

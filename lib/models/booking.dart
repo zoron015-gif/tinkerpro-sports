@@ -92,6 +92,7 @@ class Booking {
     this.pricePerHour = 0,
     this.total = 0,
     this.downpayment = 0,
+    this.extraPlayerCharge = 0,
     this.status = 'pending',
     this.createdAt = '',
     this.reviewId,
@@ -108,6 +109,7 @@ class Booking {
   final double pricePerHour;
   final double total;
   final double downpayment;
+  final double extraPlayerCharge;
   final String status;
   final String createdAt;
   final int? reviewId;
@@ -124,6 +126,7 @@ class Booking {
     pricePerHour: _doubleValue(json['pricePerHour']),
     total: _doubleValue(json['total']),
     downpayment: _doubleValue(json['downpayment']),
+    extraPlayerCharge: _doubleValue(json['extraPlayerCharge']),
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
     createdAt: _text(json['createdAt']),
     reviewId: _intValue(json['reviewId']),
@@ -163,6 +166,7 @@ class Booking {
     'pricePerHour' => pricePerHour,
     'total' => total,
     'downpayment' => downpayment,
+    'extraPlayerCharge' => extraPlayerCharge,
     'status' => status,
     'createdAt' => createdAt,
     'reviewId' => reviewId,

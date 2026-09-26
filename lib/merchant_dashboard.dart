@@ -786,6 +786,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ),
             const SizedBox(height: 12),
             Text('Total: PHP ${total.toStringAsFixed(2)}'),
+            if (_bookingAmount(booking['extraPlayerCharge']) > 0)
+              Text(
+                'Extra-player fee: PHP '
+                '${_bookingAmount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
+              ),
             Text('Downpayment received: PHP ${downpayment.toStringAsFixed(2)}'),
             Text('Remaining balance: PHP ${balance.toStringAsFixed(2)}'),
           ],

@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
@@ -15,6 +18,7 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'reviews.dart';
 import 'all_venues_page.dart';
+import 'merchant_business_status.dart';
 
 const _newsInk = Color(0xFF101B33);
 const _newsMuted = Color(0xFF68748A);
@@ -116,30 +120,44 @@ class _NewsImageCarouselState extends State<_NewsImageCarousel> {
 }
 
 class NewsFeedPage extends StatefulWidget {
-  const NewsFeedPage({super.key, this.onLogout, this.savedOnly = false});
+  const NewsFeedPage({
+    super.key,
+    this.onLogout,
+    this.savedOnly = false,
+    this.api,
+  });
 
   final Future<void> Function(BuildContext context)? onLogout;
   final bool savedOnly;
+  final AuthApi? api;
 
   @override
   State<NewsFeedPage> createState() => _NewsFeedPageState();
 }
 
 class _NewsFeedPageState extends State<NewsFeedPage> {
-  final _api = AuthApi();
+  late final AuthApi _api;
   final _searchController = TextEditingController();
   late Future<List<Map<String, dynamic>>> _posts;
   final Set<String> _savedKeys = <String>{};
+  final MapController _courtMapController = MapController();
+  late Future<List<Map<String, dynamic>>> _businesses;
+  var _courtMapExpanded = false;
+  Position? _userPosition;
+  var _locationLoading = false;
   String _feedArea = 'All areas';
   String _feedSport = 'All sports';
   String _feedCourtType = 'All';
   String _feedAvailability = 'Any';
+  String _feedPriceSort = 'Recommended';
   double _feedMaxPrice = 700;
   final Set<String> _feedAmenities = <String>{};
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? AuthApi();
+    _businesses = _api.customerBusinesses();
     _posts = _loadFeed();
     _loadSavedKeys();
   }
@@ -153,7 +171,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         401,
       );
     }
-    final posts = await _api.newsFeed(token);
+    final feedPosts = await _api.newsFeed(token);
+    final enabledBusinesses = await _businesses;
+    final enabledBusinessIds = enabledBusinesses
+        .map((business) => int.tryParse('${business['id'] ?? ''}'))
+        .whereType<int>()
+        .toSet();
+    final posts = feedPosts.map((post) {
+      final businessId = int.tryParse('${post['businessId'] ?? ''}');
+      final enabled =
+          businessId != null &&
+          enabledBusinessIds.contains(businessId) &&
+          !_isMerchantDisabled(post);
+      return {...post, 'enabled': enabled, 'businessEnabled': enabled};
+    }).toList();
     if (!widget.savedOnly) return posts;
     final saved = await SavedItemStore.list();
     final savedKeys = saved
@@ -170,8 +201,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Future<void> _reload() async {
+    _businesses = _api.customerBusinesses();
     final refreshed = _loadFeed();
-    setState(() => _posts = refreshed);
+    setState(() {
+      _posts = refreshed;
+    });
     await refreshed;
   }
 
@@ -233,121 +267,127 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         style: const TextStyle(color: _newsInk, fontWeight: FontWeight.w900),
       ),
       actions: [
-        if (!widget.savedOnly)
-          IconButton(
-            key: const ValueKey('news-feed-open-filters'),
-            tooltip: 'Open filters',
-            onPressed: _openSportsFilters,
-            icon: const Icon(Icons.tune_rounded),
-            style: IconButton.styleFrom(
-              shape: const CircleBorder(),
-              backgroundColor: const Color(0xFFF7F9FC),
-              foregroundColor: _newsInk,
-            ),
-          ),
-      ],
-    ),
-    body: Column(
-      children: [
-        if (!widget.savedOnly) ...[_feedIntro(), _mainSearchBar()],
-        if (widget.savedOnly) _mainSearchBar(),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _reload,
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _posts,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return _message(
-                    'Could not load the news feed: ${snapshot.error}',
-                  );
-                }
-                final posts = _filteredPosts(snapshot.data ?? const []);
-                if (posts.isEmpty) {
-                  return _message(
-                    widget.savedOnly
-                        ? 'You have no saved venues yet.'
-                        : snapshot.data?.isEmpty == true
-                        ? 'No venue news has been posted yet.'
-                        : 'No courts match your search.',
-                  );
-                }
-                return widget.savedOnly
-                    ? _savedCardList(posts)
-                    : _feedContent(posts);
-              },
-            ),
+        if (!widget.savedOnly) _courtMapHeaderControl(),
+        IconButton(
+          key: const ValueKey('news-feed-open-filters'),
+          tooltip: 'Open filters',
+          onPressed: _openSportsFilters,
+          icon: const Icon(Icons.tune_rounded),
+          style: IconButton.styleFrom(
+            shape: const CircleBorder(),
+            backgroundColor: const Color(0xFFF7F9FC),
+            foregroundColor: _newsInk,
           ),
         ),
       ],
     ),
-    bottomNavigationBar: Theme(
-      data: Theme.of(context).copyWith(
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shadowColor: const Color(0x14000000),
-          elevation: 2,
-          height: 72,
-          indicatorColor: const Color(0xFFFFE8D2),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              color: selected ? _newsOrange : _newsInk,
-              size: 24,
-            );
-          }),
-          labelTextStyle: WidgetStatePropertyAll(
-            TextStyle(
-              color: _newsInk,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
+    body: _courtMapExpanded && !widget.savedOnly
+        ? _courtLocationsMap()
+        : Column(
+            children: [
+              if (!widget.savedOnly) ...[_feedIntro(), _mainSearchBar()],
+              if (widget.savedOnly) _mainSearchBar(),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _reload,
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _posts,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return _message(
+                          'Could not load the news feed: ${snapshot.error}',
+                        );
+                      }
+                      final posts = _filteredPosts(snapshot.data ?? const []);
+                      if (posts.isEmpty) {
+                        return _message(
+                          widget.savedOnly
+                              ? snapshot.data?.isEmpty == true
+                                    ? 'You have no saved venues yet.'
+                                    : 'No saved venues match your filters or search.'
+                              : snapshot.data?.isEmpty == true
+                              ? 'No venue news has been posted yet.'
+                              : 'No courts match your search.',
+                        );
+                      }
+                      return widget.savedOnly
+                          ? _savedCardList(posts)
+                          : _feedContent(posts);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+    bottomNavigationBar: _courtMapExpanded && !widget.savedOnly
+        ? null
+        : Theme(
+            data: Theme.of(context).copyWith(
+              navigationBarTheme: NavigationBarThemeData(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                shadowColor: const Color(0x14000000),
+                elevation: 2,
+                height: 72,
+                indicatorColor: const Color(0xFFFFE8D2),
+                iconTheme: WidgetStateProperty.resolveWith((states) {
+                  final selected = states.contains(WidgetState.selected);
+                  return IconThemeData(
+                    color: selected ? _newsOrange : _newsInk,
+                    size: 24,
+                  );
+                }),
+                labelTextStyle: WidgetStatePropertyAll(
+                  TextStyle(
+                    color: _newsInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            child: NavigationBar(
+              height: 72,
+              selectedIndex: widget.savedOnly ? 1 : 0,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              onDestinationSelected: _onNavigationSelected,
+              destinations: const [
+                NavigationDestination(
+                  key: ValueKey('news-feed-nav-explore'),
+                  icon: Icon(Icons.location_on_outlined),
+                  selectedIcon: Icon(Icons.location_on_rounded),
+                  label: 'Explore',
+                ),
+                NavigationDestination(
+                  key: ValueKey('news-feed-nav-saved'),
+                  icon: Icon(Icons.favorite_border_rounded),
+                  selectedIcon: Icon(Icons.favorite_rounded),
+                  label: 'Saved',
+                ),
+                NavigationDestination(
+                  key: ValueKey('news-feed-nav-messages'),
+                  icon: Icon(Icons.send_outlined),
+                  selectedIcon: Icon(Icons.send_rounded),
+                  label: 'Messages',
+                ),
+                NavigationDestination(
+                  key: ValueKey('news-feed-nav-bookings'),
+                  icon: Icon(Icons.calendar_today_outlined),
+                  selectedIcon: Icon(Icons.calendar_today_rounded),
+                  label: 'Bookings',
+                ),
+                NavigationDestination(
+                  key: ValueKey('news-feed-nav-profile'),
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Profile',
+                ),
+              ],
             ),
           ),
-        ),
-      ),
-      child: NavigationBar(
-        height: 72,
-        selectedIndex: widget.savedOnly ? 1 : 0,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: _onNavigationSelected,
-        destinations: const [
-          NavigationDestination(
-            key: ValueKey('news-feed-nav-explore'),
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on_rounded),
-            label: 'Explore',
-          ),
-          NavigationDestination(
-            key: ValueKey('news-feed-nav-saved'),
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Saved',
-          ),
-          NavigationDestination(
-            key: ValueKey('news-feed-nav-messages'),
-            icon: Icon(Icons.send_outlined),
-            selectedIcon: Icon(Icons.send_rounded),
-            label: 'Messages',
-          ),
-          NavigationDestination(
-            key: ValueKey('news-feed-nav-bookings'),
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: 'Bookings',
-          ),
-          NavigationDestination(
-            key: ValueKey('news-feed-nav-profile'),
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
-      ),
-    ),
   );
 
   Widget _savedCardList(List<Map<String, dynamic>> posts) => ListView.separated(
@@ -421,8 +461,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                 _feedSport = 'All sports';
                                 _feedCourtType = 'All';
                                 _feedAvailability = 'Any';
+                                _feedPriceSort = 'Recommended';
                                 _feedMaxPrice = 700;
                                 _feedAmenities.clear();
+                                _userPosition = null;
                               });
                               setSheetState(() {});
                             },
@@ -469,6 +511,38 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           ),
                           const SizedBox(height: 20),
                           _filterLabel('Area / city'),
+                          OutlinedButton.icon(
+                            key: const ValueKey('news-feed-use-my-location'),
+                            onPressed: _locationLoading
+                                ? null
+                                : () => _useMyLocation(
+                                    refreshSheet: () {
+                                      if (sheetContext.mounted) {
+                                        setSheetState(() {});
+                                      }
+                                    },
+                                  ),
+                            icon: _locationLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    _userPosition == null
+                                        ? Icons.my_location_rounded
+                                        : Icons.location_on_rounded,
+                                  ),
+                            label: Text(
+                              _locationLoading
+                                  ? 'Getting your location...'
+                                  : _userPosition == null
+                                  ? 'Use my location'
+                                  : 'Using my location · nearest first',
+                            ),
+                          ),
                           _feedDropdown(
                             identifier: 'area',
                             value: _feedArea,
@@ -575,6 +649,21 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               setSheetState(() {});
                             },
                           ),
+                          const SizedBox(height: 12),
+                          _filterLabel('Sort price'),
+                          _feedDropdown(
+                            identifier: 'price-sort',
+                            value: _feedPriceSort,
+                            values: const [
+                              'Recommended',
+                              'Lowest to highest',
+                              'Highest to lowest',
+                            ],
+                            onChanged: (value) {
+                              setState(() => _feedPriceSort = value);
+                              setSheetState(() {});
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -662,7 +751,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   );
 
   Widget _feedIntro() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 20, 18, 6),
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -677,20 +766,21 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     'Discover what’s new',
                     style: TextStyle(
                       color: _newsInk,
-                      fontSize: 26,
+                      fontSize: 23,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -.5,
+                      height: 1.1,
                     ),
                   ),
-                  SizedBox(height: 6),
+                  SizedBox(height: 3),
                   Text(
                     'Fresh updates, offers, and stories from local venues.',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: _newsMuted,
-                      fontSize: 13,
-                      height: 1.35,
+                      fontSize: 12,
+                      height: 1.25,
                     ),
                   ),
                 ],
@@ -702,16 +792,288 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     ),
   );
 
+  Widget _courtMapHeaderControl() => IconButton(
+    key: const ValueKey('news-feed-toggle-court-map'),
+    tooltip: _courtMapExpanded ? 'Hide court map' : 'Show courts on map',
+    onPressed: () => setState(() => _courtMapExpanded = !_courtMapExpanded),
+    icon: AnimatedRotation(
+      turns: _courtMapExpanded ? .5 : 0,
+      duration: const Duration(milliseconds: 180),
+      child: const Icon(Icons.map_outlined),
+    ),
+    style: IconButton.styleFrom(
+      shape: const CircleBorder(),
+      backgroundColor: const Color(0xFFF7F9FC),
+      foregroundColor: _courtMapExpanded ? _newsOrange : _newsInk,
+    ),
+  );
+
+  Widget _courtLocationsMap() => FutureBuilder<List<Map<String, dynamic>>>(
+    future: _businesses,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (snapshot.hasError) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              'Could not load court locations: ${snapshot.error}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _newsMuted, fontSize: 12),
+            ),
+          ),
+        );
+      }
+
+      final courts = (snapshot.data ?? const <Map<String, dynamic>>[])
+          .where(
+            (business) =>
+                '${business['businessType'] ?? business['business_type'] ?? ''}'
+                    .trim()
+                    .toLowerCase() ==
+                'sports',
+          )
+          .toList();
+      final pinnedCourts = <({Map<String, dynamic> business, LatLng point})>[];
+      final courtsWithoutPin = <Map<String, dynamic>>[];
+      for (final court in courts) {
+        final latitude = _mapCoordinate(court['latitude'] ?? court['lat']);
+        final longitude = _mapCoordinate(court['longitude'] ?? court['lng']);
+        if (latitude != null &&
+            longitude != null &&
+            latitude >= -90 &&
+            latitude <= 90 &&
+            longitude >= -180 &&
+            longitude <= 180) {
+          pinnedCourts.add((
+            business: court,
+            point: LatLng(latitude, longitude),
+          ));
+        } else {
+          courtsWithoutPin.add(court);
+        }
+      }
+
+      final uniquePoints = pinnedCourts.map((court) => court.point).toSet();
+      final center = uniquePoints.isEmpty
+          ? const LatLng(10.3157, 123.8854)
+          : LatLng(
+              uniquePoints
+                      .map((point) => point.latitude)
+                      .reduce((a, b) => a + b) /
+                  uniquePoints.length,
+              uniquePoints
+                      .map((point) => point.longitude)
+                      .reduce((a, b) => a + b) /
+                  uniquePoints.length,
+            );
+      final uniquePointsList = uniquePoints.toList();
+
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          FlutterMap(
+            mapController: _courtMapController,
+            options: MapOptions(
+              initialCenter: center,
+              initialZoom: uniquePointsList.length > 1 ? 5 : 13,
+              onMapReady: () {
+                if (uniquePointsList.length > 1) {
+                  _courtMapController.fitCamera(
+                    CameraFit.bounds(
+                      bounds: LatLngBounds.fromPoints(uniquePointsList),
+                      padding: const EdgeInsets.all(48),
+                    ),
+                  );
+                }
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.myapp',
+              ),
+              MarkerLayer(markers: pinnedCourts.map(_courtMapMarker).toList()),
+              if (_userPosition != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(
+                        _userPosition!.latitude,
+                        _userPosition!.longitude,
+                      ),
+                      width: 42,
+                      height: 42,
+                      child: const Icon(
+                        Icons.my_location_rounded,
+                        color: Colors.blue,
+                        size: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              RichAttributionWidget(
+                attributions: [
+                  TextSourceAttribution('OpenStreetMap contributors'),
+                ],
+              ),
+            ],
+          ),
+          Positioned(
+            top: 12,
+            left: 12,
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              elevation: 3,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                child: Text(
+                  '${pinnedCourts.length} courts on map'
+                  '${courtsWithoutPin.isEmpty ? '' : ' · ${courtsWithoutPin.length} need pins'}',
+                  style: const TextStyle(
+                    color: _newsInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  double? _mapCoordinate(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value');
+  }
+
+  Marker _courtMapMarker(
+    ({Map<String, dynamic> business, LatLng point}) court,
+  ) => Marker(
+    point: court.point,
+    width: 40,
+    height: 42,
+    child: GestureDetector(
+      onTap: () => _openCourtMapLocation(
+        '${court.business['name'] ?? 'Court'}',
+        court.point,
+      ),
+      child: const Icon(Icons.location_on, color: _newsOrange, size: 34),
+    ),
+  );
+
+  Future<void> _openCourtMapLocation(String name, LatLng point) async {
+    final uri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': '${point.latitude},${point.longitude}',
+    });
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open map directions for $name.')),
+      );
+    }
+  }
+
+  Future<void> _useMyLocation({required VoidCallback refreshSheet}) async {
+    setState(() => _locationLoading = true);
+    refreshSheet();
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _showLocationMessage(
+          'Location services are off. Turn them on to find nearby courts.',
+          actionLabel: 'Location settings',
+          onAction: Geolocator.openLocationSettings,
+        );
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        _showLocationMessage(
+          'Location permission was denied. Allow location access to sort courts by distance.',
+        );
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationMessage(
+          'Location permission is blocked. Enable it in app settings to find nearby courts.',
+          actionLabel: 'App settings',
+          onAction: Geolocator.openAppSettings,
+        );
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _userPosition = position);
+      refreshSheet();
+      _showLocationMessage('Courts are now ordered nearest to your location.');
+    } on Exception catch (error) {
+      _showLocationMessage('Could not get your location: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _locationLoading = false);
+        refreshSheet();
+      }
+    }
+  }
+
+  void _showLocationMessage(
+    String message, {
+    String? actionLabel,
+    Future<bool> Function()? onAction,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: actionLabel == null || onAction == null
+            ? null
+            : SnackBarAction(
+                label: actionLabel,
+                onPressed: () async {
+                  final opened = await onAction();
+                  if (!opened && mounted) {
+                    _showLocationMessage('Could not open $actionLabel.');
+                  }
+                },
+              ),
+      ),
+    );
+  }
+
   Widget _mainSearchBar() => Container(
     color: _newsPage,
-    padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
     child: TextField(
       key: const ValueKey('news-feed-search'),
       controller: _searchController,
       onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
         hintText: 'Search venues, categories, or news...',
-        prefixIcon: const Icon(Icons.search, size: 20),
+        hintStyle: const TextStyle(fontSize: 13),
+        prefixIcon: const Icon(Icons.search, size: 17),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 40,
+          minHeight: 40,
+        ),
         suffixIcon: _searchController.text.isEmpty
             ? null
             : IconButton(
@@ -721,16 +1083,17 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   _searchController.clear();
                   setState(() {});
                 },
-                icon: const Icon(Icons.close_rounded, size: 18),
+                icon: const Icon(Icons.close_rounded, size: 17),
               ),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 40,
+          minHeight: 40,
+        ),
         filled: true,
         fillColor: Colors.white,
         isDense: true,
         prefixIconColor: _newsOrange,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
           borderSide: const BorderSide(color: Color(0xFFE1E6ED)),
@@ -762,11 +1125,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final rated = highestRated.take(6).toList();
 
     return ListView(
+      key: const ValueKey('news-feed-content-list'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
-        _quickSportChips(posts),
-        const SizedBox(height: 10),
         _sectionHeader('Most popular', 'Highest review activity', featured),
         _horizontalVenues(featured, identifier: 'most-popular'),
         const SizedBox(height: 22),
@@ -853,48 +1215,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         builder: (_) => AllVenuesPage(
           title: title,
           posts: sectionPosts,
-          cardBuilder: _postCard,
+          cardBuilder: (post) => _postCard(post, expanded: true),
         ),
-      ),
-    );
-  }
-
-  Widget _quickSportChips(List<Map<String, dynamic>> posts) {
-    final sports = _feedOptions(
-      posts,
-      (post) => '${post['category'] ?? ''}',
-      '',
-    ).where((value) => value.isNotEmpty).toList();
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: sports.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (_, index) {
-          final selected = index == 0
-              ? _feedSport == 'All sports'
-              : _feedSport.toLowerCase() == sports[index - 1].toLowerCase();
-          final label = index == 0 ? 'All courts' : sports[index - 1];
-          return ChoiceChip(
-            label: Text(label),
-            selected: selected,
-            onSelected: (_) =>
-                setState(() => _feedSport = index == 0 ? 'All sports' : label),
-            selectedColor: _newsOrange,
-            backgroundColor: Colors.white,
-            side: BorderSide(
-              color: selected ? _newsOrange : const Color(0xFFE1E6ED),
-            ),
-            labelStyle: TextStyle(
-              color: selected ? Colors.white : _newsInk,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-            showCheckmark: false,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          );
-        },
       ),
     );
   }
@@ -945,119 +1267,167 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final name = '${post['businessName'] ?? 'Venue'}';
     final category = '${post['category'] ?? ''}';
     final rating = _number(post['averageRating']);
-    final price = _number(post['pricePerHour']);
+    final priceLabel = _priceLabel(post);
+    final unavailable = _isMerchantDisabled(post);
     final availability = '${post['availability'] ?? ''}'.toLowerCase();
     final isOpen =
         availability.contains('open') || availability.contains('available');
-    return SizedBox(
-      width: double.infinity,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => _openBookingType(post),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: Colors.white,
+    return Semantics(
+      key: ValueKey('news-feed-mini-${_venueIdentifier(post)}'),
+      button: true,
+      enabled: !unavailable,
+      label: unavailable
+          ? '$name. Unavailable. Booking disabled.'
+          : '$name. Open venue details.',
+      child: AbsorbPointer(
+        absorbing: unavailable,
+        child: SizedBox(
+          width: double.infinity,
+          child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE2E7EF)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0A192B50),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
-                ),
-                child: SizedBox(
-                  height: 94,
-                  width: double.infinity,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      image.isEmpty ? _miniImageFallback() : _miniImage(image),
-                      if (isOpen)
-                        Positioned(
-                          left: 8,
-                          top: 8,
-                          child: _miniBadge(
-                            'Available',
-                            const Color(0xDD15803D),
-                          ),
-                        ),
-                      if (category.isNotEmpty)
-                        Positioned(
-                          right: 8,
-                          top: 8,
-                          child: _miniBadge(category, const Color(0xCC101B33)),
-                        ),
-                    ],
+            onTap: unavailable ? null : () => _openBookingType(post),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFE2E7EF)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0A192B50),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
                   ),
-                ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _newsInk,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(18),
+                    ),
+                    child: SizedBox(
+                      height: 94,
+                      width: double.infinity,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          image.isEmpty
+                              ? _miniImageFallback()
+                              : _miniImage(image),
+                          if (unavailable)
+                            const ColoredBox(color: Color(0x55000000)),
+                          if (unavailable)
+                            Positioned(
+                              left: 8,
+                              bottom: 8,
+                              child: _miniBadge(
+                                'Unavailable',
+                                const Color(0xFFD32F2F),
+                              ),
+                            )
+                          else if (isOpen)
+                            Positioned(
+                              left: 8,
+                              top: 8,
+                              child: _miniBadge(
+                                'Available',
+                                const Color(0xDD15803D),
+                              ),
+                            ),
+                          if (category.isNotEmpty)
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: _miniBadge(
+                                category,
+                                const Color(0xCC101B33),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Colors.amber,
-                          size: 15,
-                        ),
-                        const SizedBox(width: 2),
                         Text(
-                          rating == 0 ? 'New' : rating.toStringAsFixed(1),
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: _newsMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            color: _newsInk,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '(${_number(post['reviewCount']).toInt()})',
-                          style: const TextStyle(
-                            color: _newsMuted,
-                            fontSize: 10,
-                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            _ratingStars(rating, size: 12),
+                            const SizedBox(width: 2),
+                            Text(
+                              rating == 0 ? 'New' : rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: _newsMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              '(${_number(post['reviewCount']).toInt()})',
+                              style: const TextStyle(
+                                color: _newsMuted,
+                                fontSize: 10,
+                              ),
+                            ),
+                            const Spacer(),
+                          ],
                         ),
-                        const Spacer(),
+                        if (_distanceLabel(post) case final distance?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              distance,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _newsMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        if (unavailable) ...[
+                          const SizedBox(height: 3),
+                          const Text(
+                            'UNAVAILABLE · Booking disabled',
+                            style: TextStyle(
+                              color: Color(0xFFD32F2F),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ] else if (priceLabel != 'Price not listed') ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            priceLabel,
+                            style: const TextStyle(
+                              color: _newsInk,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    if (price > 0) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        'PHP ${price.toStringAsFixed(0)} / hr',
-                        style: const TextStyle(
-                          color: _newsInk,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1097,9 +1467,52 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     ),
   );
 
+  Widget _ratingStars(double rating, {required double size}) {
+    final value = rating.clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var star = 1; star <= 5; star++)
+          Icon(
+            value >= star
+                ? Icons.star_rounded
+                : value >= star - .5
+                ? Icons.star_half_rounded
+                : Icons.star_outline_rounded,
+            color: Colors.amber,
+            size: size,
+          ),
+      ],
+    );
+  }
+
+  String? _distanceLabel(Map<String, dynamic> post) {
+    final position = _userPosition;
+    if (position == null) return null;
+    final latitude = _mapCoordinate(post['latitude'] ?? post['lat']);
+    final longitude = _mapCoordinate(post['longitude'] ?? post['lng']);
+    if (latitude == null ||
+        longitude == null ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180) {
+      return null;
+    }
+    final distanceKm =
+        Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          latitude,
+          longitude,
+        ) /
+        1000;
+    return '${distanceKm.toStringAsFixed(1)} km away';
+  }
+
   List<Map<String, dynamic>> _filteredPosts(List<Map<String, dynamic>> posts) {
     final query = _searchController.text.trim().toLowerCase();
-    return posts.where((post) {
+    final filtered = posts.where((post) {
       final address = '${post['address'] ?? ''}'.toLowerCase();
       final category = '${post['category'] ?? ''}'.toLowerCase();
       final matchesArea =
@@ -1143,6 +1556,45 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           matchesAmenities &&
           (query.isEmpty || searchable.contains(query));
     }).toList();
+    if (_feedPriceSort == 'Lowest to highest') {
+      filtered.sort((a, b) => _venuePrice(a).compareTo(_venuePrice(b)));
+    } else if (_feedPriceSort == 'Highest to lowest') {
+      filtered.sort((a, b) => _venuePrice(b).compareTo(_venuePrice(a)));
+    } else if (_userPosition case final position?) {
+      filtered.sort(
+        (a, b) =>
+            _distanceFrom(position, a).compareTo(_distanceFrom(position, b)),
+      );
+    }
+    return filtered;
+  }
+
+  double _venuePrice(Map<String, dynamic> post) =>
+      _mapCoordinate(
+        post['pricePerHour'] ??
+            post['price_per_hour'] ??
+            post['eventFee'] ??
+            post['event_fee'],
+      ) ??
+      0;
+
+  double _distanceFrom(Position position, Map<String, dynamic> post) {
+    final latitude = _mapCoordinate(post['latitude'] ?? post['lat']);
+    final longitude = _mapCoordinate(post['longitude'] ?? post['lng']);
+    if (latitude == null ||
+        longitude == null ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180) {
+      return double.infinity;
+    }
+    return Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      latitude,
+      longitude,
+    );
   }
 
   void _onNavigationSelected(int index) {
@@ -1203,7 +1655,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     ],
   );
 
-  Widget _postCard(Map<String, dynamic> post) {
+  Widget _postCard(Map<String, dynamic> post, {bool expanded = false}) {
     final image = post['imageUrl'] as String?;
     final images = _imageListValue([
       post['imageUrls'],
@@ -1221,6 +1673,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final category = '${post['category'] ?? ''}';
     final address = '${post['address'] ?? ''}';
     final body = '${post['body'] ?? ''}';
+    final priceLabel = _priceLabel(post);
     final unavailable = _isMerchantDisabled(post);
     final secondaryAction = unavailable
         ? OutlinedButton.icon(
@@ -1320,7 +1773,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            padding: EdgeInsets.fromLTRB(
+              expanded ? 20 : 16,
+              expanded ? 18 : 12,
+              expanded ? 20 : 16,
+              expanded ? 18 : 12,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1331,9 +1789,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         businessName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _newsInk,
-                          fontSize: 19,
+                          fontSize: expanded ? 22 : 19,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -1359,7 +1817,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   ],
                 ),
                 if (address.isNotEmpty) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 3),
                   Row(
                     children: [
                       const Icon(
@@ -1373,41 +1831,64 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           address,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _newsMuted,
-                            fontSize: 12,
+                            fontSize: expanded ? 14 : 12,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ],
-                const SizedBox(height: 14),
+                if (_distanceLabel(post) case final distance?) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.near_me_outlined,
+                        color: _newsOrange,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        distance,
+                        style: TextStyle(
+                          color: _newsMuted,
+                          fontSize: expanded ? 13 : 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 9),
+                _priceTag(priceLabel, expanded: expanded),
+                SizedBox(height: expanded ? 14 : 9),
                 Text(
                   '${post['title'] ?? ''}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _newsInk,
-                    fontSize: 16,
+                    fontSize: expanded ? 18 : 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 7),
+                SizedBox(height: expanded ? 7 : 4),
                 Text(
                   body,
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _newsMuted,
-                    height: 1.45,
-                    fontSize: 13,
+                    height: expanded ? 1.5 : 1.45,
+                    fontSize: expanded ? 15 : 13,
                   ),
                 ),
-                const SizedBox(height: 14),
+                SizedBox(height: expanded ? 14 : 10),
                 if (unavailable) ...[
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(10),
+                    padding: EdgeInsets.all(expanded ? 12 : 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFF1E4),
                       borderRadius: BorderRadius.circular(12),
@@ -1415,20 +1896,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         color: _newsOrange.withValues(alpha: .35),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(
                           Icons.info_outline_rounded,
                           color: _newsOrange,
                           size: 19,
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'This court is currently unavailable. Booking cannot proceed.',
                             style: TextStyle(
                               color: _newsInk,
-                              fontSize: 12,
+                              fontSize: expanded ? 14 : 12,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1439,26 +1920,26 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 ],
                 Row(
                   children: [
-                    const Icon(
-                      Icons.star_rounded,
-                      color: Colors.amber,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 4),
+                    _ratingStars(rating, size: expanded ? 18 : 16),
+                    SizedBox(width: expanded ? 6 : 4),
                     Text(
                       rating == 0 ? 'New' : rating.toStringAsFixed(1),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _newsInk,
+                        fontSize: expanded ? 16 : null,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 5),
+                    SizedBox(width: expanded ? 8 : 5),
                     Text(
                       rating == 0
                           ? 'No ratings yet'
                           : '$reviews ${reviews == 1 ? 'review' : 'reviews'} · '
                                 '$ratedUsers rated',
-                      style: const TextStyle(color: _newsMuted, fontSize: 12),
+                      style: TextStyle(
+                        color: _newsMuted,
+                        fontSize: expanded ? 13 : 12,
+                      ),
                     ),
                     const Spacer(),
                     TextButton.icon(
@@ -1477,7 +1958,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: expanded ? 10 : 6),
                 Row(
                   children: [
                     Expanded(
@@ -1492,7 +1973,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         label: const Text('Explore venue'),
                         style: FilledButton.styleFrom(
                           backgroundColor: _newsOrange,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: EdgeInsets.symmetric(
+                            vertical: expanded ? 15 : 12,
+                          ),
                         ),
                       ),
                     ),
@@ -1509,27 +1992,100 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   bool _isMerchantDisabled(Map<String, dynamic> post) {
-    final business = post['business'];
-    final nestedBusiness = business is Map
-        ? business
-        : const <String, dynamic>{};
-    final value = post.containsKey('enabled')
-        ? post['enabled']
-        : post.containsKey('businessEnabled')
-        ? post['businessEnabled']
-        : nestedBusiness.containsKey('enabled')
-        ? nestedBusiness['enabled']
-        : null;
-    if (value == null) return false;
-    if (value is bool) return value == false;
-    if (value is num) return value == 0;
-    final normalized = '$value'.trim().toLowerCase();
-    return normalized == '0' ||
-        normalized == 'false' ||
-        normalized == 'disabled' ||
-        normalized == 'inactive' ||
-        normalized == 'off';
+    return isMerchantBusinessDisabled(post);
   }
+
+  String _priceLabel(Map<String, dynamic> post) {
+    final business = post['business'] is Map
+        ? Map<String, dynamic>.from(post['business'] as Map)
+        : const <String, dynamic>{};
+    final businessType =
+        '${post['businessType'] ?? business['businessType'] ?? ''}'
+            .toLowerCase();
+    final isEvent = businessType.contains('event');
+
+    double? parseAmount(Object? value) {
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final match = RegExp(r'\d[\d,]*(?:\.\d+)?').firstMatch(value);
+        if (match != null) {
+          return double.tryParse(match.group(0)!.replaceAll(',', ''));
+        }
+      }
+      return null;
+    }
+
+    final price =
+        [
+              post['pricePerHour'],
+              post['price_per_hour'],
+              post['eventFee'],
+              post['event_fee'],
+              post['price'],
+              business['pricePerHour'],
+              business['price_per_hour'],
+              business['eventFee'],
+              business['event_fee'],
+              business['price'],
+            ]
+            .map(parseAmount)
+            .whereType<double>()
+            .firstWhere((amount) => amount > 0, orElse: () => 0);
+    if (price > 0) {
+      return 'PHP ${price.toStringAsFixed(0)} / ${isEvent ? 'event' : 'hr'}';
+    }
+
+    final rawPeriods = post['ratePeriods'] ?? post['rate_periods'];
+    if (rawPeriods is List) {
+      final rates = rawPeriods
+          .whereType<Map>()
+          .map(
+            (period) => parseAmount(
+              period['pricePerHour'] ??
+                  period['price_per_hour'] ??
+                  period['price'],
+            ),
+          )
+          .whereType<double>()
+          .where((amount) => amount > 0)
+          .toList();
+      if (rates.isNotEmpty) {
+        rates.sort();
+        return 'From PHP ${rates.first.toStringAsFixed(0)} / hr';
+      }
+    }
+
+    return 'Price not listed';
+  }
+
+  Widget _priceTag(String label, {bool expanded = false}) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF1E4),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: _newsOrange.withValues(alpha: .28)),
+    ),
+    child: Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: expanded ? 13 : 10,
+        vertical: expanded ? 8 : 6,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.sell_outlined, color: _newsOrange, size: 15),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: _newsInk,
+              fontSize: expanded ? 14 : 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _contactOwner(Map<String, dynamic> post) async {
     try {
@@ -1689,12 +2245,30 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Future<void> _openBookingType(Map<String, dynamic> post) async {
     try {
-      if (_isMerchantDisabled(post)) {
+      final businessValue = post['business'];
+      final business = businessValue is Map
+          ? Map<String, dynamic>.from(businessValue)
+          : const <String, dynamic>{};
+      final businessId = int.tryParse(
+        '${post['businessId'] ?? business['id'] ?? ''}',
+      );
+      final locallyDisabled = _isMerchantDisabled(post);
+      final availableBusinesses = locallyDisabled || businessId == null
+          ? <Map<String, dynamic>>[]
+          : await _api.customerBusinesses();
+      final matchingBusinesses = availableBusinesses
+          .where((item) => int.tryParse('${item['id'] ?? ''}') == businessId)
+          .toList();
+      final publishedBusiness = matchingBusinesses.isEmpty
+          ? null
+          : matchingBusinesses.first;
+
+      if (publishedBusiness == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'This court is currently unavailable and cannot be booked.',
+                'This venue is currently unavailable and cannot be booked.',
               ),
             ),
           );
@@ -1702,7 +2276,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         return;
       }
       final type = '${post['businessType'] ?? post['type'] ?? ''}';
-      final venue = _toSportsVenue(post);
+      final venue = _toSportsVenue({
+        ...post,
+        'includedPlayers': publishedBusiness['includedPlayers'],
+        'additionalPlayerFee': publishedBusiness['additionalPlayerFee'],
+        'business': publishedBusiness,
+      });
       if (!mounted) return;
 
       if (type.toLowerCase().contains('event')) {
@@ -1877,6 +2456,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       priceNight: priceText,
       priceLines: priceText.isEmpty ? const [] : [priceText],
       maxPrice: parsedPrice,
+      averageRating: _number(post['averageRating']),
+      reviewCount: _number(post['reviewCount']).toInt(),
+      ratingUserCount: _number(post['ratingUserCount']).toInt(),
+      includedPlayers:
+          int.tryParse(
+            '${post['includedPlayers'] ?? business['includedPlayers'] ?? post['included_players'] ?? business['included_players'] ?? 0}',
+          ) ??
+          0,
+      additionalPlayerFee:
+          double.tryParse(
+            '${post['additionalPlayerFee'] ?? business['additionalPlayerFee'] ?? post['additional_player_fee'] ?? business['additional_player_fee'] ?? 0}',
+          ) ??
+          0,
       tags: tags,
       rateLabels: rateLabels,
       latitude: 0,

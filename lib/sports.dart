@@ -8,8 +8,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_api.dart';
 import 'app_session.dart';
+import 'booking_pricing.dart';
 import 'saved_items.dart';
 import 'messages_dashboard.dart';
+import 'reviews.dart';
 
 typedef SportsVenue = ({
   int id,
@@ -28,6 +30,11 @@ typedef SportsVenue = ({
   String priceNight,
   List<String> priceLines,
   double maxPrice,
+  double averageRating,
+  int reviewCount,
+  int ratingUserCount,
+  int includedPlayers,
+  double additionalPlayerFee,
   List<String> tags,
   List<String> rateLabels,
   double latitude,
@@ -57,6 +64,7 @@ class SportsVenueDetailPage extends StatefulWidget {
 }
 
 class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
+  final _reviewsApi = AuthApi();
   final Map<String, int> _saveCounts = <String, int>{};
   final Set<String> _savedKeys = <String>{};
   late String _saveKey;
@@ -314,7 +322,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                   borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -328,15 +336,15 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Color(0xFF1B1C1E),
-                                fontSize: 28,
+                                fontSize: 24,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: -1.2,
+                                letterSpacing: -0.6,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Row(
                         children: [
                           Expanded(
@@ -346,7 +354,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: _sportsMuted,
-                                fontSize: 15,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -376,20 +384,18 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Color(0xFFF59E0B),
-                            size: 17,
-                          ),
+                          _ratingStars(widget.venue.averageRating),
                           const SizedBox(width: 5),
-                          const Text(
-                            'New listing',
-                            style: TextStyle(
+                          Text(
+                            widget.venue.averageRating == 0
+                                ? 'No ratings yet'
+                                : widget.venue.averageRating.toStringAsFixed(1),
+                            style: const TextStyle(
                               color: Color(0xFF101B33),
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -397,19 +403,33 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             '  •  ',
                             style: TextStyle(color: Color(0xFFCBD2DD)),
                           ),
-                          Text(
-                            'Reviews available',
-                            style: TextStyle(
-                              color: _sportsOrange,
-                              fontSize: 14,
-                              decoration: TextDecoration.underline,
-                              decorationColor: _sportsOrange,
-                              fontWeight: FontWeight.w700,
+                          TextButton(
+                            key: const ValueKey('sports-venue-open-reviews'),
+                            onPressed: widget.venue.id <= 0
+                                ? null
+                                : _showVenueReviews,
+                            style: TextButton.styleFrom(
+                              foregroundColor: _sportsOrange,
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: Text(
+                              '${widget.venue.reviewCount} '
+                              '${widget.venue.reviewCount == 1 ? 'review' : 'reviews'} · '
+                              '${widget.venue.ratingUserCount} rated',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                decoration: TextDecoration.underline,
+                                decorationColor: _sportsOrange,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       _detailRow(
                         Icons.sports_volleyball_outlined,
                         '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
@@ -430,6 +450,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         ),
                       if (widget.venue.details.trim().isNotEmpty)
                         _detailRow(Icons.notes_outlined, widget.venue.details),
+                      if (widget.venue.additionalPlayerFee > 0 &&
+                          widget.venue.includedPlayers > 0)
+                        _detailRow(
+                          Icons.groups_outlined,
+                          'Includes ${widget.venue.includedPlayers} players · '
+                          'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
+                          'per extra player',
+                        ),
                       if (widget.venue.tags.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         const Text(
@@ -441,10 +469,10 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 7),
                         Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                          spacing: 6,
+                          runSpacing: 6,
                           children: widget.venue.tags
                               .where((tag) => tag.trim().isNotEmpty)
                               .map(
@@ -458,14 +486,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
+                                      horizontal: 10,
+                                      vertical: 6,
                                     ),
                                     child: Text(
                                       tag,
                                       style: const TextStyle(
                                         color: Color(0xFF263247),
-                                        fontSize: 13,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -475,19 +503,19 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               .toList(),
                         ),
                       ],
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 12),
                       if (widget.venue.priceDay.trim().isNotEmpty)
                         Text(
                           widget.venue.priceDay,
                           style: const TextStyle(
                             color: Color(0xFF101B33),
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       const Divider(color: Color(0xFFD8DDE5), thickness: 1),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 14),
                       if (merchantName.isNotEmpty ||
                           widget.venue.merchantEmail.isNotEmpty ||
                           widget.venue.merchantPhone.isNotEmpty) ...[
@@ -495,7 +523,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           'Hosted by merchant',
                           style: TextStyle(
                             color: Color(0xFF1B1C1E),
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -508,9 +536,9 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         Container(
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [Color(0xFFF8FAFC), Color(0xFFFFF7ED)],
@@ -523,7 +551,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               Row(
                                 children: [
                                   CircleAvatar(
-                                    radius: 27,
+                                    radius: 24,
                                     backgroundColor: Colors.grey.shade300,
                                     backgroundImage:
                                         widget.venue.merchantAvatarUrl
@@ -543,14 +571,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                           )
                                         : null,
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
                                       merchantName,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Color(0xFF1B1C1E),
-                                        fontSize: 17,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -583,9 +611,9 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               ),
                               if (widget.venue.merchantEmail.isNotEmpty ||
                                   widget.venue.merchantPhone.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                const Divider(height: 1),
                                 const SizedBox(height: 10),
+                                const Divider(height: 1),
+                                const SizedBox(height: 8),
                                 if (widget.venue.merchantPhone.isNotEmpty)
                                   _contactChip(
                                     Icons.phone_outlined,
@@ -593,7 +621,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   ),
                                 if (widget.venue.merchantEmail.isNotEmpty)
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 8),
+                                    padding: const EdgeInsets.only(top: 6),
                                     child: _contactChip(
                                       Icons.email_outlined,
                                       widget.venue.merchantEmail,
@@ -604,7 +632,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 14),
                       if (widget.venue.rateLabels.isNotEmpty) ...[
                         const Text(
                           'Rates',
@@ -614,12 +642,12 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         for (final rate in widget.venue.rateLabels)
                           _detailRow(Icons.payments_outlined, rate),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                       ],
-                      const SizedBox(height: 22),
+                      const SizedBox(height: 14),
                       if (widget.venue.visitUrl.trim().isNotEmpty)
                         Align(
                           alignment: Alignment.centerLeft,
@@ -653,7 +681,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 12, 14),
+          padding: const EdgeInsets.fromLTRB(14, 10, 10, 12),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.97),
             borderRadius: BorderRadius.circular(20),
@@ -669,18 +697,38 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
           child: Row(
             children: [
               Expanded(
-                child: FittedBox(
-                  alignment: Alignment.centerLeft,
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    widget.venue.priceDay,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Color(0xFF1B1C1E),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FittedBox(
+                      alignment: Alignment.centerLeft,
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        widget.venue.priceDay,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Color(0xFF1B1C1E),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (widget.venue.additionalPlayerFee > 0 &&
+                        widget.venue.includedPlayers > 0)
+                      Text(
+                        '${widget.venue.includedPlayers} included · '
+                        'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
+                        'per extra player',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               SizedBox(
@@ -817,28 +865,57 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
     );
   }
 
+  Widget _ratingStars(double rating) {
+    final value = rating.clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var star = 1; star <= 5; star++)
+          Icon(
+            value >= star
+                ? Icons.star_rounded
+                : value >= star - .5
+                ? Icons.star_half_rounded
+                : Icons.star_outline_rounded,
+            color: const Color(0xFFF59E0B),
+            size: 16,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _showVenueReviews() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => ReviewsSheet(
+      api: _reviewsApi,
+      businessId: widget.venue.id,
+      businessName: widget.venue.name,
+    ),
+  );
+
   Widget _detailRow(IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.only(bottom: 10),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 32,
-          height: 32,
+          width: 30,
+          height: 30,
           decoration: const BoxDecoration(
             color: Color(0xFFF1F3F6),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, size: 17, color: const Color(0xFF4D596D)),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
             text,
             style: const TextStyle(
               color: Color(0xFF263247),
-              fontSize: 14,
-              height: 1.35,
+              fontSize: 13,
+              height: 1.3,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -961,6 +1038,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     final price =
         double.tryParse('${b['pricePerHour'] ?? b['price_per_hour'] ?? 0}') ??
         0;
+    final includedPlayers =
+        int.tryParse('${b['includedPlayers'] ?? b['included_players'] ?? 0}') ??
+        0;
+    final additionalPlayerFee =
+        double.tryParse(
+          '${b['additionalPlayerFee'] ?? b['additional_player_fee'] ?? 0}',
+        ) ??
+        0;
     final rawPeriods = b['ratePeriods'] ?? b['rate_periods'];
     final periods = rawPeriods is List
         ? rawPeriods.whereType<Map>().map((period) {
@@ -1006,6 +1091,20 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
           : periods,
       maxPrice: maxPrice,
+      averageRating:
+          double.tryParse(
+            '${b['averageRating'] ?? b['average_rating'] ?? 0}',
+          ) ??
+          0,
+      reviewCount:
+          int.tryParse('${b['reviewCount'] ?? b['review_count'] ?? 0}') ?? 0,
+      ratingUserCount:
+          int.tryParse(
+            '${b['ratingUserCount'] ?? b['rating_user_count'] ?? 0}',
+          ) ??
+          0,
+      includedPlayers: includedPlayers,
+      additionalPlayerFee: additionalPlayerFee,
       tags: tags,
       rateLabels: periods,
       latitude: 0,
@@ -1103,6 +1202,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     priceNight: '',
     priceLines: const [],
     maxPrice: 0,
+    averageRating: 0,
+    reviewCount: 0,
+    ratingUserCount: 0,
+    includedPlayers: 0,
+    additionalPlayerFee: 0,
     tags: const [],
     rateLabels: const [],
     latitude: 0,
@@ -1152,7 +1256,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       backgroundColor: const Color(0xFFF8F9FF),
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) {
-          final total = rate * hours;
+          final extraPlayerCharge = calculateExtraPlayerCharge(
+            players: players,
+            includedPlayers: venue.includedPlayers,
+            feePerExtraPlayer: venue.additionalPlayerFee,
+          );
+          final total = rate * hours + extraPlayerCharge;
           final cashOnArrival = total / 2;
           final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
           final selectedSlotBooked = _bookingSlotOverlaps(
@@ -1492,6 +1601,21 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         }
                       },
                     ),
+                    if (venue.additionalPlayerFee > 0 &&
+                        venue.includedPlayers > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          '${venue.includedPlayers} players included; '
+                          'each additional player costs PHP '
+                          '${venue.additionalPlayerFee.toStringAsFixed(2)}.',
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 18),
                     const Text(
                       'PAYMENT METHOD',
@@ -1553,6 +1677,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       players.toDouble(),
                       players == 1 ? ' player' : ' players',
                     ),
+                    if (extraPlayerCharge > 0)
+                      _bookingAmountRow(
+                        'Extra players (${players - venue.includedPlayers} × '
+                            'PHP ${venue.additionalPlayerFee.toStringAsFixed(2)})',
+                        extraPlayerCharge,
+                        '',
+                      ),
                     _bookingScheduleRow(
                       context,
                       bookingDate,
@@ -1606,6 +1737,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   bookingTime: bookingTime,
                                   hours: hours,
                                   players: players,
+                                  total: total,
+                                  extraPlayerCharge: extraPlayerCharge,
                                   payment: payment,
                                 );
                               },
@@ -1746,6 +1879,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required TimeOfDay bookingTime,
     required int hours,
     required int players,
+    required double total,
+    required double extraPlayerCharge,
     required String payment,
   }) async {
     final session = await AppSession.load();
@@ -1774,7 +1909,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         players: players,
         payment: payment,
         onlineProvider: onlineProvider,
-        total: venue.maxPrice * hours,
+        total: total,
+        extraPlayerCharge: extraPlayerCharge,
       );
       if (!confirmed) return;
       final response = await _api.createBooking(
@@ -1855,6 +1991,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required String payment,
     required String? onlineProvider,
     required double total,
+    required double extraPlayerCharge,
   }) async {
     final paymentLabel = payment == 'online'
         ? onlineProvider == 'gcash'
@@ -1886,6 +2023,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 'Players',
                 '$players player${players == 1 ? '' : 's'}',
               ),
+              if (extraPlayerCharge > 0)
+                _confirmationRow(
+                  'Extra-player fee',
+                  'PHP ${extraPlayerCharge.toStringAsFixed(2)}',
+                ),
               _confirmationRow('Payment', paymentLabel),
               _confirmationRow(
                 'Booking total',

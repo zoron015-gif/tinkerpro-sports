@@ -38,7 +38,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   final Set<String> _sentBookingReminderKeys = <String>{};
   Map<String, dynamic>? _user;
   List<Map<String, dynamic>> _bookings = [];
-  List<Map<String, dynamic>> _savedItems = [];
+  String _selectedHistoryTab = 'Upcoming booking';
 
   @override
   void initState() {
@@ -62,12 +62,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       if (token != null && token.isNotEmpty) {
         final profile = await _api.me(token);
         final bookings = await _api.customerBookings(token);
-        final savedItems = await _api.savedItems(token);
         if (!mounted) return;
         setState(() {
           _user = profile['user'] as Map<String, dynamic>?;
           _bookings = bookings;
-          _savedItems = savedItems;
         });
         _checkBookingReminders();
       }
@@ -269,6 +267,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                                 if (hobby.isEmpty || hobbies.contains(hobby)) {
                                   return;
                                 }
+
                                 setDialogState(() {
                                   hobbies.add(hobby);
                                   hobbyController.clear();
@@ -374,6 +373,174 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     }
   }
 
+  Future<void> _openSettings(BuildContext context) async {
+    final action = await showGeneralDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close settings',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) => Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: Colors.white,
+          elevation: 12,
+          child: SizedBox(
+            width: MediaQuery.sizeOf(dialogContext).width * .82,
+            height: double.infinity,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.settings_outlined,
+                          color: _profileOrange,
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Settings',
+                            style: TextStyle(
+                              color: _profileInk,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close settings',
+                          onPressed: () => Navigator.pop(dialogContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: _profileLine),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Edit profile'),
+                    onTap: () => Navigator.pop(dialogContext, 'edit'),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.swap_horiz_rounded),
+                    title: const Text('Switch to Host Portal'),
+                    onTap: () => Navigator.pop(dialogContext, 'switch'),
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.red,
+                    ),
+                    title: const Text(
+                      'Log out',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () => Navigator.pop(dialogContext, 'logout'),
+                  ),
+                  const Spacer(),
+                  const Divider(height: 1, color: _profileLine),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'SUPPORT',
+                        style: TextStyle(
+                          color: _profileMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, 'help'),
+                            icon: const Icon(
+                              Icons.help_outline_rounded,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Help Center',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 10,
+                              ),
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, 'rules'),
+                            icon: const Icon(Icons.gavel_outlined, size: 18),
+                            label: const Text(
+                              'Court Rules',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 10,
+                              ),
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'edit':
+        await _editProfile();
+      case 'switch':
+        _message(context, 'Host portal is opening soon.');
+      case 'logout':
+        await _logout(context);
+      case 'help':
+        _message(context, 'Help center coming soon.');
+      case 'rules':
+        _message(context, 'Court rules coming soon.');
+      case null:
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = _name;
@@ -402,24 +569,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             onPressed: () => _message(context, 'Your QR code is ready soon.'),
             icon: const Icon(Icons.qr_code_scanner_rounded),
           ),
-          InkWell(
-            onTap: _editProfile,
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: const Color(0xFFFFF1E4),
-                backgroundImage: _avatarImage(_user?['avatarUrl']),
-                child: _hasAvatar(_user?['avatarUrl'])
-                    ? null
-                    : const Icon(
-                        Icons.edit_outlined,
-                        color: _profileOrange,
-                        size: 17,
-                      ),
-              ),
-            ),
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: () => _openSettings(context),
+            icon: const Icon(Icons.settings_outlined),
           ),
         ],
       ),
@@ -450,39 +603,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     .length,
               ),
               const SizedBox(height: 10),
-              _bookingOverviewCard(),
+              _profileHistorySection(context),
               const SizedBox(height: 10),
-              _upcomingBookingCard(context),
-              const SizedBox(height: 10),
-              _visitedVenuesCard(context),
-              const SizedBox(height: 10),
-              _savedVenuesCard(),
-              const SizedBox(height: 10),
-              _courtMatchHistoryCard(context),
-              const SizedBox(height: 10),
-              _ownerCard(context),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton(
-                    onPressed: () =>
-                        _message(context, 'Help center coming soon.'),
-                    child: const Text('Help Center'),
-                  ),
-                  const Text('•', style: TextStyle(color: _profileMuted)),
-                  TextButton(
-                    onPressed: () =>
-                        _message(context, 'Court rules coming soon.'),
-                    child: const Text('Court Rules'),
-                  ),
-                  const Text('•', style: TextStyle(color: _profileMuted)),
-                  TextButton(
-                    onPressed: () => _logout(context),
-                    child: const Text('Log Out'),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -701,72 +823,89 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 
   Widget _statDivider() => Container(height: 34, width: 1, color: _profileLine);
 
-  Widget _bookingOverviewCard() {
-    final pending = _bookings
-        .where((booking) => _status(booking) == 'pending')
-        .length;
-    final approved = _bookings
-        .where((booking) => _status(booking) == 'approved')
-        .length;
-    final completed = _completed.length;
-    final cancelled = _bookings
-        .where(
-          (booking) =>
-              const {'cancelled', 'expired'}.contains(_status(booking)),
-        )
-        .length;
-    return _whiteCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+  Widget _profileHistorySection(BuildContext context) {
+    const tabs = [
+      (
+        title: 'Upcoming match',
+        icon: Icons.calendar_month_outlined,
+        key: 'upcoming-booking',
+      ),
+      (
+        title: 'Venues visited',
+        icon: Icons.location_on_outlined,
+        key: 'venues-visited',
+      ),
+      (
+        title: 'Court match history',
+        icon: Icons.sports_tennis_outlined,
+        key: 'court-match-history',
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'BOOKING ACTIVITY',
-                style: TextStyle(
-                  color: _profileOrange,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
+        Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: _profileLine)),
+          ),
+          child: Row(
+            children: [
+              for (final tab in tabs)
+                Expanded(
+                  child: InkWell(
+                    key: ValueKey('profile-history-tab-${tab.key}'),
+                    onTap: () =>
+                        setState(() => _selectedHistoryTab = tab.title),
+                    child: Tooltip(
+                      message: tab.title,
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: _selectedHistoryTab == tab.title
+                                  ? _profileOrange
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Icon(
+                          tab.icon,
+                          size: 23,
+                          color: _selectedHistoryTab == tab.title
+                              ? _profileOrange
+                              : _profileMuted,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Text(
-              '${_bookings.length} total',
-              style: const TextStyle(color: _profileMuted, fontSize: 10),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            _ActivityStat(
-              value: '$pending',
-              label: 'Pending',
-              color: _profileOrange,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            _selectedHistoryTab,
+            style: const TextStyle(
+              color: _profileInk,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
             ),
-            _ActivityStat(
-              value: '$approved',
-              label: 'Approved',
-              color: Colors.green,
-            ),
-            _ActivityStat(
-              value: '$completed',
-              label: 'Done',
-              color: _profileNavy,
-            ),
-            _ActivityStat(
-              value: '$cancelled',
-              label: 'Closed',
-              color: _profileMuted,
-            ),
-          ],
+          ),
         ),
+        const SizedBox(height: 8),
+        switch (_selectedHistoryTab) {
+          'Venues visited' => _visitedVenuesCard(context),
+          'Court match history' => _courtMatchHistoryCard(context),
+          _ => _upcomingBookingCard(context),
+        },
       ],
     );
   }
-
-  String _status(Map<String, dynamic> booking) =>
-      '${booking['status'] ?? 'pending'}'.trim().toLowerCase();
 
   DateTime? _bookingStart(Map<String, dynamic> booking) {
     final date = '${booking['date'] ?? ''}'.trim();
@@ -1103,10 +1242,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   );
 
   Widget _visitedVenuesCard(BuildContext context) {
-    final venues = _completed
-        .map((booking) => '${booking['venueName'] ?? 'Venue'}')
-        .toSet()
-        .toList();
+    final venues = _visitedVenueEntries;
     return _whiteCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 17),
       children: [
@@ -1128,37 +1264,176 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          venues.isEmpty
-              ? 'No completed court visits yet.'
-              : venues.join(' · '),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _profileInk,
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
-          ),
-        ),
+        if (venues.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'No completed court visits yet.',
+                style: TextStyle(
+                  color: _profileInk,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          )
+        else ...[
+          const SizedBox(height: 8),
+          for (final venue in venues.take(2)) ...[
+            _visitedVenueItem(venue),
+            if (venue != venues.take(2).last) const SizedBox(height: 8),
+          ],
+        ],
       ],
     );
   }
 
-  Widget _savedVenuesCard() {
-    final titles = _savedItems
-        .map((item) => '${item['title'] ?? ''}'.trim())
-        .where((title) => title.isNotEmpty)
-        .take(3)
+  List<({String name, List<Map<String, dynamic>> bookings})>
+  get _visitedVenueEntries {
+    final venues = <String, List<Map<String, dynamic>>>{};
+    for (final booking in _completed) {
+      final name = '${booking['venueName'] ?? 'Venue'}';
+      venues.putIfAbsent(name, () => []).add(booking);
+    }
+    return venues.entries
+        .map((entry) => (name: entry.key, bookings: entry.value))
         .toList();
+  }
+
+  Widget _visitedVenueItem(
+    ({String name, List<Map<String, dynamic>> bookings}) venue, {
+    String? details,
+    String? badge,
+    VoidCallback? onTap,
+  }) {
+    final latestBooking = venue.bookings.first;
+    final image = _avatarImage(
+      latestBooking['imageUrl'] ??
+          (latestBooking['imageUrls'] is List &&
+                  (latestBooking['imageUrls'] as List).isNotEmpty
+              ? (latestBooking['imageUrls'] as List).first
+              : null),
+    );
+    final price =
+        latestBooking['pricePerHour'] ??
+        latestBooking['venuePricePerHour'] ??
+        latestBooking['venue_price_per_hour'];
+    final amount = price is num ? price.toDouble() : double.tryParse('$price');
+    final date = '${latestBooking['date'] ?? ''}'.trim();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: _profilePage,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _profileLine),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 68,
+                  height: 58,
+                  child: image == null
+                      ? const ColoredBox(
+                          color: Color(0xFFFFF1E4),
+                          child: Icon(
+                            Icons.sports_tennis_rounded,
+                            color: _profileOrange,
+                          ),
+                        )
+                      : Image(
+                          image: image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: Color(0xFFFFF1E4),
+                            child: Icon(
+                              Icons.sports_tennis_rounded,
+                              color: _profileOrange,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      venue.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _profileInk,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      amount == null
+                          ? 'Hourly rate unavailable'
+                          : 'PHP ${amount.toStringAsFixed(2)} / hour',
+                      style: const TextStyle(
+                        color: _profileNavy,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      date.isEmpty ? 'Visit date unavailable' : 'Visited $date',
+                      style: const TextStyle(
+                        color: _profileMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (details != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        details,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _profileMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (badge != null)
+                _smallPill(badge)
+              else if (venue.bookings.length > 1) ...[
+                const SizedBox(width: 6),
+                _smallPill('${venue.bookings.length} visits'),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _courtMatchHistoryCard(BuildContext context) {
+    final bookings = _completed.take(2).toList();
     return _whiteCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       children: [
         Row(
           children: [
             const Expanded(
               child: Text(
-                'SAVED VENUES',
+                'COURT MATCH HISTORY',
                 style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
@@ -1167,63 +1442,36 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ),
             ),
             TextButton(
-              onPressed: () => _showSavedVenues(context),
+              onPressed: () => _showCourtMatchHistory(context),
               child: const Text('View all'),
             ),
           ],
         ),
-        const SizedBox(height: 5),
-        Text(
-          titles.isEmpty
-              ? 'Save a venue from Explore to find it quickly here.'
-              : titles.join(' · '),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _profileInk,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        if (_completed.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Completed bookings will appear here.',
+                style: TextStyle(
+                  color: _profileInk,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          )
+        else ...[
+          const SizedBox(height: 8),
+          for (final entry in bookings.asMap().entries) ...[
+            _historyBookingCard(context, entry.value, entry.key),
+            if (entry.key < bookings.length - 1) const SizedBox(height: 8),
+          ],
+        ],
       ],
     );
   }
-
-  Widget _courtMatchHistoryCard(BuildContext context) => _whiteCard(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-    children: [
-      Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'COURT MATCH HISTORY',
-              style: TextStyle(
-                color: _profileOrange,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => _showCourtMatchHistory(context),
-            child: const Text('View all'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Text(
-        _completed.isEmpty
-            ? 'Completed bookings will appear here.'
-            : '${_completed.length} completed court match'
-                  '${_completed.length == 1 ? '' : 'es'}',
-        style: const TextStyle(
-          color: _profileInk,
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    ],
-  );
 
   Future<void> _showCourtMatchHistory(BuildContext context) =>
       _showProfileListSheet(
@@ -1235,102 +1483,21 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             .asMap()
             .entries
             .map(
-              (entry) => _historyBookingCard(
-                entry.value,
-                entry.key,
-                Icons.sports_tennis_rounded,
-              ),
+              (entry) => _historyBookingCard(context, entry.value, entry.key),
             )
             .toList(),
       );
 
   Future<void> _showVisitedVenues(BuildContext context) {
-    final venues = <String, List<Map<String, dynamic>>>{};
-    for (final booking in _completed) {
-      final name = '${booking['venueName'] ?? 'Venue'}';
-      venues.putIfAbsent(name, () => []).add(booking);
-    }
+    final venues = _visitedVenueEntries;
     return _showProfileListSheet(
       context,
       title: 'Venues visited',
       countLabel: '${venues.length} venues',
       emptyText: 'No completed court visits yet.',
-      children: venues.entries
-          .map(
-            (entry) => _whiteCard(
-              padding: const EdgeInsets.all(14),
-              children: [
-                Row(
-                  children: [
-                    const _RoundIcon(icon: Icons.location_on_outlined),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        entry.key,
-                        style: const TextStyle(
-                          color: _profileInk,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    _smallPill(
-                      '${entry.value.length} visit${entry.value.length == 1 ? '' : 's'}',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  entry.value
-                      .map((booking) => '${booking['date'] ?? ''}')
-                      .join(' · '),
-                  style: const TextStyle(color: _profileMuted, fontSize: 11),
-                ),
-              ],
-            ),
-          )
-          .toList(),
+      children: venues.map(_visitedVenueItem).toList(),
     );
   }
-
-  Future<void> _showSavedVenues(BuildContext context) => _showProfileListSheet(
-    context,
-    title: 'Saved venues',
-    countLabel: '${_savedItems.length} saved',
-    emptyText: 'No saved venues yet.',
-    children: _savedItems
-        .map(
-          (item) => _whiteCard(
-            padding: const EdgeInsets.all(14),
-            children: [
-              Row(
-                children: [
-                  const _RoundIcon(icon: Icons.bookmark_outline_rounded),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '${item['title'] ?? 'Saved venue'}',
-                      style: const TextStyle(
-                        color: _profileInk,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if ('${item['subtitle'] ?? ''}'.trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${item['subtitle']}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _profileMuted, fontSize: 11),
-                ),
-              ],
-            ],
-          ),
-        )
-        .toList(),
-  );
 
   Future<void> _showProfileListSheet(
     BuildContext context, {
@@ -1411,43 +1578,171 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   }
 
   Widget _historyBookingCard(
+    BuildContext context,
     Map<String, dynamic> booking,
     int index,
-    IconData icon,
-  ) => _whiteCard(
-    padding: const EdgeInsets.all(14),
-    children: [
-      Row(
-        children: [
-          _RoundIcon(icon: icon),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '${booking['venueName'] ?? 'Venue'}',
-              style: const TextStyle(
-                color: _profileInk,
-                fontWeight: FontWeight.w900,
-              ),
+  ) => _visitedVenueItem(
+    (name: '${booking['venueName'] ?? 'Venue'}', bookings: [booking]),
+    details:
+        'Completed · ${_time(booking['startTime'])} · '
+        '${booking['durationHours'] ?? 0} hour(s) · '
+        '${booking['players'] ?? 0} players',
+    badge: '#${index + 1}',
+    onTap: () => _showCompletedMatchDetails(context, booking, index),
+  );
+
+  Future<void> _showCompletedMatchDetails(
+    BuildContext context,
+    Map<String, dynamic> booking,
+    int index,
+  ) {
+    final image = _avatarImage(
+      booking['imageUrl'] ??
+          (booking['imageUrls'] is List &&
+                  (booking['imageUrls'] as List).isNotEmpty
+              ? (booking['imageUrls'] as List).first
+              : null),
+    );
+    final hourlyRate = _bookingAmount(
+      booking['pricePerHour'] ?? booking['venuePricePerHour'],
+    );
+    final total = _bookingAmount(booking['total']);
+    final extraPlayerCharge = _bookingAmount(booking['extraPlayerCharge']);
+
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .88,
+          ),
+          decoration: const BoxDecoration(
+            color: _profilePage,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: _profileLine,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 190,
+                    child: image == null
+                        ? const ColoredBox(
+                            color: Color(0xFFFFF1E4),
+                            child: Icon(
+                              Icons.sports_tennis_rounded,
+                              color: _profileOrange,
+                              size: 44,
+                            ),
+                          )
+                        : Image(
+                            image: image,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const ColoredBox(
+                              color: Color(0xFFFFF1E4),
+                              child: Icon(
+                                Icons.sports_tennis_rounded,
+                                color: _profileOrange,
+                                size: 44,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${booking['venueName'] ?? 'Venue'}',
+                        style: const TextStyle(
+                          color: _profileInk,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    _smallPill('#${index + 1}'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Completed court match',
+                  style: TextStyle(
+                    color: _profileOrange,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _bookingDetailLine(
+                  Icons.calendar_today_outlined,
+                  '${booking['date'] ?? 'Date unavailable'} · '
+                  '${_time(booking['startTime'])}',
+                ),
+                _bookingDetailLine(
+                  Icons.schedule_outlined,
+                  '${booking['durationHours'] ?? 0} hour(s) · '
+                  '${booking['players'] ?? 0} players',
+                ),
+                _bookingDetailLine(
+                  Icons.payment_outlined,
+                  '${booking['paymentMethod'] ?? 'Payment method not specified'}',
+                ),
+                if (hourlyRate != null)
+                  _bookingDetailLine(
+                    Icons.sell_outlined,
+                    'PHP ${hourlyRate.toStringAsFixed(2)} / hour',
+                  ),
+                if (extraPlayerCharge != null && extraPlayerCharge > 0)
+                  _bookingDetailLine(
+                    Icons.group_add_outlined,
+                    'Extra player fee: PHP '
+                    '${extraPlayerCharge.toStringAsFixed(2)}',
+                  ),
+                if (total != null)
+                  _bookingDetailLine(
+                    Icons.receipt_long_outlined,
+                    'Booking total: PHP ${total.toStringAsFixed(2)}',
+                  ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
             ),
           ),
-          _smallPill('#${index + 1}'),
-        ],
+        ),
       ),
-      const SizedBox(height: 8),
-      _bookingDetailLine(
-        Icons.calendar_today_outlined,
-        '${booking['date'] ?? ''} · ${_time(booking['startTime'])}',
-      ),
-      _bookingDetailLine(
-        Icons.schedule_outlined,
-        '${booking['durationHours'] ?? 0} hour(s) · ${booking['players'] ?? 0} players',
-      ),
-      _bookingDetailLine(
-        Icons.check_circle_outline_rounded,
-        'Completed · ${booking['paymentMethod'] ?? 'Payment recorded'}',
-      ),
-    ],
-  );
+    );
+  }
+
+  double? _bookingAmount(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value');
+  }
 
   String _time(dynamic value) {
     final raw = '$value';
@@ -1686,54 +1981,6 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     ],
   );
 
-  Widget _ownerCard(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: _profileOrange,
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Row(
-      children: [
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'COURT OWNERS',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Switch to Host Portal',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              Text(
-                'List your court, manage slots & payouts',
-                style: TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ],
-          ),
-        ),
-        OutlinedButton(
-          onPressed: () => _message(context, 'Host portal is opening soon.'),
-          style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: _profileOrange,
-            side: BorderSide.none,
-          ),
-          child: const Text('Switch', style: TextStyle(fontSize: 10)),
-        ),
-      ],
-    ),
-  );
-
   Widget _whiteCard({
     required List<Widget> children,
     EdgeInsetsGeometry padding = const EdgeInsets.all(14),
@@ -1854,36 +2101,6 @@ class _Stat extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: _profileMuted, fontSize: 9)),
-      ],
-    ),
-  );
-}
-
-class _ActivityStat extends StatelessWidget {
-  const _ActivityStat({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 3),
         Text(label, style: const TextStyle(color: _profileMuted, fontSize: 9)),
       ],
     ),

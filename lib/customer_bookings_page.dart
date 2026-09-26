@@ -126,6 +126,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   late Future<List<Booking>> _bookings;
   int _unreadBookingCount = 0;
   int _unreadMessageCount = 0;
+  String? _messageCountError;
 
   @override
   void initState() {
@@ -153,8 +154,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         (total, conversation) =>
             total + ((conversation['unreadCount'] as num?)?.toInt() ?? 0),
       );
-    } on Exception {
-      _unreadMessageCount = 0;
+      _messageCountError = null;
+    } on Exception catch (error) {
+      _messageCountError = 'Unread message count could not be updated: $error';
     }
     return bookings;
   }
@@ -215,6 +217,24 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             length: 3,
             child: Column(
               children: [
+                if (_messageCountError != null)
+                  MaterialBanner(
+                    backgroundColor: const Color(0xFFFFF1E3),
+                    leading: const Icon(
+                      Icons.sync_problem_rounded,
+                      color: Color(0xFFB85C00),
+                    ),
+                    content: Text(
+                      _messageCountError!,
+                      style: const TextStyle(color: Color(0xFF101B33)),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: _refresh,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
                 if (approved.isNotEmpty || completed.isNotEmpty)
                   _bookingStatusBanner(approved, completed),
                 Material(
@@ -848,6 +868,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               color: Color(0xFF101B33),
             ),
           ),
+          if (_amount(booking['extraPlayerCharge']) > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'Includes extra-player fee: PHP '
+                '${_amount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF4C5B72),
+                ),
+              ),
+            ),
           const SizedBox(height: 2),
           Text(
             'Downpayment: PHP ${downpayment.toStringAsFixed(2)}',

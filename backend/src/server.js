@@ -28,6 +28,37 @@ function normalizeText(value, max = 255) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+function parseBusinessCoordinates(body) {
+  const hasLatitude = Object.prototype.hasOwnProperty.call(body, 'latitude');
+  const hasLongitude = Object.prototype.hasOwnProperty.call(body, 'longitude');
+  if (!hasLatitude && !hasLongitude) {
+    return { provided: false, valid: true, latitude: null, longitude: null };
+  }
+  const rawLatitude = body.latitude;
+  const rawLongitude = body.longitude;
+  if (
+    (rawLatitude === null || rawLatitude === '') &&
+    (rawLongitude === null || rawLongitude === '')
+  ) {
+    return { provided: true, valid: true, latitude: null, longitude: null };
+  }
+  const latitude = Number(rawLatitude);
+  const longitude = Number(rawLongitude);
+  const valid =
+    Number.isFinite(latitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    Number.isFinite(longitude) &&
+    longitude >= -180 &&
+    longitude <= 180;
+  return {
+    provided: true,
+    valid,
+    latitude: valid ? latitude : null,
+    longitude: valid ? longitude : null,
+  };
+}
+
 function eventDetailsFromBody(body) {
   const list = (value) =>
     Array.isArray(value)
@@ -166,6 +197,117 @@ app.get('/health', async (req, res, next) => {
   try {
     await pool.query('SELECT 1');
     return res.json({ status: 'ok', database: 'connected' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch('/api/messages/conversations/:id/state', requireAuth, async (req, res, next) => {
+  const conversationId = Number(req.params.id);
+  if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
+    return res.status(400).json({ error: 'The conversation is invalid.' });
+  }
+  const hasArchived = typeof req.body.archived === 'boolean';
+  const hasUnread = typeof req.body.unread === 'boolean';
+  if (!hasArchived && !hasUnread) {
+    return res.status(400).json({ error: 'A valid conversation state is required.' });
+  }
+  try {
+    const [members] = await pool.execute(
+      `SELECT conversation_id FROM conversation_members
+       WHERE conversation_id = ? AND user_id = ? AND deleted_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    if (members.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found.' });
+    }
+    const updates = [];
+    const values = [];
+    if (hasArchived) {
+      updates.push('archived_at = ?');
+      values.push(req.body.archived ? new Date() : null);
+    }
+    if (hasUnread) {
+      updates.push('manually_unread_at = ?');
+      values.push(req.body.unread ? new Date() : null);
+    }
+    values.push(conversationId, req.auth.sub);
+    await pool.execute(
+      `UPDATE conversation_members SET ${updates.join(', ')}
+       WHERE conversation_id = ? AND user_id = ?`,
+      values,
+    );
+    if (req.body.unread === false) {
+      await pool.execute(
+        `INSERT IGNORE INTO message_reads (message_id, user_id)
+         SELECT id, ? FROM messages
+         WHERE conversation_id = ? AND sender_id <> ?`,
+        [req.auth.sub, conversationId, req.auth.sub],
+      );
+    }
+    return res.json({ message: 'Conversation updated.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
+  const conversationId = Number(req.params.id);
+  if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
+    return res.status(400).json({ error: 'The conversation is invalid.' });
+  }
+  try {
+    const [result] = await pool.execute(
+      `UPDATE conversation_members SET deleted_at = CURRENT_TIMESTAMP
+       WHERE conversation_id = ? AND user_id = ? AND deleted_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Conversation not found.' });
+    }
+    return res.json({ message: 'Conversation deleted for you.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/messages/blocks/:userId', requireAuth, async (req, res, next) => {
+  const blockedUserId = Number(req.params.userId);
+  if (!Number.isSafeInteger(blockedUserId) ||
+      blockedUserId <= 0 ||
+      blockedUserId === Number(req.auth.sub)) {
+    return res.status(400).json({ error: 'The user to block is invalid.' });
+  }
+  try {
+    const [users] = await pool.execute(
+      `SELECT id FROM users WHERE id = ? AND status = 'active' LIMIT 1`,
+      [blockedUserId],
+    );
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    await pool.execute(
+      `INSERT IGNORE INTO user_blocks (blocker_id, blocked_user_id)
+       VALUES (?, ?)`,
+      [req.auth.sub, blockedUserId],
+    );
+    return res.json({ message: 'User blocked.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.delete('/api/messages/blocks/:userId', requireAuth, async (req, res, next) => {
+  const blockedUserId = Number(req.params.userId);
+  if (!Number.isSafeInteger(blockedUserId) || blockedUserId <= 0) {
+    return res.status(400).json({ error: 'The user to unblock is invalid.' });
+  }
+  try {
+    await pool.execute(
+      `DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_user_id = ?`,
+      [req.auth.sub, blockedUserId],
+    );
+    return res.json({ message: 'User unblocked.' });
   } catch (error) {
     return next(error);
   }
@@ -597,17 +739,40 @@ app.get('/api/messages/conversations', requireAuth, async (req, res, next) => {
     const [rows] = await pool.execute(
       `SELECT c.id, c.type, c.title, c.created_at AS createdAt,
               m.body AS lastMessage, m.created_at AS lastMessageAt,
-              (SELECT COUNT(*) FROM messages unread
-               WHERE unread.conversation_id = c.id
-                 AND unread.sender_id <> ? AND unread.read_at IS NULL) AS unreadCount
+              cm.archived_at IS NOT NULL AS archived,
+              cm.manually_unread_at IS NOT NULL AS manuallyUnread,
+              (cm.manually_unread_at IS NOT NULL OR
+               (SELECT COUNT(*) FROM messages unread
+                WHERE unread.conversation_id = c.id
+                  AND unread.sender_id <> ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM message_reads mr
+                    WHERE mr.message_id = unread.id AND mr.user_id = ?
+                  )) > 0)
+                AS unreadCount,
+              EXISTS (
+                SELECT 1
+                FROM conversation_members other
+                JOIN user_blocks ub
+                  ON ub.blocker_id = ? AND ub.blocked_user_id = other.user_id
+                WHERE other.conversation_id = c.id
+                  AND other.user_id <> ?
+              ) AS blockedByMe
        FROM conversations c
        JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
        LEFT JOIN messages m ON m.id = (
          SELECT MAX(latest.id) FROM messages latest
          WHERE latest.conversation_id = c.id
        )
+       WHERE cm.deleted_at IS NULL
        ORDER BY COALESCE(m.created_at, c.created_at) DESC`,
-      [req.auth.sub, req.auth.sub],
+      [
+        req.auth.sub,
+        req.auth.sub,
+        req.auth.sub,
+        req.auth.sub,
+        req.auth.sub,
+      ],
     );
     for (const conversation of rows) {
       const [members] = await pool.execute(
@@ -642,16 +807,16 @@ app.post('/api/messages/conversations', requireAuth, async (req, res, next) => {
   }
   try {
     if (!isGroup) {
-      const [existing] = await pool.execute(
-        `SELECT c.id FROM conversations c
-         JOIN conversation_members cm ON cm.conversation_id = c.id
-         WHERE c.type = 'direct' AND cm.user_id IN (?, ?)
-         GROUP BY c.id
-         HAVING COUNT(DISTINCT cm.user_id) = 2 AND COUNT(*) = 2
+      const [blocks] = await pool.execute(
+        `SELECT 1 FROM user_blocks
+         WHERE (blocker_id = ? AND blocked_user_id = ?)
+            OR (blocker_id = ? AND blocked_user_id = ?)
          LIMIT 1`,
-        [req.auth.sub, participantIds[0]],
+        [req.auth.sub, participantIds[0], participantIds[0], req.auth.sub],
       );
-      if (existing.length > 0) return res.json({ conversationId: existing[0].id });
+      if (blocks.length > 0) {
+        return res.status(403).json({ error: 'This conversation is blocked.' });
+      }
     }
     const placeholders = participantIds.map(() => '?').join(', ');
     const [users] = await pool.execute(
@@ -665,6 +830,38 @@ app.post('/api/messages/conversations', requireAuth, async (req, res, next) => {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      if (!isGroup) {
+        const directParticipants = [Number(req.auth.sub), participantIds[0]];
+        await connection.execute(
+          `SELECT id FROM users
+           WHERE id IN (?, ?) ORDER BY id FOR UPDATE`,
+          directParticipants,
+        );
+        const [existing] = await connection.execute(
+          `SELECT c.id FROM conversations c
+           JOIN conversation_members cm ON cm.conversation_id = c.id
+           WHERE c.type = 'direct' AND cm.user_id IN (?, ?)
+           GROUP BY c.id
+           HAVING COUNT(DISTINCT cm.user_id) = 2 AND COUNT(*) = 2
+           ORDER BY COALESCE(
+             (SELECT MAX(m.created_at) FROM messages m
+              WHERE m.conversation_id = c.id),
+             c.created_at
+           ) DESC, c.id DESC
+           LIMIT 1`,
+          directParticipants,
+        );
+        if (existing.length > 0) {
+          await connection.execute(
+            `UPDATE conversation_members
+             SET archived_at = NULL, deleted_at = NULL, manually_unread_at = NULL
+             WHERE conversation_id = ? AND user_id = ?`,
+            [existing[0].id, req.auth.sub],
+          );
+          await connection.commit();
+          return res.json({ conversationId: existing[0].id });
+        }
+      }
       const [result] = await connection.execute(
         'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
         [isGroup ? 'group' : 'direct', title, req.auth.sub],
@@ -700,17 +897,37 @@ async function isConversationMember(conversationId, userId) {
 app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
   try {
     const conversationId = Number(req.params.id);
-    if (!(await isConversationMember(conversationId, req.auth.sub))) {
+    const [members] = await pool.execute(
+      `SELECT 1 FROM conversation_members
+       WHERE conversation_id = ? AND user_id = ? AND deleted_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    if (members.length === 0) {
       return res.status(403).json({ error: 'You are not a member of this conversation.' });
     }
+    await pool.execute(
+      `UPDATE conversation_members SET manually_unread_at = NULL
+       WHERE conversation_id = ? AND user_id = ?`,
+      [conversationId, req.auth.sub],
+    );
+    await pool.execute(
+      `INSERT IGNORE INTO message_reads (message_id, user_id)
+       SELECT id, ? FROM messages
+       WHERE conversation_id = ? AND sender_id <> ?`,
+      [req.auth.sub, conversationId, req.auth.sub],
+    );
     const [rows] = await pool.execute(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.created_at AS createdAt,
               m.attachment_json AS attachmentJson,
-              m.read_at AS readAt, u.first_name AS senderFirstName,
+              EXISTS (
+                SELECT 1 FROM message_reads mr
+                WHERE mr.message_id = m.id AND mr.user_id <> ?
+              ) AS isSeen,
+              u.first_name AS senderFirstName,
               u.last_name AS senderLastName
        FROM messages m JOIN users u ON u.id = m.sender_id
        WHERE m.conversation_id = ? ORDER BY m.created_at ASC`,
-      [conversationId],
+      [req.auth.sub, conversationId],
     );
     for (const message of rows) {
       if (typeof message.attachmentJson === 'string') {
@@ -724,11 +941,6 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
       }
       delete message.attachmentJson;
     }
-    await pool.execute(
-      `UPDATE messages SET read_at = CURRENT_TIMESTAMP
-       WHERE conversation_id = ? AND sender_id <> ? AND read_at IS NULL`,
-      [conversationId, req.auth.sub],
-    );
     return res.json({ messages: rows });
   } catch (error) {
     return next(error);
@@ -779,9 +991,38 @@ app.post('/api/messages/conversations/:id', requireAuth, async (req, res, next) 
   }
   try {
     const conversationId = Number(req.params.id);
-    if (!(await isConversationMember(conversationId, req.auth.sub))) {
+    const [members] = await pool.execute(
+      `SELECT 1 FROM conversation_members
+       WHERE conversation_id = ? AND user_id = ? AND deleted_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    if (members.length === 0) {
       return res.status(403).json({ error: 'You are not a member of this conversation.' });
     }
+    const [blocked] = await pool.execute(
+      `SELECT 1
+       FROM conversation_members sender
+       JOIN conversations c
+         ON c.id = sender.conversation_id AND c.type = 'direct'
+       JOIN conversation_members recipient
+         ON recipient.conversation_id = sender.conversation_id
+        AND recipient.user_id <> sender.user_id
+       JOIN user_blocks ub
+         ON (ub.blocker_id = sender.user_id AND ub.blocked_user_id = recipient.user_id)
+         OR (ub.blocker_id = recipient.user_id AND ub.blocked_user_id = sender.user_id)
+       WHERE sender.conversation_id = ? AND sender.user_id = ?
+       LIMIT 1`,
+      [conversationId, req.auth.sub],
+    );
+    if (blocked.length > 0) {
+      return res.status(403).json({ error: 'Messages cannot be sent in this blocked conversation.' });
+    }
+    await pool.execute(
+      `UPDATE conversation_members
+       SET archived_at = NULL, deleted_at = NULL
+       WHERE conversation_id = ?`,
+      [conversationId],
+    );
     await pool.execute(
       'INSERT INTO messages (conversation_id, sender_id, body, attachment_json) VALUES (?, ?, ?, ?)',
       [
@@ -932,10 +1173,13 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
     }
     const [businesses] = await pool.execute(
       `SELECT b.id, b.business_type AS businessType, b.name, b.category, b.address,
+              b.latitude AS latitude, b.longitude AS longitude,
               u.first_name AS ownerFirstName, u.last_name AS ownerLastName,
               CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
               b.facility_type AS facilityType, b.price_per_hour AS pricePerHour,
               b.event_fee AS eventFee,
+              b.included_players AS includedPlayers,
+              b.additional_player_fee AS additionalPlayerFee,
               b.visit_url AS visitUrl,
               b.opening_hours AS hours, b.availability,
               b.enabled,
@@ -944,6 +1188,12 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
               e.attendance_max AS attendanceMax,
               e.accessibility_needs AS accessibilityNeeds,
               e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              COALESCE((SELECT AVG(r.rating) FROM venue_reviews r
+                        WHERE r.business_id = b.id), 0) AS averageRating,
+              (SELECT COUNT(*) FROM venue_reviews r
+               WHERE r.business_id = b.id) AS reviewCount,
+              (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r
+               WHERE r.business_id = b.id) AS ratingUserCount,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
@@ -996,12 +1246,15 @@ app.get('/api/businesses', async (req, res, next) => {
   try {
     const [businesses] = await pool.execute(
       `SELECT b.id, b.business_type AS businessType, b.name, b.category, b.address,
+              b.latitude AS latitude, b.longitude AS longitude,
               CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
               u.first_name AS ownerFirstName, u.last_name AS ownerLastName,
               u.email AS ownerEmail, u.phone AS ownerPhone,
               u.avatar_url AS ownerAvatarUrl,
               b.facility_type AS facilityType, b.price_per_hour AS pricePerHour,
               b.event_fee AS eventFee,
+              b.included_players AS includedPlayers,
+              b.additional_player_fee AS additionalPlayerFee,
               b.visit_url AS visitUrl,
               b.opening_hours AS hours, b.availability, b.enabled,
               b.rate_periods AS ratePeriods,
@@ -1009,6 +1262,12 @@ app.get('/api/businesses', async (req, res, next) => {
               e.attendance_max AS attendanceMax,
               e.accessibility_needs AS accessibilityNeeds,
               e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              COALESCE((SELECT AVG(r.rating) FROM venue_reviews r
+                        WHERE r.business_id = b.id), 0) AS averageRating,
+              (SELECT COUNT(*) FROM venue_reviews r
+               WHERE r.business_id = b.id) AS reviewCount,
+              (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r
+               WHERE r.business_id = b.id) AS ratingUserCount,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
@@ -1118,9 +1377,12 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
   const facilityType = text(req.body.facilityType, 50);
   const hours = text(req.body.hours, 100);
   const visitUrl = text(req.body.visitUrl, 1000);
+  const coordinates = parseBusinessCoordinates(req.body);
   const availability = text(req.body.availability, 255) || 'Any';
   const pricePerHour = Number(req.body.pricePerHour);
   const eventFee = Number(req.body.eventFee);
+  const includedPlayers = Number(req.body.includedPlayers ?? 0);
+  const additionalPlayerFee = Number(req.body.additionalPlayerFee ?? 0);
   const ratePeriods = Array.isArray(req.body.ratePeriods)
     ? req.body.ratePeriods.slice(0, 20)
     : [];
@@ -1132,12 +1394,21 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
     : [];
   const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024) || imageUrls[0] || '';
   const valid =
+    coordinates.valid &&
     ['Sports', 'Event', 'Fitness & Wellness'].includes(businessType) &&
     name && category && address && facilityType && hours &&
     (businessType === 'Event'
       ? Number.isFinite(eventFee) && eventFee > 0
       : Number.isFinite(pricePerHour) &&
-        (pricePerHour > 0 || ratePeriods.length > 0));
+        (pricePerHour > 0 || ratePeriods.length > 0)) &&
+    Number.isInteger(includedPlayers) &&
+    includedPlayers >= 0 &&
+    includedPlayers <= 30 &&
+    Number.isFinite(additionalPlayerFee) &&
+    additionalPlayerFee >= 0 &&
+    additionalPlayerFee <= 99999999.99 &&
+    (additionalPlayerFee === 0 ||
+      (businessType === 'Sports' && includedPlayers > 0));
   if (!valid) {
     return res.status(400).json({ error: 'Please check the business details.' });
   }
@@ -1147,7 +1418,9 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
        SET business_type = ?, name = ?, category = ?, address = ?, facility_type = ?,
            price_per_hour = ?, event_fee = ?, opening_hours = ?, availability = ?,
            rate_periods = ?, amenities_json = ?, details = ?, image_url = ?,
-           image_urls = ?, visit_url = ?
+           image_urls = ?, visit_url = ?, included_players = ?,
+           additional_player_fee = ?,
+           latitude = IF(?, ?, latitude), longitude = IF(?, ?, longitude)
        WHERE id = ? AND merchant_id = ?`,
       [
         businessType, name, category, address, facilityType,
@@ -1155,7 +1428,12 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
         businessType === 'Event' ? eventFee : 0,
         hours, availability, JSON.stringify(ratePeriods), JSON.stringify(tags),
         text(req.body.details, 1000) || null, imageUrl || null,
-        JSON.stringify(imageUrls), visitUrl || null, id, req.auth.sub,
+        JSON.stringify(imageUrls), visitUrl || null,
+        businessType === 'Sports' ? includedPlayers : 0,
+        businessType === 'Sports' ? additionalPlayerFee : 0,
+        coordinates.provided, coordinates.latitude,
+        coordinates.provided, coordinates.longitude,
+        id, req.auth.sub,
       ],
     );
     if (result.affectedRows === 0) {
@@ -1176,9 +1454,12 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   const category = text(req.body.category, 100);
   const address = text(req.body.address, 500);
   const visitUrl = text(req.body.visitUrl, 1000);
+  const coordinates = parseBusinessCoordinates(req.body);
   const facilityType = text(req.body.facilityType, 50);
   const pricePerHour = Number(req.body.pricePerHour);
   const eventFee = Number(req.body.eventFee);
+  const includedPlayers = Number(req.body.includedPlayers ?? 0);
+  const additionalPlayerFee = Number(req.body.additionalPlayerFee ?? 0);
   const hours = text(req.body.hours, 100);
   const availability = text(req.body.availability, 255);
   const ratePeriods = Array.isArray(req.body.ratePeriods)
@@ -1214,6 +1495,7 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
     'Fitness & Wellness',
   ]);
   const validationErrors = [];
+  if (!coordinates.valid) validationErrors.push('map location');
   if (!allowedBusinessTypes.has(businessType)) {
     validationErrors.push('booking type');
   }
@@ -1234,6 +1516,18 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         : ratePeriods.length > 0 ? 'rate periods' : 'price per hour',
     );
   }
+  if (
+    !Number.isInteger(includedPlayers) ||
+    includedPlayers < 0 ||
+    includedPlayers > 30 ||
+    !Number.isFinite(additionalPlayerFee) ||
+    additionalPlayerFee < 0 ||
+    additionalPlayerFee > 99999999.99 ||
+    (additionalPlayerFee > 0 &&
+      (businessType !== 'Sports' || includedPlayers < 1))
+  ) {
+    validationErrors.push('extra-player fee settings');
+  }
   if (validationErrors.length > 0) {
     return res.status(400).json({
       error: `Please check: ${validationErrors.join(', ')}.`,
@@ -1253,8 +1547,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
       `INSERT INTO merchant_businesses
        (merchant_id, business_type, name, category, address, facility_type,
         price_per_hour, event_fee, opening_hours, availability, rate_periods,
-        amenities_json, details, image_url, image_urls, visit_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        amenities_json, details, image_url, image_urls, visit_url,
+        included_players, additional_player_fee, latitude, longitude)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         req.auth.sub,
         businessType,
@@ -1272,6 +1567,10 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         primaryImageUrl || null,
         JSON.stringify(imageUrls),
         visitUrl || null,
+        businessType === 'Sports' ? includedPlayers : 0,
+        businessType === 'Sports' ? additionalPlayerFee : 0,
+        coordinates.latitude,
+        coordinates.longitude,
       ],
     );
     await saveEventDetails(result.insertId, req.body);
@@ -1642,7 +1941,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     connection = await pool.getConnection();
     await connection.beginTransaction();
     const [venues] = await connection.execute(
-      `SELECT b.id, b.merchant_id, b.price_per_hour, b.enabled, u.status AS merchant_status
+      `SELECT b.id, b.merchant_id, b.price_per_hour, b.included_players,
+              b.additional_player_fee, b.enabled, u.status AS merchant_status
        FROM merchant_businesses b JOIN users u ON u.id = b.merchant_id
        WHERE b.id = ? FOR UPDATE`,
       [venueId],
@@ -1665,17 +1965,26 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       return res.status(409).json({ error: 'The venue is already booked for that time.' });
     }
     const pricePerHour = Number(venue.price_per_hour);
-    const total = Number((pricePerHour * durationHours).toFixed(2));
+    const includedPlayers = Number(venue.included_players);
+    const additionalPlayerFee = Number(venue.additional_player_fee);
+    const extraPlayers = Math.max(0, players - includedPlayers);
+    const extraPlayerCharge = Number(
+      (extraPlayers * additionalPlayerFee).toFixed(2),
+    );
+    const total = Number(
+      (pricePerHour * durationHours + extraPlayerCharge).toFixed(2),
+    );
     const downpayment = Number((total * 0.50).toFixed(2));
     const bookingToken = createBookingToken();
     const [result] = await connection.execute(
       `INSERT INTO bookings
        (customer_id, venue_id, booking_date, start_time, duration_hours, players,
         payment_method, price_per_hour, total_amount, downpayment_amount,
-        booking_token_hash, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        extra_player_charge, booking_token_hash, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
-       paymentMethod, pricePerHour, total, downpayment, hashBookingToken(bookingToken)],
+       paymentMethod, pricePerHour, total, downpayment, extraPlayerCharge,
+       hashBookingToken(bookingToken)],
     );
     const [conversation] = await connection.execute(
       'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
@@ -1697,6 +2006,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           type: 'booking',
           bookingId: result.insertId,
           status: 'pending',
+          extraPlayerCharge,
           bookingToken,
         }),
       ],
@@ -1705,7 +2015,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     return res.status(201).json({
       booking: { id: result.insertId, venueId, date: bookingDate, startTime,
         durationHours, players, paymentMethod, pricePerHour, total, downpayment,
-        status: 'pending', bookingToken },
+        extraPlayers, extraPlayerCharge, status: 'pending', bookingToken },
     });
   } catch (error) {
     if (connection) await connection.rollback();
@@ -1733,6 +2043,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
               b.price_per_hour AS pricePerHour, b.total_amount AS total,
+              b.extra_player_charge AS extraPlayerCharge,
               b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt,
               r.id AS reviewId, r.rating AS reviewRating
        FROM bookings b
@@ -1800,6 +2111,7 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               v.business_type AS businessType, b.booking_date AS date,
               b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
               b.payment_method AS paymentMethod, b.price_per_hour AS pricePerHour,
+              b.extra_player_charge AS extraPlayerCharge,
               b.total_amount AS total, b.downpayment_amount AS downpayment,
               b.status, b.created_at AS createdAt
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
@@ -1924,6 +2236,14 @@ function newsPostResponse(row) {
     imageUrls: parseArray(row.image_urls),
     businessImageUrl: row.business_image_url || null,
     visitUrl: row.visit_url || null,
+    latitude:
+      row.latitude === null || row.latitude === undefined
+        ? null
+        : Number(row.latitude),
+    longitude:
+      row.longitude === null || row.longitude === undefined
+        ? null
+        : Number(row.longitude),
     merchantName: [row.merchant_first_name, row.merchant_last_name]
       .filter(Boolean)
       .join(' ') || 'Venue owner',
@@ -1955,6 +2275,7 @@ async function merchantNewsPosts(req, res, next) {
     const [rows] = await pool.execute(
       `SELECT n.*, b.name AS business_name, b.business_type,
               b.category AS business_category, b.address AS business_address,
+              b.latitude, b.longitude,
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
               b.amenities_json, b.details AS business_details,
@@ -2044,6 +2365,7 @@ async function customerNewsFeed(req, res, next) {
     const [rows] = await pool.execute(
       `SELECT n.*, b.name AS business_name, b.business_type,
               b.category AS business_category, b.address AS business_address,
+              b.latitude, b.longitude,
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
               b.amenities_json, b.details AS business_details,
@@ -2190,6 +2512,8 @@ async function ensureMerchantBusinessesSchema() {
       name VARCHAR(255) NOT NULL,
       category VARCHAR(100) NOT NULL,
       address VARCHAR(500) NOT NULL,
+      latitude DOUBLE NULL,
+      longitude DOUBLE NULL,
       facility_type VARCHAR(50) NOT NULL,
       price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
       event_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
@@ -2197,6 +2521,8 @@ async function ensureMerchantBusinessesSchema() {
       availability VARCHAR(255) NOT NULL DEFAULT 'Any',
       enabled TINYINT(1) NOT NULL DEFAULT 1,
       rate_periods JSON NULL,
+      included_players INT UNSIGNED NOT NULL DEFAULT 0,
+      additional_player_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
       amenities_json JSON NULL,
       details VARCHAR(1000) NULL,
       image_url LONGTEXT NULL,
@@ -2211,6 +2537,36 @@ async function ensureMerchantBusinessesSchema() {
         ON DELETE CASCADE
     ) ENGINE=InnoDB
   `);
+  await ensureTableColumn(
+    'merchant_businesses',
+    'included_players',
+    'INT UNSIGNED NOT NULL DEFAULT 0',
+  );
+  await ensureTableColumn(
+    'merchant_businesses',
+    'additional_player_fee',
+    'DECIMAL(10, 2) NOT NULL DEFAULT 0',
+  );
+  await ensureTableColumn('conversation_members', 'archived_at', 'DATETIME NULL');
+  await ensureTableColumn('conversation_members', 'deleted_at', 'DATETIME NULL');
+  await ensureTableColumn(
+    'conversation_members',
+    'manually_unread_at',
+    'DATETIME NULL',
+  );
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      blocker_id BIGINT UNSIGNED NOT NULL,
+      blocked_user_id BIGINT UNSIGNED NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (blocker_id, blocked_user_id),
+      KEY idx_user_blocks_blocked (blocked_user_id),
+      CONSTRAINT fk_user_blocks_blocker FOREIGN KEY (blocker_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_user_blocks_blocked FOREIGN KEY (blocked_user_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
 
   const columns = [
     ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
@@ -2220,6 +2576,8 @@ async function ensureMerchantBusinessesSchema() {
     ['amenities_json', 'JSON NULL'],
     ['image_urls', 'JSON NULL'],
     ['visit_url', 'VARCHAR(1000) NULL'],
+    ['latitude', 'DOUBLE NULL'],
+    ['longitude', 'DOUBLE NULL'],
     ['enabled', 'TINYINT(1) NOT NULL DEFAULT 1'],
   ];
 
@@ -2340,6 +2698,9 @@ async function ensureMessagingSchema() {
       conversation_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      archived_at DATETIME NULL,
+      deleted_at DATETIME NULL,
+      manually_unread_at DATETIME NULL,
       PRIMARY KEY (conversation_id, user_id),
       KEY idx_conversation_members_user (user_id),
       CONSTRAINT fk_conversation_members_conversation FOREIGN KEY (conversation_id)
@@ -2363,6 +2724,19 @@ async function ensureMessagingSchema() {
       CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id)
         REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
       CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS message_reads (
+      message_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (message_id, user_id),
+      KEY idx_message_reads_user (user_id, read_at),
+      CONSTRAINT fk_message_reads_message FOREIGN KEY (message_id)
+        REFERENCES messages (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_message_reads_user FOREIGN KEY (user_id) REFERENCES users (id)
         ON UPDATE CASCADE ON DELETE CASCADE
     ) ENGINE=InnoDB
   `);
@@ -2390,6 +2764,7 @@ async function ensureBookingsSchema() {
       price_per_hour DECIMAL(10, 2) NOT NULL,
       total_amount DECIMAL(10, 2) NOT NULL,
       downpayment_amount DECIMAL(10, 2) NOT NULL,
+      extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
       booking_token_hash CHAR(64) NULL,
       ticket_token_hash CHAR(64) NULL,
       status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
@@ -2407,6 +2782,7 @@ async function ensureBookingsSchema() {
   for (const [name, definition] of [
     ['booking_token_hash', 'CHAR(64) NULL'],
     ['ticket_token_hash', 'CHAR(64) NULL'],
+    ['extra_player_charge', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
   ]) {
     await ensureTableColumn('bookings', name, definition);
   }

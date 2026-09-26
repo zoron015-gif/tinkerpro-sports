@@ -563,6 +563,56 @@ class AuthApi {
     );
   }
 
+  Future<void> setConversationState({
+    required String token,
+    required int conversationId,
+    bool? archived,
+    bool? unread,
+  }) async {
+    await _request(
+      'PATCH',
+      '/api/messages/conversations/$conversationId/state',
+      body: {
+        ...?(archived == null ? null : {'archived': archived}),
+        ...?(unread == null ? null : {'unread': unread}),
+      },
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> deleteConversation({
+    required String token,
+    required int conversationId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/messages/conversations/$conversationId',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<void> blockMessageUser({
+    required String token,
+    required int userId,
+  }) async {
+    await _request(
+      'POST',
+      '/api/messages/blocks/$userId',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<void> unblockMessageUser({
+    required String token,
+    required int userId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/messages/blocks/$userId',
+      headers: _authHeaders(token),
+    );
+  }
+
   // Compatibility aliases for older messaging-page editor snapshots.
   Future<List<Map<String, dynamic>>> messages({
     required String token,
@@ -654,6 +704,8 @@ class AuthApi {
                     ? 'The business management API is unavailable. Restart the backend server and try again.'
                     : path.startsWith('/api/saved-items')
                     ? 'The saved-items API is unavailable. Restart the backend server and try again.'
+                    : path.startsWith('/api/messages/conversations/')
+                    ? 'The messaging API is unavailable. Restart the backend server and try again.'
                     : 'The requested API endpoint was not found.'
               : 'The server returned an invalid response.',
           response.statusCode,

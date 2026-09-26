@@ -1,10 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
+import 'merchant_news_cards_section.dart';
 
 const _addNavy = Color(0xFF192B50);
 const _addInk = Color(0xFF101B33);
@@ -69,11 +72,13 @@ class MerchantAddPage extends StatefulWidget {
     required this.initialBusinessType,
     required this.businesses,
     required this.onBusinessesChanged,
+    this.api,
   });
 
   final String? initialBusinessType;
   final List<Map<String, dynamic>> businesses;
   final Future<void> Function() onBusinessesChanged;
+  final AuthApi? api;
 
   @override
   State<MerchantAddPage> createState() => _MerchantAddPageState();
@@ -93,7 +98,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     ],
   };
 
-  final _api = AuthApi();
+  late final AuthApi _api;
   bool _saving = false;
   String _selectedBusinessType = 'All';
   String _selectedAddSection = 'Booking cards';
@@ -103,6 +108,7 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? AuthApi();
     _loadNewsPosts();
   }
 
@@ -122,6 +128,102 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
 
   int? _postBusinessId(Map<String, dynamic> post) =>
       _id(post['businessId'] ?? post['business_id']);
+
+  double? _mapCoordinate(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value');
+  }
+
+  Future<LatLng?> _chooseBusinessLocation({
+    required double? latitude,
+    required double? longitude,
+  }) {
+    LatLng? selected = latitude == null || longitude == null
+        ? null
+        : LatLng(latitude, longitude);
+    final center = selected ?? const LatLng(10.3157, 123.8854);
+    return showDialog<LatLng>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Pin court location'),
+          content: SizedBox(
+            width: 520,
+            height: MediaQuery.sizeOf(context).height * .58,
+            child: Column(
+              children: [
+                const Text(
+                  'Tap the map to place the pin at the exact court entrance.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: center,
+                        initialZoom: selected == null ? 12 : 15,
+                        onTap: (_, point) =>
+                            setDialogState(() => selected = point),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.myapp',
+                        ),
+                        if (selected != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: selected!,
+                                width: 44,
+                                height: 48,
+                                child: const Icon(
+                                  Icons.location_pin,
+                                  color: _addOrange,
+                                  size: 42,
+                                ),
+                              ),
+                            ],
+                          ),
+                        RichAttributionWidget(
+                          attributions: [
+                            TextSourceAttribution('OpenStreetMap contributors'),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  selected == null
+                      ? 'No map pin selected'
+                      : '${selected!.latitude.toStringAsFixed(6)}, '
+                            '${selected!.longitude.toStringAsFixed(6)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selected == null
+                  ? null
+                  : () => Navigator.pop(dialogContext, selected),
+              child: const Text('Use this location'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _loadNewsPosts() async {
     final token = (await AppSession.load()).apiToken;
@@ -150,8 +252,16 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     final editing = editingBusiness != null;
     final name = TextEditingController();
     final address = TextEditingController();
+    double? latitude = _mapCoordinate(
+      editingBusiness?['latitude'] ?? editingBusiness?['lat'],
+    );
+    double? longitude = _mapCoordinate(
+      editingBusiness?['longitude'] ?? editingBusiness?['lng'],
+    );
     final visitUrl = TextEditingController();
     final price = TextEditingController();
+    final includedPlayers = TextEditingController();
+    final additionalPlayerFee = TextEditingController();
     final details = TextEditingController();
     final categoryOther = TextEditingController();
     final amenityOther = TextEditingController();
@@ -279,8 +389,20 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         editingBusiness?['visitUrl'] as String? ??
         editingBusiness?['visit_url'] as String? ??
         '';
-    price.text =
-        '${editingBusiness?['eventFee'] ?? editingBusiness?['event_fee'] ?? editingBusiness?['pricePerHour'] ?? ''}';
+    final existingPrice = type == 'Event'
+        ? (editingBusiness?['eventFee'] ??
+              editingBusiness?['event_fee'] ??
+              editingBusiness?['pricePerHour'] ??
+              editingBusiness?['price_per_hour'])
+        : (editingBusiness?['pricePerHour'] ??
+              editingBusiness?['price_per_hour'] ??
+              editingBusiness?['price'] ??
+              editingBusiness?['hourlyRate']);
+    price.text = existingPrice?.toString() ?? '';
+    includedPlayers.text =
+        '${editingBusiness?['includedPlayers'] ?? editingBusiness?['included_players'] ?? ''}';
+    additionalPlayerFee.text =
+        '${editingBusiness?['additionalPlayerFee'] ?? editingBusiness?['additional_player_fee'] ?? ''}';
     details.text = editingBusiness?['details'] as String? ?? '';
     dynamic existingEventTypes = editingBusiness?['eventTypes'];
     if (existingEventTypes is String) {
@@ -790,6 +912,63 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                   ? 'Enter an address'
                                   : null,
                             ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final location =
+                                          await _chooseBusinessLocation(
+                                            latitude: latitude,
+                                            longitude: longitude,
+                                          );
+                                      if (location != null && panelOpen) {
+                                        setDialogState(() {
+                                          latitude = location.latitude;
+                                          longitude = location.longitude;
+                                        });
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.location_on_outlined,
+                                    ),
+                                    label: Text(
+                                      latitude == null || longitude == null
+                                          ? 'Choose map pin'
+                                          : 'Update map pin',
+                                    ),
+                                  ),
+                                  if (latitude != null && longitude != null)
+                                    TextButton(
+                                      onPressed: () => setDialogState(() {
+                                        latitude = null;
+                                        longitude = null;
+                                      }),
+                                      child: const Text('Clear pin'),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  latitude == null || longitude == null
+                                      ? 'Add a map pin so customers can find this court.'
+                                      : 'Pinned at ${latitude!.toStringAsFixed(5)}, '
+                                            '${longitude!.toStringAsFixed(5)}',
+                                  style: const TextStyle(
+                                    color: _addMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
                             TextFormField(
                               controller: visitUrl,
                               keyboardType: TextInputType.url,
@@ -847,6 +1026,80 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                     : null;
                               },
                             ),
+                            if (type == 'Sports') ...[
+                              const SizedBox(height: 12),
+                              _sectionLabel('OPTIONAL EXTRA-PLAYER FEE'),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Charge once per booking for each player above the included limit.',
+                                  style: TextStyle(
+                                    color: _addMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: includedPlayers,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Included players',
+                                        hintText: 'e.g. 10',
+                                      ),
+                                      validator: (value) {
+                                        final limit = value?.trim() ?? '';
+                                        final fee = additionalPlayerFee.text
+                                            .trim();
+                                        if (limit.isEmpty && fee.isEmpty) {
+                                          return null;
+                                        }
+                                        final parsed = int.tryParse(limit);
+                                        return parsed == null ||
+                                                parsed < 1 ||
+                                                parsed > 30
+                                            ? 'Enter 1–30 players'
+                                            : null;
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: additionalPlayerFee,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Fee per extra player',
+                                        prefixText: '₱ ',
+                                        hintText: 'e.g. 50',
+                                      ),
+                                      validator: (value) {
+                                        final fee = value?.trim() ?? '';
+                                        if (includedPlayers.text
+                                                .trim()
+                                                .isEmpty &&
+                                            fee.isEmpty) {
+                                          return null;
+                                        }
+                                        final parsed = double.tryParse(fee);
+                                        return parsed == null ||
+                                                !parsed.isFinite ||
+                                                parsed <= 0 ||
+                                                parsed > 99999999.99
+                                            ? 'Enter a valid fee (up to ₱99,999,999.99)'
+                                            : null;
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             if (type != 'Event') ...[
                               const SizedBox(height: 12),
                               _sectionLabel('OPTIONAL RATE PERIODS'),
@@ -1332,6 +1585,8 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                             'name': name.text.trim(),
                             'category': selectedCategory,
                             'address': address.text.trim(),
+                            'latitude': latitude,
+                            'longitude': longitude,
                             'visitUrl': visitUrl.text.trim(),
                             'pricePerHour': type == 'Event'
                                 ? double.parse(price.text.trim())
@@ -1340,6 +1595,15 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                                 : 0,
                             'eventFee': type == 'Event'
                                 ? double.parse(price.text.trim())
+                                : 0,
+                            'includedPlayers': type == 'Sports'
+                                ? int.tryParse(includedPlayers.text.trim()) ?? 0
+                                : 0,
+                            'additionalPlayerFee': type == 'Sports'
+                                ? double.tryParse(
+                                        additionalPlayerFee.text.trim(),
+                                      ) ??
+                                      0
                                 : 0,
                             'ratePeriods': [
                               for (final period in ratePeriods)
@@ -1454,6 +1718,8 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     address.dispose();
     visitUrl.dispose();
     price.dispose();
+    includedPlayers.dispose();
+    additionalPlayerFee.dispose();
     details.dispose();
     categoryOther.dispose();
     amenityOther.dispose();
@@ -1677,7 +1943,15 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         _addSectionTabs(),
         if (_selectedAddSection == 'News cards') ...[
           const SizedBox(height: 16),
-          _newsCards(),
+          MerchantNewsCardsSection(
+            businesses: widget.businesses,
+            posts: _newsPosts,
+            loading: _newsLoading,
+            onCreate: _openNewsForm,
+            onComplete: _openNewsFormForBusiness,
+            onEdit: _openNewsForm,
+            onDelete: _deleteNewsPost,
+          ),
         ] else ...[
           _businessTypeTabs(),
           const SizedBox(height: 16),
@@ -1725,72 +1999,6 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
         _loadNewsPosts();
       }
     },
-  );
-
-  Widget _newsCards() {
-    if (_newsLoading) return const Center(child: CircularProgressIndicator());
-    final postsByBusiness = <int, Map<String, dynamic>>{
-      for (final post in _newsPosts)
-        if (_postBusinessId(post) != null) _postBusinessId(post)!: post,
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        FilledButton.icon(
-          onPressed: _openNewsForm,
-          icon: const Icon(Icons.post_add_rounded),
-          label: const Text('Create news card'),
-        ),
-        const SizedBox(height: 12),
-        if (widget.businesses.isEmpty)
-          const Text(
-            'Add a business first to create its News Card.',
-            style: TextStyle(color: _addMuted),
-          )
-        else
-          for (final business in widget.businesses) ...[
-            if (postsByBusiness[_businessId(business)] == null)
-              _incompleteNewsCard(business),
-            if (postsByBusiness[_businessId(business)] != null)
-              _publishedNewsCard(postsByBusiness[_businessId(business)]!),
-            const SizedBox(height: 8),
-          ],
-      ],
-    );
-  }
-
-  Widget _incompleteNewsCard(Map<String, dynamic> business) => Card(
-    color: const Color(0xFFFFF8F0),
-    child: ListTile(
-      leading: const Icon(Icons.edit_note_rounded, color: _addOrange),
-      title: Text('${business['name'] ?? 'Business'}'),
-      subtitle: const Text('News Card incomplete — add a short venue update.'),
-      trailing: FilledButton(
-        onPressed: () => _openNewsFormForBusiness(business),
-        child: const Text('Complete'),
-      ),
-    ),
-  );
-
-  Widget _publishedNewsCard(Map<String, dynamic> post) => Card(
-    child: ListTile(
-      title: Text('${post['title'] ?? 'News post'}'),
-      subtitle: Text(
-        '${post['body'] ?? ''}\nView info is available on the Booking Card.',
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: PopupMenuButton<String>(
-        onSelected: (value) {
-          if (value == 'edit') _openNewsForm(post);
-          if (value == 'delete') _deleteNewsPost(post);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'edit', child: Text('Edit')),
-          PopupMenuItem(value: 'delete', child: Text('Delete')),
-        ],
-      ),
-    ),
   );
 
   Future<void> _openNewsFormForBusiness(Map<String, dynamic> business) async {
@@ -2163,15 +2371,28 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
     final facility = business['facilityType'] as String? ?? '';
     final hours = business['hours'] as String? ?? '';
     final availability = business['availability'] as String? ?? '';
+    final includedPlayerLimit =
+        int.tryParse(
+          '${business['includedPlayers'] ?? business['included_players'] ?? 0}',
+        ) ??
+        0;
+    final extraPlayerFeeValue =
+        business['additionalPlayerFee'] ?? business['additional_player_fee'];
+    final extraPlayerFee = extraPlayerFeeValue is num
+        ? extraPlayerFeeValue.toDouble()
+        : double.tryParse('$extraPlayerFeeValue') ?? 0;
     final ratePeriods = _businessRatePeriods(business);
     final details = business['details'] as String? ?? '';
     final priceText = _formatPrice(
-      business['eventFee'] ??
-          business['event_fee'] ??
-          business['pricePerHour'] ??
-          business['price_per_hour'] ??
-          business['price'] ??
-          business['hourlyRate'],
+      type == 'Event'
+          ? business['eventFee'] ??
+                business['event_fee'] ??
+                business['pricePerHour'] ??
+                business['price_per_hour']
+          : business['pricePerHour'] ??
+                business['price_per_hour'] ??
+                business['price'] ??
+                business['hourlyRate'],
       hourly: type != 'Event',
     );
     final tags = _businessTags(
@@ -2222,6 +2443,13 @@ class _MerchantAddPageState extends State<MerchantAddPage> {
                   _detail(Icons.business_outlined, 'Facility: $facility'),
                 if (type == 'Sports' && category.isNotEmpty)
                   _detail(Icons.sports_rounded, 'Sport: $category'),
+                if (type == 'Sports' && extraPlayerFee > 0)
+                  _detail(
+                    Icons.groups_rounded,
+                    'Includes $includedPlayerLimit players; '
+                    'PHP ${extraPlayerFee.toStringAsFixed(2)} '
+                    'per extra player',
+                  ),
                 if (type == 'Event' && category.isNotEmpty)
                   _detail(Icons.celebration_outlined, 'Event type: $category'),
                 if (type == 'Fitness & Wellness' && category.isNotEmpty)
