@@ -9,10 +9,15 @@ class AppSession {
   static const _roleKey = 'session_role';
   static const _accountEmailKey = 'session_account_email';
   static const _merchantProfileEmailKey = 'merchant_profile_email';
+  static const _bookingStatusBannerDismissedPrefix =
+      'booking_status_banner_dismissed_';
 
   final SharedPreferences _preferences;
 
   bool get isAuthenticated => _preferences.getBool(_authenticatedKey) ?? false;
+
+  bool get matchNotificationsEnabled =>
+      _preferences.getBool(_matchNotificationsEnabledKey) ?? false;
 
   String? get lastBookingType => _preferences.getString(_lastBookingTypeKey);
 
@@ -50,6 +55,29 @@ class AppSession {
   Future<void> setLastBookingType(String type) async {
     await _preferences.setString(_lastBookingTypeKey, type);
   }
+
+  Future<void> setMatchNotificationsEnabled(bool enabled) async {
+    await _preferences.setBool(_matchNotificationsEnabledKey, enabled);
+  }
+
+  bool bookingStatusBannerDismissed(String bookingKey) =>
+      _preferences.getBool(_bookingStatusBannerDismissedKey(bookingKey)) ??
+      false;
+
+  Future<void> dismissBookingStatusBanner(String bookingKey) async {
+    await _preferences.setBool(
+      _bookingStatusBannerDismissedKey(bookingKey),
+      true,
+    );
+  }
+
+  String _bookingStatusBannerDismissedKey(String bookingKey) {
+    final account = Uri.encodeComponent(accountEmail ?? 'anonymous');
+    return '$_bookingStatusBannerDismissedPrefix${account}_$bookingKey';
+  }
+
+  String get _matchNotificationsEnabledKey =>
+      'match_notifications_enabled_${Uri.encodeComponent(accountEmail ?? 'anonymous')}';
 
   Future<void> clear() async {
     await _preferences.remove(_authenticatedKey);

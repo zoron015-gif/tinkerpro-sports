@@ -1194,6 +1194,15 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
                WHERE r.business_id = b.id) AS reviewCount,
               (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r
                WHERE r.business_id = b.id) AS ratingUserCount,
+              EXISTS (
+                SELECT 1 FROM merchant_news n
+                WHERE n.business_id = b.id
+                  AND n.status = 'published'
+                  AND NULLIF(TRIM(n.title), '') IS NOT NULL
+                  AND NULLIF(TRIM(n.body), '') IS NOT NULL
+                  AND COALESCE(NULLIF(TRIM(n.image_url), ''),
+                               NULLIF(TRIM(b.image_url), '')) IS NOT NULL
+              ) AS hasPublishedNewsCard,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
@@ -1275,6 +1284,15 @@ app.get('/api/businesses', async (req, res, next) => {
        JOIN users u ON u.id = b.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = b.id
        WHERE b.enabled = 1 AND u.status = 'active'
+         AND EXISTS (
+           SELECT 1 FROM merchant_news n
+           WHERE n.business_id = b.id
+             AND n.status = 'published'
+             AND NULLIF(TRIM(n.title), '') IS NOT NULL
+             AND NULLIF(TRIM(n.body), '') IS NOT NULL
+             AND COALESCE(NULLIF(TRIM(n.image_url), ''),
+                          NULLIF(TRIM(b.image_url), '')) IS NOT NULL
+         )
        ORDER BY b.created_at DESC`,
     );
     for (const business of businesses) {
@@ -2218,9 +2236,10 @@ function newsPostResponse(row) {
   return {
     id: Number(row.id),
     businessId: Number(row.business_id),
+    status: row.status,
     title: row.title,
     body: row.body,
-    imageUrl: row.image_url || null,
+    imageUrl: row.image_url || row.business_image_url || null,
     businessName: row.business_name || row.venue_name,
     businessType: row.business_type || null,
     category: row.business_category || null,
@@ -2381,6 +2400,12 @@ async function customerNewsFeed(req, res, next) {
        INNER JOIN merchant_businesses b ON b.id = n.business_id
        INNER JOIN users u ON u.id = b.merchant_id
        WHERE n.status = 'published'
+         AND b.enabled = 1
+         AND u.status = 'active'
+         AND NULLIF(TRIM(n.title), '') IS NOT NULL
+         AND NULLIF(TRIM(n.body), '') IS NOT NULL
+         AND COALESCE(NULLIF(TRIM(n.image_url), ''),
+                      NULLIF(TRIM(b.image_url), '')) IS NOT NULL
        ORDER BY n.created_at DESC`,
     );
     return res.json({ posts: rows.map(newsPostResponse) });

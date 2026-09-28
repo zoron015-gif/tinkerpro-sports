@@ -13,23 +13,24 @@ import 'profile_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
 import 'customer_bookings_page.dart';
+import 'app_bottom_navigation.dart';
 
 const _messageBackground = Color(0xFFF7F9FC);
 const _messageNavy = Color(0xFF192B50);
-const _messageMuted = Color(0xFF68748A);
 const _messageOrange = Color(0xFFFF8200);
-const _messageSoftOrange = Color(0xFFFFE8D2);
 
 class MessagesDashboardPage extends StatefulWidget {
   const MessagesDashboardPage({
     super.key,
     this.owner,
     this.businessTitle,
+    this.initialConversationId,
     this.onFooterNavigate,
   });
 
   final Map<String, dynamic>? owner;
   final String? businessTitle;
+  final int? initialConversationId;
   final ValueChanged<int>? onFooterNavigate;
 
   @override
@@ -46,6 +47,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   XFile? _pendingImage;
   String? _pendingImageData;
   bool _ownerConversationOpened = false;
+  bool _initialConversationOpened = false;
 
   int get _unreadMessageCount => _controller.unreadMessageCount;
 
@@ -108,6 +110,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         );
         if (!mounted || id == null) return;
         await _select(id);
+      } else if (widget.initialConversationId case final conversationId?
+          when !_initialConversationOpened) {
+        _initialConversationOpened = true;
+        await _select(conversationId);
       }
     } on Exception catch (error) {
       if (mounted) {
@@ -229,16 +235,22 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     try {
       switch (action) {
         case 'archive':
+          final archived =
+              !(conversation['archived'] == true ||
+                  conversation['archived'] == 1 ||
+                  conversation['archived'] == '1' ||
+                  conversation['archived'] == 'true');
           await _messagesService.setConversationState(
             token: token,
             conversationId: conversationId,
-            archived: !(conversation['archived'] == true ||
-                conversation['archived'] == 1),
+            archived: archived,
           );
+          _controller.setConversationArchived(conversationId, archived);
           break;
         case 'unread':
-          final markUnread = !(conversation['manuallyUnread'] == true ||
-              conversation['manuallyUnread'] == 1);
+          final markUnread =
+              !(conversation['manuallyUnread'] == true ||
+                  conversation['manuallyUnread'] == 1);
           await _messagesService.setConversationState(
             token: token,
             conversationId: conversationId,
@@ -287,13 +299,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           if (members.length != 1) return;
           final userId = _asInt(members.first['id']);
           if (userId == null) return;
-          final isBlocked = conversation['blockedByMe'] == true ||
+          final isBlocked =
+              conversation['blockedByMe'] == true ||
               conversation['blockedByMe'] == 1;
           if (isBlocked) {
             await _messagesService.unblockUser(token: token, userId: userId);
           } else {
             await _messagesService.blockUser(token: token, userId: userId);
           }
+          _controller.setUserBlocked(userId, !isBlocked);
           break;
         default:
           return;
@@ -579,10 +593,61 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
               : 'Messages',
         ),
         actions: [
+          if (!_showChat)
+            PopupMenuButton<String>(
+              tooltip: 'Conversation settings',
+              icon: const Icon(Icons.settings_outlined),
+              onSelected: (value) {
+                switch (value) {
+                  case 'chats':
+                    _controller.setShowArchivedConversations(false);
+                    _controller.setShowBlockedConversations(false);
+                  case 'archived':
+                    _controller.setShowArchivedConversations(true);
+                  case 'blocked':
+                    _controller.setShowBlockedConversations(true);
+                }
+              },
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem(
+                  value: 'chats',
+                  checked: !_showArchived && !_showBlocked,
+                  child: const Row(
+                    children: [
+                      Icon(Icons.forum_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('Chats'),
+                    ],
+                  ),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'archived',
+                  checked: _showArchived,
+                  child: const Row(
+                    children: [
+                      Icon(Icons.archive_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('Archive'),
+                    ],
+                  ),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'blocked',
+                  checked: _showBlocked,
+                  child: const Row(
+                    children: [
+                      Icon(Icons.block_outlined, size: 20),
+                      SizedBox(width: 12),
+                      Text('Blocked'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           IconButton(
-            tooltip: 'New message',
+            tooltip: 'New conversation',
             onPressed: _startConversation,
-            icon: const Icon(Icons.edit_rounded),
+            icon: const Icon(Icons.people_outline_rounded),
           ),
         ],
       ),
@@ -623,10 +688,6 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     onConversationAction: _handleConversationAction,
                     showArchived: _showArchived,
                     showBlocked: _showBlocked,
-                    onToggleArchived: () => _controller
-                        .setShowArchivedConversations(!_showArchived),
-                    onToggleBlocked: () => _controller
-                        .setShowBlockedConversations(!_showBlocked),
                     currentUserId: _currentUserId,
                   );
                   final chat = _selectedConversation == null
@@ -664,123 +725,35 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
 
   Widget _footer(BuildContext context) {
     final isMerchant = _role == 'merchant';
-    return Theme(
-      data: Theme.of(context).copyWith(
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shadowColor: const Color(0x14000000),
-          elevation: 2,
-          indicatorColor: _messageSoftOrange,
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              color: selected ? _messageOrange : _messageMuted,
-              size: 24,
-            );
-          }),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return TextStyle(
-              color: selected ? const Color(0xFF101B33) : _messageMuted,
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-            );
-          }),
-        ),
-      ),
-      child: NavigationBar(
-        height: 72,
-        elevation: 0,
-        indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        selectedIndex: 2,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) {
-          if (index == 2) return;
-          if (isMerchant) {
-            if (widget.onFooterNavigate != null) {
-              widget.onFooterNavigate!(index);
-            } else if (mounted) {
-              Navigator.of(context).pop();
-            }
-            return;
+    return AppBottomNavigation(
+      selectedIndex: 2,
+      unreadMessageCount: _unreadMessageCount,
+      merchantMode: isMerchant,
+      hideMerchantVenues: isMerchant,
+      onDestinationSelected: (index) {
+        if (index == 2) return;
+        if (isMerchant) {
+          if (widget.onFooterNavigate != null) {
+            widget.onFooterNavigate!(index);
+          } else if (mounted) {
+            Navigator.of(context).pop();
           }
-          final page = switch (index) {
-            0 => NewsFeedPage(onLogout: (_) async {}),
-            1 => SavedDashboardPage(onLogout: (_) async {}),
-            3 => CustomerBookingsPage(onLogout: (_) async {}),
-            4 => ProfileDashboardPage(onLogout: (_) async {}),
-            _ => null,
-          };
-          if (page != null && mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => page),
-              (route) => route.isFirst,
-            );
-          }
-        },
-        destinations: [
-          NavigationDestination(
-            icon: Icon(
-              isMerchant
-                  ? Icons.storefront_outlined
-                  : Icons.location_on_outlined,
-            ),
-            selectedIcon: Icon(
-              isMerchant ? Icons.storefront_rounded : Icons.location_on_rounded,
-            ),
-            label: isMerchant ? 'Venues' : 'Explore',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              isMerchant
-                  ? Icons.add_circle_outline
-                  : Icons.favorite_border_rounded,
-            ),
-            selectedIcon: Icon(
-              isMerchant ? Icons.add_circle : Icons.favorite_rounded,
-            ),
-            label: isMerchant ? 'Add' : 'Saved',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: _unreadMessageCount > 0,
-              label: Text(
-                _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
-              ),
-              child: Icon(Icons.send_outlined),
-            ),
-            selectedIcon: Badge(
-              isLabelVisible: _unreadMessageCount > 0,
-              label: Text(
-                _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
-              ),
-              child: Icon(Icons.send_rounded),
-            ),
-            label: 'Messages',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              isMerchant
-                  ? Icons.payments_outlined
-                  : Icons.calendar_today_outlined,
-            ),
-            selectedIcon: Icon(
-              isMerchant
-                  ? Icons.payments_rounded
-                  : Icons.calendar_today_rounded,
-            ),
-            label: isMerchant ? 'Payouts' : 'Bookings',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
-      ),
+          return;
+        }
+        final page = switch (index) {
+          0 => NewsFeedPage(onLogout: (_) async {}),
+          1 => SavedDashboardPage(onLogout: (_) async {}),
+          3 => CustomerBookingsPage(onLogout: (_) async {}),
+          4 => ProfileDashboardPage(onLogout: (_) async {}),
+          _ => null,
+        };
+        if (page != null && mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => page),
+            (route) => route.isFirst,
+          );
+        }
+      },
     );
   }
 
@@ -802,5 +775,4 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     }
     return false;
   }
-
 }

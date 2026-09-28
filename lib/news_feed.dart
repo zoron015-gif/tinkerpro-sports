@@ -19,6 +19,8 @@ import 'reserve_dashboard.dart';
 import 'reviews.dart';
 import 'all_venues_page.dart';
 import 'merchant_business_status.dart';
+import 'app_card_styles.dart';
+import 'app_bottom_navigation.dart';
 
 const _newsInk = Color(0xFF101B33);
 const _newsMuted = Color(0xFF68748A);
@@ -143,6 +145,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   final MapController _courtMapController = MapController();
   late Future<List<Map<String, dynamic>>> _businesses;
   var _courtMapExpanded = false;
+  var _feedIntroVisible = true;
   Position? _userPosition;
   var _locationLoading = false;
   String _feedArea = 'All areas';
@@ -207,6 +210,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       _posts = refreshed;
     });
     await refreshed;
+  }
+
+  bool _handleFeedScroll(ScrollNotification notification) {
+    if (widget.savedOnly ||
+        notification.depth != 0 ||
+        notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    final visible = notification.metrics.pixels <= 0;
+    if (_feedIntroVisible != visible) {
+      setState(() => _feedIntroVisible = visible);
+    }
+    return false;
   }
 
   Future<void> _loadSavedKeys() async {
@@ -285,38 +301,51 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ? _courtLocationsMap()
         : Column(
             children: [
-              if (!widget.savedOnly) ...[_feedIntro(), _mainSearchBar()],
+              if (!widget.savedOnly)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  alignment: Alignment.topCenter,
+                  curve: Curves.easeInOut,
+                  child: _feedIntroVisible ? _feedIntro() : const SizedBox(),
+                ),
+              if (!widget.savedOnly) _mainSearchBar(),
               if (widget.savedOnly) _mainSearchBar(),
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: _reload,
-                  child: FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _posts,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return _message(
-                          'Could not load the news feed: ${snapshot.error}',
-                        );
-                      }
-                      final posts = _filteredPosts(snapshot.data ?? const []);
-                      if (posts.isEmpty) {
-                        return _message(
-                          widget.savedOnly
-                              ? snapshot.data?.isEmpty == true
-                                    ? 'You have no saved venues yet.'
-                                    : 'No saved venues match your filters or search.'
-                              : snapshot.data?.isEmpty == true
-                              ? 'No venue news has been posted yet.'
-                              : 'No courts match your search.',
-                        );
-                      }
-                      return widget.savedOnly
-                          ? _savedCardList(posts)
-                          : _feedContent(posts);
-                    },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleFeedScroll,
+                  child: RefreshIndicator(
+                    onRefresh: _reload,
+                    child: FutureBuilder<List<Map<String, dynamic>>>(
+                      future: _posts,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return _message(
+                            'Could not load the news feed: ${snapshot.error}',
+                          );
+                        }
+                        final posts = _filteredPosts(snapshot.data ?? const []);
+                        if (posts.isEmpty) {
+                          return _message(
+                            widget.savedOnly
+                                ? snapshot.data?.isEmpty == true
+                                      ? 'You have no saved venues yet.'
+                                      : 'No saved venues match your filters or search.'
+                                : snapshot.data?.isEmpty == true
+                                ? 'No venue news has been posted yet.'
+                                : 'No courts match your search.',
+                          );
+                        }
+                        return widget.savedOnly
+                            ? _savedCardList(posts)
+                            : _feedContent(posts);
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -324,69 +353,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           ),
     bottomNavigationBar: _courtMapExpanded && !widget.savedOnly
         ? null
-        : Theme(
-            data: Theme.of(context).copyWith(
-              navigationBarTheme: NavigationBarThemeData(
-                backgroundColor: Colors.white,
-                surfaceTintColor: Colors.white,
-                shadowColor: const Color(0x14000000),
-                elevation: 2,
-                height: 72,
-                indicatorColor: const Color(0xFFFFE8D2),
-                iconTheme: WidgetStateProperty.resolveWith((states) {
-                  final selected = states.contains(WidgetState.selected);
-                  return IconThemeData(
-                    color: selected ? _newsOrange : _newsInk,
-                    size: 24,
-                  );
-                }),
-                labelTextStyle: WidgetStatePropertyAll(
-                  TextStyle(
-                    color: _newsInk,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            child: NavigationBar(
-              height: 72,
-              selectedIndex: widget.savedOnly ? 1 : 0,
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              onDestinationSelected: _onNavigationSelected,
-              destinations: const [
-                NavigationDestination(
-                  key: ValueKey('news-feed-nav-explore'),
-                  icon: Icon(Icons.location_on_outlined),
-                  selectedIcon: Icon(Icons.location_on_rounded),
-                  label: 'Explore',
-                ),
-                NavigationDestination(
-                  key: ValueKey('news-feed-nav-saved'),
-                  icon: Icon(Icons.favorite_border_rounded),
-                  selectedIcon: Icon(Icons.favorite_rounded),
-                  label: 'Saved',
-                ),
-                NavigationDestination(
-                  key: ValueKey('news-feed-nav-messages'),
-                  icon: Icon(Icons.send_outlined),
-                  selectedIcon: Icon(Icons.send_rounded),
-                  label: 'Messages',
-                ),
-                NavigationDestination(
-                  key: ValueKey('news-feed-nav-bookings'),
-                  icon: Icon(Icons.calendar_today_outlined),
-                  selectedIcon: Icon(Icons.calendar_today_rounded),
-                  label: 'Bookings',
-                ),
-                NavigationDestination(
-                  key: ValueKey('news-feed-nav-profile'),
-                  icon: Icon(Icons.person_outline_rounded),
-                  selectedIcon: Icon(Icons.person_rounded),
-                  label: 'Profile',
-                ),
-              ],
-            ),
+        : AppBottomNavigation(
+            selectedIndex: widget.savedOnly ? 1 : 0,
+            onDestinationSelected: _onNavigationSelected,
           ),
   );
 
@@ -1129,10 +1098,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
-        _sectionHeader('Most popular', 'Highest review activity', featured),
+        _sectionHeader('Most popular', 'Highest review activity', popular),
         _horizontalVenues(featured, identifier: 'most-popular'),
         const SizedBox(height: 22),
-        _sectionHeader('Highest rate', 'Top average ratings', rated),
+        _sectionHeader('Highest rate', 'Top average ratings', highestRated),
         _horizontalVenues(rated, identifier: 'highest-rate'),
         const SizedBox(height: 24),
         Row(
@@ -1215,7 +1184,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         builder: (_) => AllVenuesPage(
           title: title,
           posts: sectionPosts,
-          cardBuilder: (post) => _postCard(post, expanded: true),
+          cardBuilder: _postCard,
         ),
       ),
     );
@@ -1655,7 +1624,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     ],
   );
 
-  Widget _postCard(Map<String, dynamic> post, {bool expanded = false}) {
+  Widget _postCard(Map<String, dynamic> post) {
     final image = post['imageUrl'] as String?;
     final images = _imageListValue([
       post['imageUrls'],
@@ -1701,12 +1670,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return Card(
       key: ValueKey('news-feed-card-${_venueIdentifier(post)}'),
       clipBehavior: Clip.antiAlias,
-      elevation: 0,
+      elevation: AppCardStyles.elevation,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFFE5EAF1)),
-      ),
+      shape: AppCardStyles.marketplaceShape,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1773,12 +1739,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             ],
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              expanded ? 20 : 16,
-              expanded ? 18 : 12,
-              expanded ? 20 : 16,
-              expanded ? 18 : 12,
-            ),
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1791,7 +1752,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _newsInk,
-                          fontSize: expanded ? 22 : 19,
+                          fontSize: 19,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -1831,10 +1792,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           address,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _newsMuted,
-                            fontSize: expanded ? 14 : 12,
-                          ),
+                          style: TextStyle(color: _newsMuted, fontSize: 12),
                         ),
                       ),
                     ],
@@ -1854,7 +1812,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         distance,
                         style: TextStyle(
                           color: _newsMuted,
-                          fontSize: expanded ? 13 : 12,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1862,33 +1820,33 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   ),
                 ],
                 const SizedBox(height: 9),
-                _priceTag(priceLabel, expanded: expanded),
-                SizedBox(height: expanded ? 14 : 9),
+                _priceTag(priceLabel),
+                const SizedBox(height: 9),
                 Text(
                   '${post['title'] ?? ''}',
                   style: TextStyle(
                     color: _newsInk,
-                    fontSize: expanded ? 18 : 16,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: expanded ? 7 : 4),
+                const SizedBox(height: 4),
                 Text(
                   body,
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: _newsMuted,
-                    height: expanded ? 1.5 : 1.45,
-                    fontSize: expanded ? 15 : 13,
+                    height: 1.45,
+                    fontSize: 13,
                   ),
                 ),
-                SizedBox(height: expanded ? 14 : 10),
+                const SizedBox(height: 10),
                 if (unavailable) ...[
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 12),
-                    padding: EdgeInsets.all(expanded ? 12 : 10),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFF1E4),
                       borderRadius: BorderRadius.circular(12),
@@ -1909,7 +1867,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                             'This court is currently unavailable. Booking cannot proceed.',
                             style: TextStyle(
                               color: _newsInk,
-                              fontSize: expanded ? 14 : 12,
+                              fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1920,26 +1878,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 ],
                 Row(
                   children: [
-                    _ratingStars(rating, size: expanded ? 18 : 16),
-                    SizedBox(width: expanded ? 6 : 4),
+                    _ratingStars(rating, size: 16),
+                    const SizedBox(width: 4),
                     Text(
                       rating == 0 ? 'New' : rating.toStringAsFixed(1),
                       style: TextStyle(
                         color: _newsInk,
-                        fontSize: expanded ? 16 : null,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(width: expanded ? 8 : 5),
+                    const SizedBox(width: 5),
                     Text(
                       rating == 0
                           ? 'No ratings yet'
                           : '$reviews ${reviews == 1 ? 'review' : 'reviews'} · '
                                 '$ratedUsers rated',
-                      style: TextStyle(
-                        color: _newsMuted,
-                        fontSize: expanded ? 13 : 12,
-                      ),
+                      style: TextStyle(color: _newsMuted, fontSize: 12),
                     ),
                     const Spacer(),
                     TextButton.icon(
@@ -1958,7 +1912,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ),
                   ],
                 ),
-                SizedBox(height: expanded ? 10 : 6),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     Expanded(
@@ -1973,9 +1927,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         label: const Text('Explore venue'),
                         style: FilledButton.styleFrom(
                           backgroundColor: _newsOrange,
-                          padding: EdgeInsets.symmetric(
-                            vertical: expanded ? 15 : 12,
-                          ),
+                          padding: EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ),
@@ -2058,17 +2010,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return 'Price not listed';
   }
 
-  Widget _priceTag(String label, {bool expanded = false}) => DecoratedBox(
+  Widget _priceTag(String label) => DecoratedBox(
     decoration: BoxDecoration(
       color: const Color(0xFFFFF1E4),
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: _newsOrange.withValues(alpha: .28)),
     ),
     child: Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: expanded ? 13 : 10,
-        vertical: expanded ? 8 : 6,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2078,7 +2027,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             label,
             style: TextStyle(
               color: _newsInk,
-              fontSize: expanded ? 14 : 12,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),

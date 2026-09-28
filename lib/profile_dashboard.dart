@@ -8,13 +8,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_session.dart';
-import 'event_dashboard.dart';
-import 'fitness_dashboard.dart';
-import 'sports.dart';
 import 'saved_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
+import 'news_feed.dart';
 import 'auth_api.dart';
+import 'booking_notifications.dart';
+import 'app_bottom_navigation.dart';
 
 const _profileNavy = Color(0xFF192B50);
 const _profileInk = Color(0xFF101B33);
@@ -35,18 +35,19 @@ class ProfileDashboardPage extends StatefulWidget {
 class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   final _api = AuthApi();
   Timer? _bookingReminderTimer;
-  final Set<String> _sentBookingReminderKeys = <String>{};
   Map<String, dynamic>? _user;
   List<Map<String, dynamic>> _bookings = [];
   String _selectedHistoryTab = 'Upcoming booking';
+  bool _matchNotificationsEnabled = false;
+  bool _updatingMatchNotificationSetting = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _bookingReminderTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => _checkBookingReminders(),
+      const Duration(seconds: 30),
+      (_) => _refreshBookingCountdown(),
     );
   }
 
@@ -58,7 +59,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 
   Future<void> _loadProfile() async {
     try {
-      final token = (await AppSession.load()).apiToken;
+      final session = await AppSession.load();
+      final token = session.apiToken;
       if (token != null && token.isNotEmpty) {
         final profile = await _api.me(token);
         final bookings = await _api.customerBookings(token);
@@ -66,8 +68,31 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         setState(() {
           _user = profile['user'] as Map<String, dynamic>?;
           _bookings = bookings;
+          _matchNotificationsEnabled = session.matchNotificationsEnabled;
         });
-        _checkBookingReminders();
+        _refreshBookingCountdown();
+        if (_matchNotificationsEnabled &&
+            BookingNotifications.instance.isSupported) {
+          try {
+            final notifications = BookingNotifications.instance;
+            final allowed = await notifications.notificationsAllowed();
+            if (!mounted) return;
+            if (!allowed) {
+              await session.setMatchNotificationsEnabled(false);
+              if (!mounted) return;
+              setState(() => _matchNotificationsEnabled = false);
+            } else {
+              await notifications.synchronizeApprovedBookings(
+                accountKey: session.accountEmail ?? _email,
+                bookings: bookings,
+              );
+            }
+          } on Exception catch (error) {
+            if (mounted) {
+              _message(context, 'Could not check match alerts: $error');
+            }
+          }
+        }
       }
     } on Exception catch (error) {
       if (mounted) _message(context, 'Could not load profile: $error');
@@ -420,6 +445,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   ),
                   const Divider(height: 1, color: _profileLine),
                   const SizedBox(height: 8),
+                  if (BookingNotifications.instance.isSupported)
+                    StatefulBuilder(
+                      builder: (context, setSettingsState) =>
+                          _matchNotificationControl(
+                            settingsContext: context,
+                            setSettingsState: setSettingsState,
+                          ),
+                    ),
                   ListTile(
                     leading: const Icon(Icons.edit_outlined),
                     title: const Text('Edit profile'),
@@ -609,131 +642,54 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           ),
         ),
       ),
-      bottomNavigationBar: Theme(
-        data: Theme.of(context).copyWith(
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            shadowColor: const Color(0x14000000),
-            elevation: 2,
-            indicatorColor: const Color(0xFFFFE8D2),
-            iconTheme: WidgetStateProperty.resolveWith((states) {
-              final selected = states.contains(WidgetState.selected);
-              return IconThemeData(
-                color: selected
-                    ? const Color(0xFFFF8200)
-                    : const Color(0xFF68748A),
-                size: 24,
-              );
-            }),
-            labelTextStyle: WidgetStateProperty.resolveWith((states) {
-              final selected = states.contains(WidgetState.selected);
-              return TextStyle(
-                color: selected
-                    ? const Color(0xFF101B33)
-                    : const Color(0xFF68748A),
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              );
-            }),
-          ),
-        ),
-        child: NavigationBar(
-          height: 72,
-          elevation: 0,
-          indicatorShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          selectedIndex: 4,
-          onDestinationSelected: (index) {
-            if (index == 0) {
-              _openExplore(context);
-              return;
-            }
-            if (index == 4) return;
-            if (index == 1) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
-                ),
-              );
-              return;
-            }
-            if (index == 2) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const MessagesDashboardPage(),
-                ),
-              );
-              return;
-            }
-            if (index == 3) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      CustomerBookingsPage(onLogout: widget.onLogout),
-                ),
-              );
-              return;
-            }
-            _message(context, switch (index) {
-              1 => 'Saved venues will appear here.',
-              2 => 'Messages will appear here.',
-              3 => 'Booking history will appear here.',
-              _ => 'Booking history will appear here.',
-            });
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.location_on_outlined, size: 24),
-              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
-              label: 'Explore',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.favorite_border_rounded, size: 24),
-              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
-              label: 'Saved',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.send_outlined, size: 24),
-              selectedIcon: Icon(Icons.send_rounded, size: 24),
-              label: 'Messages',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined, size: 22),
-              selectedIcon: Icon(Icons.calendar_today_rounded, size: 22),
-              label: 'Bookings',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded, size: 24),
-              selectedIcon: Icon(Icons.person_rounded, size: 24),
-              label: 'Profile',
-            ),
-          ],
-        ),
+      bottomNavigationBar: AppBottomNavigation(
+        selectedIndex: 4,
+        onDestinationSelected: (index) {
+          if (index == 0) {
+            _openExplore(context);
+            return;
+          }
+          if (index == 4) return;
+          if (index == 1) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+            );
+            return;
+          }
+          if (index == 3) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => CustomerBookingsPage(onLogout: widget.onLogout),
+              ),
+            );
+            return;
+          }
+          _message(context, switch (index) {
+            1 => 'Saved venues will appear here.',
+            2 => 'Messages will appear here.',
+            3 => 'Booking history will appear here.',
+            _ => 'Booking history will appear here.',
+          });
+        },
       ),
     );
   }
 
   Future<void> _openExplore(BuildContext context) async {
-    final session = await AppSession.load();
     if (!context.mounted) return;
-
-    final page = switch (session.lastBookingType) {
-      'Sports' => SportsDashboardPage(onLogout: widget.onLogout),
-      'Event' => EventDashboardPage(onLogout: widget.onLogout),
-      'Fitness & Wellness' => FitnessDashboardPage(onLogout: widget.onLogout),
-      _ => null,
-    };
-
-    if (page == null) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      return;
-    }
-
-    await Navigator.of(context)
-        .pushReplacement(MaterialPageRoute(builder: (_) => page));
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => NewsFeedPage(onLogout: widget.onLogout),
+      ),
+    );
   }
 
   Widget _profileHeader({
@@ -827,17 +783,17 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     const tabs = [
       (
         title: 'Upcoming match',
-        icon: Icons.calendar_month_outlined,
+        icon: Icons.book_outlined,
         key: 'upcoming-booking',
       ),
       (
         title: 'Venues visited',
-        icon: Icons.location_on_outlined,
+        icon: Icons.flag_outlined,
         key: 'venues-visited',
       ),
       (
         title: 'Court match history',
-        icon: Icons.sports_tennis_outlined,
+        icon: Icons.list_alt_rounded,
         key: 'court-match-history',
       ),
     ];
@@ -871,9 +827,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             ),
                           ),
                         ),
-                        child: Icon(
-                          tab.icon,
-                          size: 23,
+                        child: _profileHistoryTabIcon(
+                          key: tab.key,
+                          icon: tab.icon,
                           color: _selectedHistoryTab == tab.title
                               ? _profileOrange
                               : _profileMuted,
@@ -907,6 +863,52 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     );
   }
 
+  Widget _profileHistoryTabIcon({
+    required String key,
+    required IconData icon,
+    required Color color,
+  }) {
+    if (key != 'upcoming-booking' && key != 'court-match-history') {
+      return Icon(icon, size: 23, color: color);
+    }
+
+    final isUpcoming = key == 'upcoming-booking';
+    return Center(
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 0,
+              top: 2,
+              child: Icon(icon, size: 22, color: color),
+            ),
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Container(
+                padding: const EdgeInsets.all(1),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isUpcoming
+                      ? Icons.bookmark_rounded
+                      : Icons.access_time_rounded,
+                  size: 13,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   DateTime? _bookingStart(Map<String, dynamic> booking) {
     final date = '${booking['date'] ?? ''}'.trim();
     final time = '${booking['startTime'] ?? ''}'.trim();
@@ -914,46 +916,170 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     return DateTime.tryParse('$date $time');
   }
 
-  String _bookingCountdown(Map<String, dynamic> booking) {
+  DateTime? _bookingEnd(Map<String, dynamic> booking) {
     final start = _bookingStart(booking);
-    if (start == null) return 'Schedule unavailable';
-    final difference = start.difference(DateTime.now());
-    if (difference.isNegative || difference.inSeconds == 0) {
-      return 'Booking time is now';
-    }
-    if (difference.inDays > 0) {
-      final hours = difference.inHours.remainder(24);
-      return '${difference.inDays}d ${hours}h left';
-    }
-    if (difference.inHours > 0) {
-      return '${difference.inHours}h ${difference.inMinutes.remainder(60)}m left';
-    }
-    return '${difference.inMinutes.clamp(1, 59)}m left';
+    if (start == null) return null;
+    final duration = booking['durationHours'];
+    final durationHours = duration is num
+        ? duration.toDouble()
+        : double.tryParse('$duration') ?? 0;
+    if (durationHours <= 0) return null;
+    return start.add(
+      Duration(seconds: (durationHours * Duration.secondsPerHour).round()),
+    );
   }
 
-  void _checkBookingReminders() {
-    if (!mounted) return;
-    for (final booking in _upcoming) {
-      final start = _bookingStart(booking);
-      if (start == null) continue;
-      final difference = start.difference(DateTime.now());
-      final bookingKey =
-          '${booking['id'] ?? booking['venueId']}-${booking['date']}-${booking['startTime']}';
-      if (difference.inSeconds > 0 &&
-          difference <= const Duration(hours: 24) &&
-          _sentBookingReminderKeys.add(bookingKey)) {
-        final venue = '${booking['venueName'] ?? 'your venue'}';
-        _message(
-          context,
-          'Reminder: your booking at $venue starts ${_bookingCountdown(booking)}.',
-        );
-      }
-      if (difference.inSeconds <= 0) {
-        _sentBookingReminderKeys.remove(bookingKey);
-      }
+  String _bookingCountdown(Map<String, dynamic> booking) {
+    final start = _bookingStart(booking);
+    final end = _bookingEnd(booking);
+    if (start == null || end == null) return 'Schedule unavailable';
+    final now = DateTime.now();
+    if (!end.isAfter(now)) return 'Match complete';
+    if (!start.isAfter(now)) {
+      return 'In progress · ${_formatCountdown(end.difference(now))} left';
     }
+    final difference = start.difference(DateTime.now());
+    if (difference.isNegative || difference.inSeconds == 0) {
+      return 'Starting now';
+    }
+    return '${_formatCountdown(difference)} left';
+  }
+
+  String _formatCountdown(Duration difference) {
+    if (difference.inDays > 0) {
+      final hours = difference.inHours.remainder(24);
+      return '${difference.inDays}d ${hours}h';
+    }
+    if (difference.inHours > 0) {
+      return '${difference.inHours}h ${difference.inMinutes.remainder(60)}m';
+    }
+    return '${difference.inMinutes.clamp(1, 59)}m';
+  }
+
+  void _refreshBookingCountdown() {
+    if (!mounted) return;
     setState(() {});
   }
+
+  Future<void> _setMatchNotificationsEnabled(
+    bool enabled, {
+    required BuildContext settingsContext,
+    required StateSetter setSettingsState,
+  }) async {
+    if (_updatingMatchNotificationSetting) return;
+    setState(() => _updatingMatchNotificationSetting = true);
+    if (settingsContext.mounted) {
+      setSettingsState(() => _updatingMatchNotificationSetting = true);
+    }
+    try {
+      final session = await AppSession.load();
+      final notifications = BookingNotifications.instance;
+      if (enabled) {
+        final granted = await notifications.requestPermissions();
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: const Text(
+                    'Allow notifications and exact alarms to receive match alerts.',
+                  ),
+                  action: SnackBarAction(
+                    label: 'Settings',
+                    onPressed: () => unawaited(_openNotificationSettings()),
+                  ),
+                ),
+              );
+          }
+          return;
+        }
+        await notifications.synchronizeApprovedBookings(
+          accountKey: session.accountEmail ?? _email,
+          bookings: _bookings,
+        );
+      } else {
+        await notifications.disableForAccount(session.accountEmail ?? _email);
+      }
+      await session.setMatchNotificationsEnabled(enabled);
+      if (!mounted) return;
+      setState(() => _matchNotificationsEnabled = enabled);
+      if (settingsContext.mounted) {
+        setSettingsState(() => _matchNotificationsEnabled = enabled);
+      }
+      _message(
+        context,
+        enabled
+            ? 'Match start and end alerts are enabled.'
+            : 'Match start and end alerts are turned off.',
+      );
+    } on Exception catch (error) {
+      if (mounted) {
+        _message(context, 'Could not update match alerts: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _updatingMatchNotificationSetting = false);
+        if (settingsContext.mounted) {
+          setSettingsState(() => _updatingMatchNotificationSetting = false);
+        }
+      }
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    try {
+      final opened = await BookingNotifications.instance
+          .openSystemNotificationSettings();
+      if (opened != true && mounted) {
+        _message(context, 'Could not open notification settings.');
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        _message(context, 'Could not open notification settings: $error');
+      }
+    }
+  }
+
+  Widget _matchNotificationControl({
+    required BuildContext settingsContext,
+    required StateSetter setSettingsState,
+  }) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _profileLine),
+    ),
+    child: SwitchListTile.adaptive(
+      key: const ValueKey('profile-match-notifications-switch'),
+      value: _matchNotificationsEnabled,
+      onChanged: _updatingMatchNotificationSetting
+          ? null
+          : (enabled) => _setMatchNotificationsEnabled(
+              enabled,
+              settingsContext: settingsContext,
+              setSettingsState: setSettingsState,
+            ),
+      activeThumbColor: _profileOrange,
+      secondary: const Icon(
+        Icons.notifications_active_outlined,
+        color: _profileOrange,
+      ),
+      title: const Text(
+        'Match notifications',
+        style: TextStyle(
+          color: _profileInk,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      subtitle: const Text(
+        'Get alerts when a match starts and ends.',
+        style: TextStyle(color: _profileMuted, fontSize: 11),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+    ),
+  );
 
   Widget _profileHeaderDetail(IconData icon, String text) => Row(
     children: [
@@ -1056,12 +1182,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 size: 16,
               ),
               const SizedBox(width: 7),
-              Text(
-                _bookingCountdown(booking),
-                style: const TextStyle(
-                  color: _profileOrange,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
+              Expanded(
+                child: Text(
+                  _bookingCountdown(booking),
+                  style: const TextStyle(
+                    color: _profileOrange,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ],

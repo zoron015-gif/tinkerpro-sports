@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_bottom_navigation.dart';
+
 const _profileInk = Color(0xFF101B33);
 const _profileMuted = Color(0xFF68748A);
 const _profileLine = Color(0xFFE2E7EF);
@@ -10,6 +12,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
     required this.owner,
     required this.profileImage,
     required this.venueCount,
+    this.bookings = const [],
     required this.onLogout,
     required this.onEditProfile,
     this.onNavigate,
@@ -18,6 +21,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
   final Map<String, dynamic> owner;
   final ImageProvider<Object>? profileImage;
   final int venueCount;
+  final List<Map<String, dynamic>> bookings;
   final Future<void> Function(BuildContext context) onLogout;
   final Future<Map<String, dynamic>?> Function() onEditProfile;
   final ValueChanged<int>? onNavigate;
@@ -38,6 +42,45 @@ class _MerchantProfileDashboardPageState
     _owner = widget.owner;
     _profileImage = widget.profileImage;
   }
+
+  List<Map<String, dynamic>> get _todayBookings {
+    final now = DateTime.now();
+    return widget.bookings.where((booking) {
+      if ('${booking['status'] ?? ''}'.toLowerCase() == 'cancelled') {
+        return false;
+      }
+      final value = booking['date'] ?? booking['bookingDate'];
+      final date = value is DateTime ? value : DateTime.tryParse('$value');
+      return date != null &&
+          date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day;
+    }).toList();
+  }
+
+  double get _todayRevenue => _todayBookings
+      .where((booking) {
+        final status = '${booking['status'] ?? ''}'.toLowerCase();
+        return status == 'approved' || status == 'finished';
+      })
+      .fold(0, (total, booking) => total + _number(booking['total']));
+
+  int get _todayPendingBookings => _todayBookings
+      .where(
+        (booking) => '${booking['status'] ?? ''}'.toLowerCase() == 'pending',
+      )
+      .length;
+
+  int get _todayParticipants => _todayBookings.fold(
+    0,
+    (total, booking) => total + _count(booking['players']),
+  );
+
+  double _number(dynamic value) =>
+      value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+  int _count(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 
   @override
   Widget build(BuildContext context) {
@@ -84,59 +127,23 @@ class _MerchantProfileDashboardPageState
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
           const Text(
-            'Keep your account and venue presence up to date.',
-            style: TextStyle(
-              color: _profileMuted,
-              fontSize: 13,
-              height: 1.35,
-            ),
+            'Manage your account and keep track of your venues.',
+            style: TextStyle(color: _profileMuted, fontSize: 13, height: 1.35),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           _profileCard(name, email, phone),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           _performanceCard(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        height: 72,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        shadowColor: const Color(0x14000000),
-        elevation: 2,
+      bottomNavigationBar: AppBottomNavigation(
+        merchantMode: true,
         selectedIndex: 4,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) {
           if (index == 4) return;
           widget.onNavigate?.call(index);
           Navigator.of(context).pop();
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.storefront_outlined),
-            selectedIcon: Icon(Icons.storefront_rounded),
-            label: 'Venues',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            selectedIcon: Icon(Icons.add_circle),
-            label: 'Add',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.send_outlined),
-            selectedIcon: Icon(Icons.send_rounded),
-            label: 'Messages',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.payments_outlined),
-            selectedIcon: Icon(Icons.payments_rounded),
-            label: 'Payouts',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
       ),
     );
   }
@@ -218,60 +225,216 @@ class _MerchantProfileDashboardPageState
     ),
   );
 
-  Widget _performanceCard() => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: _profileLine),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0D192B50),
-          blurRadius: 16,
-          offset: Offset(0, 6),
-        ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Today's Performance",
-          style: TextStyle(
-            color: _profileInk,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
+  Widget _performanceCard() {
+    final today = DateTime.now();
+    final bookings = _todayBookings;
+    final hasBookings = bookings.isNotEmpty;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _profileLine),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D192B50),
+            blurRadius: 18,
+            offset: Offset(0, 7),
           ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF192B50), Color(0xFF304B7A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        "Today's performance",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.today_rounded,
+                      color: Color(0xFFFFC27A),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_monthName(today.month)} ${today.day}',
+                      style: const TextStyle(
+                        color: Color(0xFFD8E1F1),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'CONFIRMED REVENUE',
+                  style: TextStyle(
+                    color: Color(0xFFD8E1F1),
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '₱${_todayRevenue.toStringAsFixed(2)}',
+                  key: const ValueKey('merchant-profile-today-revenue'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 30,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  hasBookings
+                      ? '${bookings.length} booking${bookings.length == 1 ? '' : 's'} scheduled today'
+                      : 'No bookings scheduled today',
+                  style: const TextStyle(
+                    color: Color(0xFFD8E1F1),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: itemWidth,
+                      child: _metric(
+                        Icons.event_available_rounded,
+                        "Today's bookings",
+                        '${bookings.length}',
+                        const Color(0xFF1C69C9),
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _metric(
+                        Icons.pending_actions_rounded,
+                        'Awaiting approval',
+                        '$_todayPendingBookings',
+                        const Color(0xFFE28A16),
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _metric(
+                        Icons.groups_rounded,
+                        'Players today',
+                        '$_todayParticipants',
+                        const Color(0xFF168B69),
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _metric(
+                        Icons.location_city_rounded,
+                        'Active venues',
+                        '${widget.venueCount}',
+                        const Color(0xFF7655C5),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metric(IconData icon, String label, String value, Color color) =>
+      Container(
+        constraints: const BoxConstraints(minHeight: 82),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F9FC),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _profileLine),
         ),
-        const SizedBox(height: 12),
-        Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _metric('Revenue', '₱0'),
-            _metric('Booked Slots', '0'),
-            _metric('Active Venues', '${widget.venueCount}'),
+            Row(
+              children: [
+                Icon(icon, color: color, size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _profileMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              key: ValueKey('merchant-profile-metric-$label'),
+              style: const TextStyle(
+                color: _profileInk,
+                fontSize: 19,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ],
         ),
-      ],
-    ),
-  );
+      );
 
-  Widget _metric(String label, String value) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: _profileMuted, fontSize: 11)),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: _profileInk,
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    ),
-  );
+  String _monthName(int month) => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ][month - 1];
 
   String _initials(String value) {
     final parts = value.split(' ').where((part) => part.isNotEmpty).toList();

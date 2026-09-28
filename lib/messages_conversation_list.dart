@@ -17,8 +17,6 @@ class MessagesConversationList extends StatelessWidget {
     required this.onConversationAction,
     required this.showArchived,
     required this.showBlocked,
-    required this.onToggleArchived,
-    required this.onToggleBlocked,
     required this.currentUserId,
   });
 
@@ -31,29 +29,25 @@ class MessagesConversationList extends StatelessWidget {
   final VoidCallback onNewConversation;
   final ValueChanged<int> onSelectConversation;
   final Future<void> Function(Map<String, dynamic> contact) onOpenContact;
-  final Future<void> Function(
-    Map<String, dynamic> conversation,
-    String action,
-  ) onConversationAction;
+  final Future<void> Function(Map<String, dynamic> conversation, String action)
+  onConversationAction;
   final bool showArchived;
   final bool showBlocked;
-  final VoidCallback onToggleArchived;
-  final VoidCallback onToggleBlocked;
   final int? currentUserId;
 
   @override
   Widget build(BuildContext context) {
     final query = conversationQuery.trim().toLowerCase();
     final conversationContacts = _conversationContacts();
-    final uniqueConversations = _uniqueDirectConversations()
-        .where((conversation) {
-          if (!_hasMessages(conversation)) return false;
-          final blocked = _asBool(conversation['blockedByMe']);
-          if (showBlocked) return blocked;
-          if (blocked) return false;
-          return _asBool(conversation['archived']) == showArchived;
-        })
-        .toList();
+    final uniqueConversations = _uniqueDirectConversations().where((
+      conversation,
+    ) {
+      if (!_hasMessages(conversation)) return false;
+      final blocked = _asBool(conversation['blockedByMe']);
+      if (showBlocked) return blocked;
+      if (blocked) return false;
+      return _asBool(conversation['archived']) == showArchived;
+    }).toList();
     final filtered = uniqueConversations.where((conversation) {
       final title = _conversationTitle(conversation).toLowerCase();
       final latest = (conversation['lastMessage'] as String? ?? '')
@@ -114,22 +108,6 @@ class MessagesConversationList extends StatelessWidget {
               Text(
                 '${filtered.length}',
                 style: TextStyle(color: Colors.grey.shade600),
-              ),
-              IconButton(
-                tooltip: showArchived ? 'Show chats' : 'Show archived chats',
-                onPressed: onToggleArchived,
-                icon: Icon(
-                  showArchived
-                      ? Icons.forum_outlined
-                      : Icons.archive_outlined,
-                ),
-              ),
-              IconButton(
-                tooltip: showBlocked ? 'Show chats' : 'Show blocked people',
-                onPressed: onToggleBlocked,
-                icon: Icon(
-                  showBlocked ? Icons.forum_outlined : Icons.block_outlined,
-                ),
               ),
             ],
           ),
@@ -198,7 +176,8 @@ class MessagesConversationList extends StatelessWidget {
   ) async {
     final archived = _asBool(conversation['archived']);
     final unread = _asBool(conversation['manuallyUnread']);
-    final direct = safeString(conversation['type']) == 'direct' &&
+    final direct =
+        safeString(conversation['type']) == 'direct' &&
         _otherMembers(conversation, currentUserId).length == 1;
     final blocked = _asBool(conversation['blockedByMe']);
 
@@ -253,6 +232,7 @@ class MessagesConversationList extends StatelessWidget {
     final contactsById = <int, Map<String, dynamic>>{};
     for (final conversation in conversations) {
       if (!_hasMessages(conversation) ||
+          _asBool(conversation['archived']) ||
           _asBool(conversation['blockedByMe'])) {
         continue;
       }

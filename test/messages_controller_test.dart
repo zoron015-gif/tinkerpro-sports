@@ -13,12 +13,15 @@ class _FakeMessagesService extends MessagesService {
   };
   final Map<int, List<Map<String, dynamic>>> messagesByConversation = {};
   final Map<int, Completer<List<Map<String, dynamic>>>> pendingMessages = {};
+  Completer<List<Map<String, dynamic>>>? pendingConversations;
   int conversationFetches = 0;
 
   @override
-  Future<List<Map<String, dynamic>>> fetchConversations(String token) async {
+  Future<List<Map<String, dynamic>>> fetchConversations(String token) {
     conversationFetches++;
-    return conversations;
+    final pending = pendingConversations;
+    if (pending != null) return pending.future;
+    return Future.value(conversations);
   }
 
   @override
@@ -103,6 +106,76 @@ void main() {
     },
   );
 
+  test('opening a conversation clears its unread indicator', () async {
+    controller.token = 'test-token';
+    controller.conversations = [
+      {'id': 5, 'unreadCount': 2, 'manuallyUnread': true},
+      {'id': 6, 'unreadCount': 1},
+    ];
+    service.messagesByConversation[5] = [
+      {'id': 51, 'body': 'read on open'},
+    ];
+
+    await controller.select(5);
+
+    expect(controller.conversations.first['unreadCount'], 0);
+    expect(controller.conversations.first['manuallyUnread'], isFalse);
+    expect(controller.conversations.last['unreadCount'], 1);
+    expect(controller.unreadMessageCount, 1);
+  });
+
+  test('archiving immediately removes the conversation from local state', () {
+    controller.conversations = [
+      {'id': 5, 'archived': false},
+      {'id': 6, 'archived': false},
+    ];
+
+    controller.setConversationArchived(5, true);
+
+    expect(controller.conversations.first['archived'], isTrue);
+    expect(controller.conversations.last['archived'], isFalse);
+  });
+
+  test('stale realtime results do not undo a local archive', () async {
+    controller.token = 'test-token';
+    controller.conversations = [
+      {'id': 5, 'archived': false},
+    ];
+    service.pendingConversations = Completer<List<Map<String, dynamic>>>();
+    final refresh = controller.refreshRealtime();
+    await Future<void>.delayed(Duration.zero);
+
+    controller.setConversationArchived(5, true);
+    service.pendingConversations!.complete([
+      {'id': 5, 'archived': false},
+    ]);
+    await refresh;
+
+    expect(controller.conversations.single['archived'], isTrue);
+  });
+
+  test('stale realtime results do not restore a read message count', () async {
+    controller.token = 'test-token';
+    controller.selectedConversationId = 5;
+    controller.conversations = [
+      {'id': 5, 'unreadCount': 1},
+    ];
+    service.pendingConversations = Completer<List<Map<String, dynamic>>>();
+    final refresh = controller.refreshRealtime();
+    await Future<void>.delayed(Duration.zero);
+
+    controller.setMessages([
+      {'id': 51, 'body': 'opened and read'},
+    ]);
+    service.pendingConversations!.complete([
+      {'id': 5, 'unreadCount': 1},
+    ]);
+    await refresh;
+
+    expect(controller.conversations.single['unreadCount'], 0);
+    expect(controller.unreadMessageCount, 0);
+  });
+
   test(
     'realtime refresh updates inbox and selected conversation messages',
     () async {
@@ -119,6 +192,7 @@ void main() {
 
       expect(service.conversationFetches, 1);
       expect(controller.conversations.single['id'], 4);
+      expect(controller.conversations.single['unreadCount'], 0);
       expect(controller.messages.single['body'], 'arrived in realtime');
     },
   );

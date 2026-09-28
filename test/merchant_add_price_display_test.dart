@@ -29,6 +29,7 @@ void main() {
                     'title': 'Venue update',
                     'body': 'Court details',
                     'imageUrl': 'data:image/png;base64,AA==',
+                    'status': 'published',
                   },
                 ],
               }),

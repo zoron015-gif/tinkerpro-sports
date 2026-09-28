@@ -6,14 +6,16 @@ import 'app_session.dart';
 import 'auth_api.dart';
 import 'messages_dashboard.dart';
 import 'profile_dashboard.dart';
+import 'app_bottom_navigation.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
 import 'models/booking.dart';
 
 class CustomerBookingsPage extends StatefulWidget {
-  const CustomerBookingsPage({super.key, this.onLogout});
+  const CustomerBookingsPage({super.key, this.onLogout, this.api});
 
   final Future<void> Function(BuildContext context)? onLogout;
+  final AuthApi? api;
 
   @override
   State<CustomerBookingsPage> createState() => _CustomerBookingsPageState();
@@ -123,21 +125,33 @@ class _BookingGalleryState extends State<_BookingGallery> {
 }
 
 class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
+  late final AuthApi _api;
   late Future<List<Booking>> _bookings;
   int _unreadBookingCount = 0;
   int _unreadMessageCount = 0;
   String? _messageCountError;
+  String? _bookingStatusBannerKey;
+  var _showBookingStatusBanner = true;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? AuthApi();
     _bookings = _loadBookings();
   }
 
   Future<List<Booking>> _loadBookings() async {
-    final token = (await AppSession.load()).apiToken;
+    final session = await AppSession.load();
+    final token = session.apiToken;
     if (token == null || token.isEmpty) return [];
-    final bookings = await AuthApi().customerBookingModels(token);
+    final bookings = await _api.customerBookingModels(token);
+    final bannerBooking = _bookingStatusBannerBooking(bookings);
+    _bookingStatusBannerKey = bannerBooking == null
+        ? null
+        : _bookingStatusKey(bannerBooking);
+    _showBookingStatusBanner =
+        bannerBooking == null ||
+        !session.bookingStatusBannerDismissed(_bookingStatusBannerKey!);
     _unreadBookingCount = bookings.where((booking) {
       final status = _bookingStatus(booking);
       return status == 'approved' ||
@@ -148,7 +162,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           status == 'cancelled';
     }).length;
     try {
-      final conversations = await AuthApi().conversations(token);
+      final conversations = await _api.conversations(token);
       _unreadMessageCount = conversations.fold<int>(
         0,
         (total, conversation) =>
@@ -162,8 +176,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _bookings = _loadBookings());
+    await _dismissBookingStatusBanner();
+    if (!mounted) return;
+    setState(() {
+      _bookings = _loadBookings();
+    });
     await _bookings;
+  }
+
+  Future<void> _dismissBookingStatusBanner() async {
+    if (!_showBookingStatusBanner) return;
+    final bannerKey = _bookingStatusBannerKey;
+    setState(() => _showBookingStatusBanner = false);
+    if (bannerKey == null) return;
+    final session = await AppSession.load();
+    await session.dismissBookingStatusBanner(bannerKey);
   }
 
   @override
@@ -236,7 +263,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     ],
                   ),
                 if (approved.isNotEmpty || completed.isNotEmpty)
-                  _bookingStatusBanner(approved, completed),
+                  AnimatedSize(
+                    alignment: Alignment.topCenter,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    child: _showBookingStatusBanner
+                        ? _bookingStatusBanner(approved, completed)
+                        : const SizedBox.shrink(),
+                  ),
                 Material(
                   color: Colors.white,
                   child: TabBar(
@@ -275,25 +309,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           );
         },
       ),
-      bottomNavigationBar: Theme(
-        data: Theme.of(context).copyWith(
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            shadowColor: const Color(0x14000000),
-            elevation: 2,
-            indicatorColor: const Color(0xFFFFE8D2),
-            labelTextStyle: WidgetStateProperty.all(
-              const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
-        child: NavigationBar(
-          height: 72,
-          elevation: 0,
-          selectedIndex: 3,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected: (index) {
+      bottomNavigationBar: AppBottomNavigation(
+        selectedIndex: 3,
+        unreadMessageCount: _unreadMessageCount,
+        unreadBookingCount: _unreadBookingCount,
+        onDestinationSelected: (index) {
             if (index == 3) return;
             if (index == 0) {
               _openExplore();
@@ -320,49 +340,36 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
               ),
             );
-          },
-          destinations: [
-            NavigationDestination(
-              icon: Icon(Icons.location_on_outlined, size: 24),
-              selectedIcon: Icon(Icons.location_on_rounded, size: 24),
-              label: 'Explore',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.favorite_border_rounded, size: 24),
-              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
-              label: 'Saved',
-            ),
-            NavigationDestination(
-              icon: _notificationIcon(Icons.send_outlined, _unreadMessageCount),
-              selectedIcon: _notificationIcon(
-                Icons.send_rounded,
-                _unreadMessageCount,
-              ),
-              label: 'Messages',
-            ),
-            NavigationDestination(
-              icon: _notificationIcon(
-                Icons.calendar_today_outlined,
-                _unreadBookingCount,
-              ),
-              selectedIcon: _notificationIcon(
-                Icons.calendar_today_rounded,
-                _unreadBookingCount,
-              ),
-              label: 'Bookings',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded, size: 24),
-              selectedIcon: Icon(Icons.person_rounded, size: 24),
-              label: 'Profile',
-            ),
-          ],
-        ),
+        },
       ),
     );
   }
 
   String _bookingStatus(Booking booking) => booking.status;
+
+  Booking? _bookingStatusBannerBooking(List<Booking> bookings) {
+    final completed = bookings.where((booking) {
+      return const {
+        'finished',
+        'done',
+        'completed',
+        'expired',
+        'cancelled',
+      }.contains(_bookingStatus(booking));
+    });
+    if (completed.isNotEmpty) return completed.first;
+    final approved = bookings.where(
+      (booking) => _bookingStatus(booking) == 'approved',
+    );
+    return approved.isEmpty ? null : approved.first;
+  }
+
+  String _bookingStatusKey(Booking booking) {
+    final identity =
+        booking.id?.toString() ??
+        '${booking.venue.id ?? booking.venue.name}_${booking.date}_${booking.startTime}';
+    return '${identity}_${booking.status}';
+  }
 
   Widget _bookingStatusBanner(List<Booking> approved, List<Booking> completed) {
     final booking = completed.isNotEmpty ? completed.first : approved.first;
@@ -382,25 +389,32 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         finished ? Icons.check_circle_rounded : Icons.event_available_rounded,
         color: finished ? Colors.green.shade700 : const Color(0xFFFF8200),
       ),
-      content: Text(
-        finished
-            ? 'Booking at ${booking['venueName'] ?? 'your venue'} is $status.'
-            : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
-                  'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
-        style: const TextStyle(
-          color: Color(0xFF101B33),
-          fontWeight: FontWeight.w700,
+      content: InkWell(
+        key: const ValueKey('booking-status-banner-content'),
+        onTap: _dismissBookingStatusBanner,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Text(
+            finished
+                ? 'Booking at ${booking['venueName'] ?? 'your venue'} is $status.'
+                : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
+                      'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
+            style: const TextStyle(
+              color: Color(0xFF101B33),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
-      actions: [TextButton(onPressed: _refresh, child: const Text('Refresh'))],
-    );
-  }
-
-  Widget _notificationIcon(IconData icon, int count) {
-    return Badge(
-      isLabelVisible: count > 0,
-      label: Text(count > 99 ? '99+' : '$count'),
-      child: Icon(icon, size: 24),
+      actions: [
+        TextButton(onPressed: _refresh, child: const Text('Refresh')),
+        TextButton(
+          key: const ValueKey('booking-status-banner-dismiss'),
+          onPressed: _dismissBookingStatusBanner,
+          child: const Text('Dismiss'),
+        ),
+      ],
     );
   }
 
@@ -613,106 +627,15 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   }
 
   Future<void> _showRatingDialog(Booking booking) async {
-    var rating = 0;
-    final comment = TextEditingController();
-    var submitting = false;
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: Text('Rate ${booking.venue.name}'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'How was your completed booking?',
-                  style: TextStyle(color: Color(0xFF68748A)),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var star = 1; star <= 5; star++)
-                      IconButton(
-                        tooltip: '$star star${star == 1 ? '' : 's'}',
-                        onPressed: submitting
-                            ? null
-                            : () => setDialogState(() => rating = star),
-                        icon: Icon(
-                          star <= rating
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          color: Colors.amber,
-                          size: 34,
-                        ),
-                      ),
-                  ],
-                ),
-                TextField(
-                  controller: comment,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Comment (optional)',
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: submitting
-                    ? null
-                    : () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: rating == 0 || submitting
-                    ? null
-                    : () async {
-                        setDialogState(() => submitting = true);
-                        try {
-                          final token = (await AppSession.load()).apiToken;
-                          if (token == null || token.isEmpty) {
-                            throw const AuthApiException(
-                              'Please sign in to rate this booking.',
-                              401,
-                            );
-                          }
-                          await AuthApi().submitCustomerReview(
-                            token: token,
-                            bookingId: booking.id!,
-                            rating: rating,
-                            comment: comment.text.trim(),
-                          );
-                          if (dialogContext.mounted) {
-                            Navigator.of(dialogContext).pop();
-                          }
-                          if (mounted) {
-                            ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Your rating was submitted.'),
-                              ),
-                            );
-                            await _refresh();
-                          }
-                        } on Exception catch (error) {
-                          if (dialogContext.mounted) {
-                            setDialogState(() => submitting = false);
-                            ScaffoldMessenger.of(
-                              dialogContext,
-                            ).showSnackBar(SnackBar(content: Text('$error')));
-                          }
-                        }
-                      },
-                child: const Text('Submit rating'),
-              ),
-            ],
-          ),
-        ),
-      );
-    } finally {
-      comment.dispose();
-    }
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (_) => _BookingRatingDialog(booking: booking, api: _api),
+    );
+    if (!mounted || submitted != true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Your rating was submitted.')),
+    );
+    await _refresh();
   }
 
   Widget _infoPanel(String label, String value) => Container(
@@ -874,10 +797,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               child: Text(
                 'Includes extra-player fee: PHP '
                 '${_amount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF4C5B72),
-                ),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF4C5B72)),
               ),
             ),
           const SizedBox(height: 2),
@@ -1097,4 +1017,119 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final displayHour = normalizedHour % 12 == 0 ? 12 : normalizedHour % 12;
     return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
   }
+}
+
+class _BookingRatingDialog extends StatefulWidget {
+  const _BookingRatingDialog({required this.booking, required this.api});
+
+  final Booking booking;
+  final AuthApi api;
+
+  @override
+  State<_BookingRatingDialog> createState() => _BookingRatingDialogState();
+}
+
+class _BookingRatingDialogState extends State<_BookingRatingDialog> {
+  final _comment = TextEditingController();
+  var _rating = 0;
+  var _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _comment.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException(
+          'Please sign in to rate this booking.',
+          401,
+        );
+      }
+      final bookingId = widget.booking.id;
+      if (bookingId == null) {
+        throw const AuthApiException(
+          'This booking cannot be rated because its ID is missing.',
+          400,
+        );
+      }
+      await widget.api.submitCustomerReview(
+        token: token,
+        bookingId: bookingId,
+        rating: _rating,
+        comment: _comment.text.trim(),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = '$error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Rate ${widget.booking.venue.name}'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'How was your completed booking?',
+          style: TextStyle(color: Color(0xFF68748A)),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var star = 1; star <= 5; star++)
+              IconButton(
+                tooltip: '$star star${star == 1 ? '' : 's'}',
+                onPressed: _submitting
+                    ? null
+                    : () => setState(() => _rating = star),
+                icon: Icon(
+                  star <= _rating
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  color: Colors.amber,
+                  size: 34,
+                ),
+              ),
+          ],
+        ),
+        TextField(
+          controller: _comment,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Comment (optional)'),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _rating == 0 || _submitting ? null : _submit,
+        child: const Text('Submit rating'),
+      ),
+    ],
+  );
 }

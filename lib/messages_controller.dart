@@ -29,6 +29,7 @@ class MessagesController extends ChangeNotifier {
   String conversationQuery = '';
   int loadRequestId = 0;
   int messageRequestId = 0;
+  int conversationStateRevision = 0;
   Timer? realtimeTimer;
   bool realtimeRefreshInFlight = false;
 
@@ -108,6 +109,7 @@ class MessagesController extends ChangeNotifier {
 
     realtimeRefreshInFlight = true;
     try {
+      final stateRevision = conversationStateRevision;
       final selectedConversation = selectedConversationId;
       final conversationsFuture = _service.fetchConversations(sessionToken);
       final messagesFuture = selectedConversation == null
@@ -122,13 +124,16 @@ class MessagesController extends ChangeNotifier {
           ? null
           : await messagesFuture;
 
-      if (sessionToken != token) return;
+      if (sessionToken != token || stateRevision != conversationStateRevision) {
+        return;
+      }
 
       conversations = loadedConversations;
       if (selectedConversation != null &&
           selectedConversation == selectedConversationId &&
           loadedMessages != null) {
         messages = loadedMessages;
+        _markConversationRead(selectedConversation);
       }
       notifyListeners();
     } finally {
@@ -154,6 +159,7 @@ class MessagesController extends ChangeNotifier {
       if (requestId != messageRequestId) return;
       if (selectedConversationId != id) return;
       messages = loadedMessages;
+      _markConversationRead(id);
       notifyListeners();
     } on Exception {
       if (requestId == messageRequestId) {
@@ -193,7 +199,46 @@ class MessagesController extends ChangeNotifier {
 
   void setMessages(List<Map<String, dynamic>> nextMessages) {
     messages = nextMessages;
+    final selectedId = selectedConversationId;
+    if (selectedId != null) _markConversationRead(selectedId);
     notifyListeners();
+  }
+
+  void setConversationArchived(int conversationId, bool archived) {
+    conversationStateRevision++;
+    conversations = conversations
+        .map(
+          (conversation) =>
+              (conversation['id'] as num?)?.toInt() == conversationId
+              ? {...conversation, 'archived': archived}
+              : conversation,
+        )
+        .toList();
+    notifyListeners();
+  }
+
+  void setUserBlocked(int userId, bool blocked) {
+    conversationStateRevision++;
+    conversations = conversations.map((conversation) {
+      final members = conversation['members'] as List<dynamic>? ?? const [];
+      final includesUser = members.whereType<Map>().any(
+        (member) => (member['id'] as num?)?.toInt() == userId,
+      );
+      return includesUser
+          ? {...conversation, 'blockedByMe': blocked}
+          : conversation;
+    }).toList();
+    notifyListeners();
+  }
+
+  void _markConversationRead(int conversationId) {
+    conversationStateRevision++;
+    conversations = conversations.map((conversation) {
+      if ((conversation['id'] as num?)?.toInt() != conversationId) {
+        return conversation;
+      }
+      return {...conversation, 'unreadCount': 0, 'manuallyUnread': false};
+    }).toList();
   }
 
   void setSending(bool nextSending) {

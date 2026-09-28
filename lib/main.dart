@@ -11,6 +11,8 @@ import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'merchant_dashboard.dart';
 import 'app_session.dart';
+import 'message_notification_host.dart';
+import 'messages_dashboard.dart';
 
 import 'dart:async';
 
@@ -19,6 +21,7 @@ const _ink = Color(0xFF101B33);
 const _orange = Color(0xFFFF8200);
 const _page = Color(0xFFF7F9FC);
 const _muted = Color(0xFF68748A);
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +37,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _rootNavigatorKey,
       title: 'TinkerPro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -181,6 +185,17 @@ class MyApp extends StatelessWidget {
         ),
       ),
       home: const OverviewPage(),
+      builder: (context, child) => MessageNotificationHost(
+        child: child ?? const SizedBox.shrink(),
+        onOpenConversation: (conversationId) {
+          _rootNavigatorKey.currentState?.push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  MessagesDashboardPage(initialConversationId: conversationId),
+            ),
+          );
+        },
+      ),
     );
   }
 }

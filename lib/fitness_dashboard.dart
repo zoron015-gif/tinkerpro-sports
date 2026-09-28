@@ -15,6 +15,7 @@ import 'saved_dashboard.dart';
 import 'saved_items.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
+import 'app_card_styles.dart';
 
 typedef FitnessClass = ({
   String name,
@@ -940,16 +941,17 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
   }
 
   Widget _classCard(dynamic item) => Card(
-    elevation: 1,
+    elevation: AppCardStyles.elevation,
+    margin: EdgeInsets.zero,
     color: Colors.white,
     clipBehavior: Clip.antiAlias,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+    shape: AppCardStyles.marketplaceShape,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AspectRatio(
-          aspectRatio: 16 / 10,
+          aspectRatio: AppCardStyles.marketplaceImageAspectRatio,
           child: Stack(
             fit: StackFit.expand,
             children: [

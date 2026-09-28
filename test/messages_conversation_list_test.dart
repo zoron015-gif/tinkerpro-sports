@@ -3,6 +3,45 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/messages_conversation_list.dart';
 
 void main() {
+  testWidgets('archived conversation stays out of chats and quick contacts', (
+    tester,
+  ) async {
+    final searchController = TextEditingController();
+    addTearDown(searchController.dispose);
+    var showArchived = false;
+
+    Widget buildList() => MaterialApp(
+      home: Scaffold(
+        body: MessagesConversationList(
+          conversations: [
+            {..._directConversation(id: 1, unreadCount: 0), 'archived': true},
+          ],
+          selectedConversationId: null,
+          searchController: searchController,
+          conversationQuery: '',
+          onSearchChanged: (_) {},
+          onClearSearch: () {},
+          onNewConversation: () {},
+          onSelectConversation: (_) {},
+          onOpenContact: (_) async {},
+          onConversationAction: (_, _) async {},
+          showArchived: showArchived,
+          showBlocked: false,
+          currentUserId: 7,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(buildList());
+    expect(find.text('Alex Doe'), findsNothing);
+    expect(find.text('Alex'), findsNothing);
+
+    showArchived = true;
+    await tester.pumpWidget(buildList());
+    expect(find.text('Alex Doe'), findsOneWidget);
+    expect(find.text('Alex'), findsNothing);
+  });
+
   testWidgets('archived view only shows archived conversations', (
     tester,
   ) async {
@@ -28,8 +67,6 @@ void main() {
             onConversationAction: (_, _) async {},
             showArchived: true,
             showBlocked: false,
-            onToggleArchived: () {},
-            onToggleBlocked: () {},
             currentUserId: 7,
           ),
         ),
@@ -69,8 +106,6 @@ void main() {
           onConversationAction: (_, _) async {},
           showArchived: false,
           showBlocked: showBlocked,
-          onToggleArchived: () {},
-          onToggleBlocked: () {},
           currentUserId: 7,
         ),
       ),
@@ -110,8 +145,6 @@ void main() {
             onConversationAction: (_, _) async {},
             showArchived: false,
             showBlocked: false,
-            onToggleArchived: () {},
-            onToggleBlocked: () {},
             currentUserId: 7,
           ),
         ),
@@ -161,8 +194,6 @@ void main() {
               onConversationAction: (_, _) async {},
               showArchived: false,
               showBlocked: false,
-              onToggleArchived: () {},
-              onToggleBlocked: () {},
               currentUserId: 7,
             ),
           ),
@@ -209,8 +240,6 @@ void main() {
             onConversationAction: (_, _) async {},
             showArchived: false,
             showBlocked: false,
-            onToggleArchived: () {},
-            onToggleBlocked: () {},
             currentUserId: 7,
           ),
         ),

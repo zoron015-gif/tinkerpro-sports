@@ -75,18 +75,23 @@ void main() {
 
       expect(observer.pushCount, pushesBeforeTap);
       expect(find.text('Sports Courts'), findsOneWidget);
+      expect(find.text('Discover what’s new'), findsOneWidget);
+      expect(find.byKey(const ValueKey('news-feed-search')), findsOneWidget);
 
+      final feedScrollable = find
+          .descendant(
+            of: find.byKey(const ValueKey('news-feed-content-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
       await tester.scrollUntilVisible(
         find.text('Highest rate'),
         200,
-        scrollable: find
-            .descendant(
-              of: find.byKey(const ValueKey('news-feed-content-list')),
-              matching: find.byType(Scrollable),
-            )
-            .first,
+        scrollable: feedScrollable,
       );
       await tester.pumpAndSettle();
+      expect(find.text('Discover what’s new'), findsNothing);
+      expect(find.byKey(const ValueKey('news-feed-search')), findsOneWidget);
       expect(find.text('UNAVAILABLE · Booking disabled'), findsWidgets);
       final featuredCards = find.byKey(
         const ValueKey('news-feed-mini-business-42'),
@@ -103,6 +108,11 @@ void main() {
       await tester.tap(highestRateCard);
       await tester.pumpAndSettle();
       expect(observer.pushCount, pushesBeforeHighestRateTap);
+
+      await tester.drag(feedScrollable, const Offset(0, 1200));
+      await tester.pumpAndSettle();
+      expect(find.text('Discover what’s new'), findsOneWidget);
+      expect(find.byKey(const ValueKey('news-feed-search')), findsOneWidget);
     },
   );
 }
