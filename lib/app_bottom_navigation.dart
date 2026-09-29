@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'saved_icons.dart';
+
 const _navigationNavy = Color(0xFF192B50);
 const _navigationOrange = Color(0xFFFF8200);
 const _navigationMuted = Color(0xFF68748A);
@@ -104,8 +106,8 @@ class AppBottomNavigation extends StatelessWidget {
         ),
         NavigationDestination(
           key: const ValueKey('news-feed-nav-saved'),
-          icon: const Icon(Icons.favorite_border_rounded),
-          selectedIcon: const Icon(Icons.favorite_rounded),
+          icon: const Icon(savedItemIcon),
+          selectedIcon: const Icon(savedItemSelectedIcon),
           label: 'Saved',
         ),
         NavigationDestination(

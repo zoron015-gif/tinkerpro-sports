@@ -10,6 +10,7 @@ import 'auth_api.dart';
 import 'app_session.dart';
 import 'booking_pricing.dart';
 import 'saved_items.dart';
+import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'reviews.dart';
 
@@ -35,10 +36,14 @@ typedef SportsVenue = ({
   int ratingUserCount,
   int includedPlayers,
   double additionalPlayerFee,
+  int totalSlots,
+  List<Map<String, dynamic>> sportsSlots,
   List<String> tags,
   List<String> rateLabels,
   double latitude,
   double longitude,
+  String distanceLabel,
+  int heartCount,
   String visitUrl,
   String merchantEmail,
   String merchantPhone,
@@ -48,6 +53,82 @@ typedef SportsVenue = ({
 const _sportsInk = Color(0xFF101B33);
 const _sportsOrange = Color(0xFFFF8200);
 const _sportsMuted = Color(0xFF68748A);
+
+List<Map<String, dynamic>> normalizeSportsSlotConfigurations({
+  required dynamic raw,
+  required String legacySportTypes,
+  required double legacyPrice,
+  required int totalSlots,
+  required int includedPlayers,
+  required double additionalPlayerFee,
+}) {
+  if (raw is String) {
+    try {
+      raw = jsonDecode(raw);
+    } on FormatException {
+      raw = null;
+    }
+  }
+
+  final configurations = <Map<String, dynamic>>[];
+  if (raw is List) {
+    for (final item in raw.whereType<Map>()) {
+      final sportNames = '${item['sportType'] ?? item['sport_type'] ?? ''}'
+          .split(',')
+          .map((name) => name.trim())
+          .where((name) => name.isNotEmpty);
+      for (final sportName in sportNames) {
+        configurations.add({
+          'sportType': sportName,
+          'pricePerHour':
+              double.tryParse(
+                '${item['pricePerHour'] ?? item['price_per_hour'] ?? 0}',
+              ) ??
+              0,
+          'fullStudio':
+              item['fullStudio'] == true ||
+              item['fullStudio'] == 1 ||
+              '${item['fullStudio']}'.toLowerCase() == 'true',
+          'includedPlayers':
+              int.tryParse(
+                '${item['includedPlayers'] ?? item['included_players'] ?? 0}',
+              ) ??
+              0,
+          'additionalPlayerFee':
+              double.tryParse(
+                '${item['additionalPlayerFee'] ?? item['additional_player_fee'] ?? 0}',
+              ) ??
+              0,
+          'slotCount':
+              int.tryParse(
+                '${item['slotCount'] ?? item['slot_count'] ?? totalSlots}',
+              ) ??
+              totalSlots,
+        });
+      }
+    }
+  }
+
+  if (configurations.isEmpty) {
+    final legacyNames = legacySportTypes
+        .split(',')
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty);
+    for (final sportName in legacyNames.isEmpty
+        ? const ['Sports']
+        : legacyNames) {
+      configurations.add({
+        'sportType': sportName,
+        'pricePerHour': legacyPrice,
+        'fullStudio': true,
+        'includedPlayers': includedPlayers,
+        'additionalPlayerFee': additionalPlayerFee,
+        'slotCount': 1,
+      });
+    }
+  }
+  return configurations;
+}
 
 class SportsVenueDetailPage extends StatefulWidget {
   const SportsVenueDetailPage({
@@ -275,9 +356,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             GestureDetector(
                               onTap: _toggleSaved,
                               child: Icon(
-                                isSaved
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
+                                isSaved ? savedItemSelectedIcon : savedItemIcon,
                                 color: isSaved ? _sportsOrange : Colors.white,
                                 size: 30,
                               ),
@@ -331,6 +410,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         children: [
                           Expanded(
                             child: Text(
+                              key: const ValueKey('sports-venue-title'),
                               widget.venue.name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -340,6 +420,31 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -0.6,
                               ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Semantics(
+                            label: '${widget.venue.heartCount} venue hearts',
+                            child: Row(
+                              key: const ValueKey('sports-venue-heart-count'),
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.favorite_rounded,
+                                  color: Colors.red.shade600,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '${widget.venue.heartCount}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF1B1C1E),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -438,6 +543,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         Icons.location_on_outlined,
                         widget.venue.address,
                       ),
+                      if (widget.venue.distanceLabel.isNotEmpty)
+                        KeyedSubtree(
+                          key: const ValueKey('sports-venue-distance'),
+                          child: _detailRow(
+                            Icons.near_me_outlined,
+                            widget.venue.distanceLabel,
+                          ),
+                        ),
                       if (widget.venue.hours.trim().isNotEmpty)
                         _detailRow(
                           Icons.access_time_outlined,
@@ -1055,6 +1168,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             return '$start - $end|PHP ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr';
           }).toList()
         : <String>[];
+    final totalSlots =
+        int.tryParse('${b['slotCount'] ?? b['slot_count'] ?? 1}') ?? 1;
+    final sportsSlots = normalizeSportsSlotConfigurations(
+      raw: b['sportsSlots'] ?? b['sports_slots_json'],
+      legacySportTypes: '${b['category'] ?? 'Sports'}',
+      legacyPrice: price,
+      totalSlots: totalSlots,
+      includedPlayers: includedPlayers,
+      additionalPlayerFee: additionalPlayerFee,
+    );
     final rateValues = rawPeriods is List
         ? rawPeriods
               .whereType<Map>()
@@ -1067,15 +1190,27 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               .where((value) => value > 0)
               .toList()
         : <double>[];
+    final sportsRateValues = sportsSlots
+        .map((sport) => (sport['pricePerHour'] as num).toDouble())
+        .where((value) => value > 0)
+        .toList();
+    final sportRateLabels = sportsSlots.map((sport) {
+      final rate = (sport['pricePerHour'] as num).toDouble();
+      final rateUnit = sport['fullStudio'] == true
+          ? 'whole studio'
+          : 'per slot';
+      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / $rateUnit';
+    }).toList();
     final maxPrice = [
       price,
       ...rateValues,
+      ...sportsRateValues,
     ].reduce((maximum, value) => value > maximum ? value : maximum);
     final images = _merchantImages(b);
     return (
       id: (b['id'] as num?)?.toInt() ?? 0,
       name: b['name'] as String? ?? 'Business',
-      sport: '${b['category'] ?? 'Sports'}',
+      sport: sportsSlots.map((item) => item['sportType']).join(', '),
       address: '${b['address'] ?? ''}',
       ownerName: _ownerName(b),
       type: '${b['facilityType'] ?? b['facility_type'] ?? 'Facility'}',
@@ -1087,7 +1222,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       images: images,
       priceDay: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
       priceNight: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
-      priceLines: periods.isEmpty
+      priceLines: sportRateLabels.isNotEmpty
+          ? sportRateLabels
+          : periods.isEmpty
           ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
           : periods,
       maxPrice: maxPrice,
@@ -1105,10 +1242,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           0,
       includedPlayers: includedPlayers,
       additionalPlayerFee: additionalPlayerFee,
+      totalSlots: totalSlots,
+      sportsSlots: sportsSlots,
       tags: tags,
-      rateLabels: periods,
+      rateLabels: sportRateLabels.isNotEmpty ? sportRateLabels : periods,
       latitude: 0,
       longitude: 0,
+      distanceLabel: '',
+      heartCount: 0,
       visitUrl: '${b['visitUrl'] ?? b['visit_url'] ?? ''}',
       merchantEmail: '${b['merchantEmail'] ?? b['merchant_email'] ?? ''}',
       merchantPhone: '${b['merchantPhone'] ?? b['merchant_phone'] ?? ''}',
@@ -1207,10 +1348,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     ratingUserCount: 0,
     includedPlayers: 0,
     additionalPlayerFee: 0,
+    totalSlots: 1,
+    sportsSlots: const [],
     tags: const [],
     rateLabels: const [],
     latitude: 0,
     longitude: 0,
+    distanceLabel: '',
+    heartCount: 0,
     visitUrl: '',
     merchantEmail: '',
     merchantPhone: '',
@@ -1222,11 +1367,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       _showMessage('This merchant venue is not available for booking yet.');
       return;
     }
-    final rate = venue.maxPrice;
-    if (!rate.isFinite || rate <= 0) {
+    if (venue.sportsSlots.isEmpty ||
+        venue.sportsSlots.any(
+          (sport) =>
+              !((sport['pricePerHour'] as num?)?.toDouble() ?? 0).isFinite ||
+              ((sport['pricePerHour'] as num?)?.toDouble() ?? 0) <= 0,
+        )) {
       _showMessage('This venue does not have a valid merchant rate.');
       return;
     }
+    var selectedSportType = '${venue.sportsSlots.first['sportType']}';
+    var selectedSlotNumber = 1;
     var hours = 1;
     var players = 1;
     var payment = 'online';
@@ -1234,6 +1385,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     TimeOfDay bookingTime = TimeOfDay.now();
     var occupiedBookings = <Map<String, dynamic>>[];
     var availabilityLoading = true;
+    var availabilityNow = DateTime.now();
+    Timer? availabilityTimer;
     final session = await AppSession.load();
     final token = session.apiToken;
     if (token != null && token.isNotEmpty) {
@@ -1256,10 +1409,35 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       backgroundColor: const Color(0xFFF8F9FF),
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) {
+          availabilityTimer ??= Timer.periodic(
+            const Duration(seconds: 30),
+            (_) {
+              if (context.mounted) {
+                setModalState(() => availabilityNow = DateTime.now());
+              }
+            },
+          );
+          final selectedSport = venue.sportsSlots.firstWhere(
+            (sport) => sport['sportType'] == selectedSportType,
+            orElse: () => venue.sportsSlots.first,
+          );
+          final rate = (selectedSport['pricePerHour'] as num).toDouble();
+          final selectedSportIsFullStudio =
+              selectedSport['fullStudio'] == true;
+          final selectedSportSlotCount =
+              selectedSportIsFullStudio
+              ? 1
+              : (selectedSport['slotCount'] as num).toInt();
+          final sportIncludedPlayers =
+              (selectedSport['includedPlayers'] as num?)?.toInt() ??
+              venue.includedPlayers;
+          final sportAdditionalPlayerFee =
+              (selectedSport['additionalPlayerFee'] as num?)?.toDouble() ??
+              venue.additionalPlayerFee;
           final extraPlayerCharge = calculateExtraPlayerCharge(
             players: players,
-            includedPlayers: venue.includedPlayers,
-            feePerExtraPlayer: venue.additionalPlayerFee,
+            includedPlayers: sportIncludedPlayers,
+            feePerExtraPlayer: sportAdditionalPlayerFee,
           );
           final total = rate * hours + extraPlayerCharge;
           final cashOnArrival = total / 2;
@@ -1268,7 +1446,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             bookingTime,
             hours,
             occupiedBookings,
+            slotNumber: selectedSlotNumber,
+            fullStudio: selectedSportIsFullStudio,
           );
+          final relevantBookings = occupiedBookings.where((booking) {
+            return selectedSportIsFullStudio ||
+                _bookingUsesSlot(
+                  booking,
+                  selectedSlotNumber,
+                  fullStudio: false,
+                );
+          }).toList();
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -1349,9 +1537,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                         borderRadius: BorderRadius.circular(99),
                                       ),
                                       child: Text(
-                                        venue.sport.isEmpty
-                                            ? 'VENUE'
-                                            : venue.sport.toUpperCase(),
+                                        selectedSportType.toUpperCase(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           color: _sportsOrange,
                                           fontSize: 10,
@@ -1398,6 +1586,120 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             'Venue hours: ${venue.hours}',
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'CHOOSE SPORT AND SLOT',
+                      style: TextStyle(
+                        color: _sportsMuted,
+                        fontSize: 11,
+                        letterSpacing: .9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedSportType,
+                      isExpanded: true,
+                      decoration: _bookingInputDecoration(
+                        prefixIcon: const Icon(Icons.sports_tennis_rounded),
+                        labelText: 'Sport type',
+                      ),
+                      items: [
+                        for (final sport in venue.sportsSlots)
+                          DropdownMenuItem(
+                            value: '${sport['sportType']}',
+                            child: Text(
+                              '${sport['sportType']} · PHP ${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr · '
+                              '${sport['fullStudio'] == true ? 'Whole studio' : '${sport['slotCount']} slots'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setModalState(() {
+                          selectedSportType = value;
+                          selectedSlotNumber = 1;
+                        });
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Text(
+                        selectedSportIsFullStudio
+                            ? 'Rate: PHP ${rate.toStringAsFixed(2)} / hour · Whole studio'
+                            : 'Rate: PHP ${rate.toStringAsFixed(2)} / slot / hour · '
+                                  '$selectedSportSlotCount slots',
+                        style: const TextStyle(
+                          color: _sportsMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (var slot = 1;
+                            slot <= selectedSportSlotCount;
+                            slot++)
+                          Builder(
+                            builder: (context) {
+                              final blocked = _bookingSlotOverlaps(
+                                bookingTime,
+                                hours,
+                                occupiedBookings,
+                                slotNumber: slot,
+                                fullStudio: selectedSportIsFullStudio,
+                              );
+                              final selected = selectedSlotNumber == slot;
+                              final label = selectedSportIsFullStudio
+                                  ? 'Whole studio'
+                                  : 'Slot $slot';
+                              return ChoiceChip(
+                                selected: selected,
+                                onSelected: (_) => setModalState(
+                                  () => selectedSlotNumber = slot,
+                                ),
+                                avatar: Icon(
+                                  blocked
+                                      ? Icons.event_busy_rounded
+                                      : Icons.check_circle_outline_rounded,
+                                  size: 16,
+                                  color: blocked
+                                      ? Colors.red.shade700
+                                      : Colors.green.shade700,
+                                ),
+                                label: Text(
+                                  '$label · ${blocked ? 'Unavailable' : 'Open'}',
+                                ),
+                                selectedColor: blocked
+                                    ? Colors.red.shade100
+                                    : Colors.green.shade100,
+                                side: BorderSide(
+                                  color: blocked
+                                      ? Colors.red.shade200
+                                      : Colors.green.shade200,
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      selectedSportIsFullStudio
+                          ? 'This sport uses the whole studio; its bookings block every small slot.'
+                          : 'PHP ${rate.toStringAsFixed(2)} per slot per hour. '
+                                'Different slots can be booked at the same time.',
+                      style: const TextStyle(
+                        color: _sportsMuted,
+                        fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -1495,9 +1797,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     const SizedBox(height: 8),
                     if (availabilityLoading)
                       const LinearProgressIndicator()
-                    else if (occupiedBookings.isEmpty)
+                    else if (relevantBookings.isEmpty)
                       Text(
-                        'No existing bookings for this date.',
+                        'Selected slot is open for this date.',
                         style: TextStyle(
                           color: Colors.green.shade700,
                           fontSize: 12,
@@ -1506,7 +1808,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       )
                     else ...[
                       Text(
-                        'Already booked on this date',
+                        'Selected slot schedule',
                         style: TextStyle(
                           color: Colors.red.shade700,
                           fontWeight: FontWeight.w800,
@@ -1516,7 +1818,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: occupiedBookings
+                        children: relevantBookings
                             .map(
                               (booking) => Chip(
                                 avatar: Icon(
@@ -1524,7 +1826,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   size: 16,
                                   color: Colors.red.shade700,
                                 ),
-                                label: Text(_occupiedBookingLabel(booking)),
+                                label: Text(
+                                  _occupiedBookingLabel(
+                                    booking,
+                                    bookingDate: bookingDate,
+                                    now: availabilityNow,
+                                  ),
+                                ),
                                 backgroundColor: Colors.red.shade50,
                                 side: BorderSide(color: Colors.red.shade200),
                               ),
@@ -1601,14 +1909,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         }
                       },
                     ),
-                    if (venue.additionalPlayerFee > 0 &&
-                        venue.includedPlayers > 0)
+                    if (sportAdditionalPlayerFee > 0 &&
+                        sportIncludedPlayers > 0)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          '${venue.includedPlayers} players included; '
+                          '$sportIncludedPlayers players included; '
                           'each additional player costs PHP '
-                          '${venue.additionalPlayerFee.toStringAsFixed(2)}.',
+                          '${sportAdditionalPlayerFee.toStringAsFixed(2)}.',
                           style: TextStyle(
                             color: Colors.orange.shade900,
                             fontSize: 12,
@@ -1679,8 +1987,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     if (extraPlayerCharge > 0)
                       _bookingAmountRow(
-                        'Extra players (${players - venue.includedPlayers} × '
-                            'PHP ${venue.additionalPlayerFee.toStringAsFixed(2)})',
+                        'Extra players (${players - sportIncludedPlayers} × '
+                            'PHP ${sportAdditionalPlayerFee.toStringAsFixed(2)})',
                         extraPlayerCharge,
                         '',
                       ),
@@ -1737,9 +2045,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   bookingTime: bookingTime,
                                   hours: hours,
                                   players: players,
+                                  sportType: selectedSportType,
+                                  slotNumber: selectedSlotNumber,
                                   total: total,
                                   extraPlayerCharge: extraPlayerCharge,
                                   payment: payment,
+                                  onPaymentChanged: (value) =>
+                                      setModalState(() => payment = value),
                                 );
                               },
                         style: FilledButton.styleFrom(
@@ -1768,6 +2080,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         },
       ),
     );
+    availabilityTimer?.cancel();
   }
 
   Widget _modalIconButton(IconData icon, VoidCallback onPressed) {
@@ -1830,6 +2143,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     TimeOfDay selectedTime,
     int durationHours,
     List<Map<String, dynamic>> bookings,
+    {required int slotNumber, required bool fullStudio}
   ) {
     final selectedStart = selectedTime.hour * 60 + selectedTime.minute;
     final selectedEnd = selectedStart + durationHours * 60;
@@ -1845,12 +2159,36 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       }
       final bookedStart = startHour * 60 + startMinute;
       final bookedEnd = bookedStart + (duration * 60).round();
-      if (selectedStart < bookedEnd && selectedEnd > bookedStart) return true;
+      if (selectedStart < bookedEnd &&
+          selectedEnd > bookedStart &&
+          _bookingUsesSlot(booking, slotNumber, fullStudio: fullStudio)) {
+        return true;
+      }
     }
     return false;
   }
 
-  String _occupiedBookingLabel(Map<String, dynamic> booking) {
+  bool _bookingUsesSlot(
+    Map<String, dynamic> booking,
+    int slotNumber, {
+    required bool fullStudio,
+  }) {
+    final bookingIsFullStudio =
+        booking['occupiesFullStudio'] == true ||
+        booking['occupiesFullStudio'] == 1 ||
+        booking['occupies_full_studio'] == 1;
+    if (fullStudio || bookingIsFullStudio) return true;
+    return int.tryParse(
+          '${booking['slotNumber'] ?? booking['slot_number'] ?? ''}',
+        ) ==
+        slotNumber;
+  }
+
+  String _occupiedBookingLabel(
+    Map<String, dynamic> booking, {
+    required DateTime bookingDate,
+    required DateTime now,
+  }) {
     final rawStart = '${booking['startTime'] ?? ''}';
     final parts = rawStart.split(':');
     final hour = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
@@ -1863,7 +2201,31 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       hour: (endMinutes ~/ 60) % 24,
       minute: endMinutes % 60,
     );
-    return '${_formatTime(start)} - ${_formatTime(end)}';
+    final startDateTime = DateTime(
+      bookingDate.year,
+      bookingDate.month,
+      bookingDate.day,
+      hour,
+      minute,
+    );
+    final durationMinutes = (duration * 60).round();
+    final endDateTime = startDateTime.add(
+      Duration(minutes: durationMinutes),
+    );
+    final remaining = endDateTime.difference(now);
+    final activeCountdown =
+        !now.isBefore(startDateTime) && remaining.inSeconds > 0;
+    final slot = booking['occupiesFullStudio'] == true ||
+            booking['occupiesFullStudio'] == 1 ||
+            booking['occupies_full_studio'] == 1
+        ? 'Whole studio'
+        : 'Slot ${booking['slotNumber'] ?? booking['slot_number'] ?? ''}';
+    final sport = '${booking['sportType'] ?? ''}'.trim();
+    final countdown = activeCountdown
+        ? ' · ${remaining.inHours}h ${remaining.inMinutes % 60}m remaining'
+        : '';
+    return '${sport.isEmpty ? slot : '$sport · $slot'} · '
+        '${_formatTime(start)} - ${_formatTime(end)}$countdown';
   }
 
   String _formatTime(TimeOfDay time) {
@@ -1879,9 +2241,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required TimeOfDay bookingTime,
     required int hours,
     required int players,
+    required String sportType,
+    required int slotNumber,
     required double total,
     required double extraPlayerCharge,
     required String payment,
+    required ValueChanged<String> onPaymentChanged,
   }) async {
     final session = await AppSession.load();
     final token = session.apiToken;
@@ -1901,12 +2266,48 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ? await _chooseOnlineProvider()
           : null;
       if (payment == 'online' && onlineProvider == null) return;
+      if (payment == 'online' &&
+          !await _api.payMongoPaymentsEnabled(token)) {
+        if (!mounted || !modalContext.mounted) return;
+        final useCashOnArrival = await showDialog<bool>(
+          context: modalContext,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Online payment unavailable'),
+            content: const Text(
+              'Online payments are not configured yet. No booking has been '
+              'created. You can choose Cash on Arrival or try again later.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Use Cash on Arrival'),
+              ),
+            ],
+          ),
+        );
+        if (useCashOnArrival == true && modalContext.mounted) {
+          onPaymentChanged('cash_on_arrival');
+        }
+        return;
+      }
       final confirmed = await _confirmBookingDetails(
         venue: venue,
         bookingDate: bookingDate,
         bookingTime: bookingTime,
         hours: hours,
         players: players,
+        sportType: sportType,
+        slotNumber: slotNumber,
+        fullStudio:
+            venue.sportsSlots.firstWhere(
+                  (sport) => sport['sportType'] == sportType,
+                  orElse: () => venue.sportsSlots.first,
+                )['fullStudio'] ==
+                true,
         payment: payment,
         onlineProvider: onlineProvider,
         total: total,
@@ -1921,6 +2322,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         durationHours: hours.toDouble(),
         players: players,
         paymentMethod: payment,
+        sportType: sportType,
+        slotNumber: slotNumber,
       );
       if (!mounted || !modalContext.mounted) return;
       Navigator.of(modalContext).pop();
@@ -1988,6 +2391,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required TimeOfDay bookingTime,
     required int hours,
     required int players,
+    required String sportType,
+    required int slotNumber,
+    required bool fullStudio,
     required String payment,
     required String? onlineProvider,
     required double total,
@@ -2013,6 +2419,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               ),
               const SizedBox(height: 16),
               _confirmationRow('Venue', venue.name),
+              _confirmationRow('Sport', sportType),
+              _confirmationRow(
+                'Booked area',
+                fullStudio ? 'Whole studio' : 'Slot $slotNumber',
+              ),
               _confirmationRow('Date', _bookingDateLabel(bookingDate)),
               _confirmationRow('Time', _timeLabel(bookingTime)),
               _confirmationRow(

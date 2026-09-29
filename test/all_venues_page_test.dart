@@ -30,7 +30,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Popular courts near you'), findsOneWidget);
+    expect(find.text('Courts with the most hearts'), findsOneWidget);
     expect(find.byKey(const ValueKey('all-venues-search')), findsOneWidget);
 
     await tester.drag(
@@ -39,7 +39,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Popular courts near you'), findsNothing);
+    expect(find.text('Courts with the most hearts'), findsNothing);
     expect(find.byKey(const ValueKey('all-venues-search')), findsOneWidget);
 
     await tester.drag(
@@ -48,7 +48,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Popular courts near you'), findsOneWidget);
+    expect(find.text('Courts with the most hearts'), findsOneWidget);
     expect(find.byKey(const ValueKey('all-venues-search')), findsOneWidget);
   });
 
@@ -105,6 +105,9 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('all-venues-filter-sport-Basketball')),
       );
+      await tester.pump();
+      final drawerHeader = tester.getTopLeft(find.text('Filter venues'));
+      expect(drawerHeader.dx, greaterThan(0));
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('all-venues-filter-amenity-Parking')),
         120,
@@ -128,6 +131,51 @@ void main() {
 
       expect(find.text('Basketball court'), findsOneWidget);
       expect(find.text('Tennis court'), findsNothing);
+      expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isTrue);
+      expect(find.byTooltip('Filter venues (1 active)'), findsOneWidget);
     });
+  }
+
+  testWidgets('All Venues filter slides in from the right for 300ms', (
+    tester,
+  ) async {
+    final observer = _RouteObserver();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [observer],
+        home: AllVenuesPage(
+          title: 'Most popular',
+          posts: const [],
+          cardBuilder: (_) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('all-venues-open-filters')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Filter venues'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('filter-panel-surface'))).width,
+      440,
+    );
+    expect(tester.widget<Text>(find.text('Filter venues')).style?.fontSize, 20);
+    final route = observer.lastPushedRoute! as RawDialogRoute<void>;
+    expect(route.transitionDuration, const Duration(milliseconds: 300));
+    expect(route.reverseTransitionDuration, route.transitionDuration);
+
+    await tester.tap(find.byTooltip('Close filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filter venues'), findsNothing);
+  });
+}
+
+class _RouteObserver extends NavigatorObserver {
+  Route<dynamic>? lastPushedRoute;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    lastPushedRoute = route;
+    super.didPush(route, previousRoute);
   }
 }

@@ -7,6 +7,20 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
 const { sendPasswordResetCode, sendVerificationCode } = require('./mailer');
+const {
+  createBookingToken,
+  createVerificationCode,
+  eventDetailsFromBody,
+  hashBookingToken,
+  hashVerificationCode,
+  isValidRole,
+  normalizeEmail,
+  normalizeText,
+  parseBusinessCoordinates,
+  parseJsonArray,
+  publicMessageUser,
+  publicUser,
+} = require('./normalizers');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -16,66 +30,51 @@ const googleClientId = process.env.GOOGLE_CLIENT_ID ||
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set in the backend .env file.');
 }
-
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || true }));
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({
+  limit: '20mb',
+  verify: (req, _res, buffer) => {
+    if (req.originalUrl.startsWith('/api/payments/paymongo/webhook')) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 
-function normalizeEmail(value) {
-  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+function hasValidPaymongoSignature(rawBody, signatureHeader, liveMode, secret) {
+  if (!rawBody || !signatureHeader || !secret) return false;
+  const signatureParts = Object.fromEntries(
+    signatureHeader
+      .split(',')
+      .map((part) => part.trim().split('=', 2))
+      .filter(([key, value]) => key && value),
+  );
+  const timestamp = signatureParts.t;
+  const providedSignature = signatureParts[liveMode ? 'li' : 'te'];
+  if (!timestamp || !providedSignature) return false;
+
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody.toString('utf8')}`)
+    .digest('hex');
+  const expected = Buffer.from(expectedSignature, 'hex');
+  const provided = Buffer.from(providedSignature, 'hex');
+  return expected.length === provided.length &&
+    crypto.timingSafeEqual(expected, provided);
 }
 
-function normalizeText(value, max = 255) {
-  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+function isConfiguredPaymentValue(value) {
+  return typeof value === 'string' &&
+    value.trim().length > 0 &&
+    !/^(your_|replace-with|sk_test_your|whsk_your)/i.test(value.trim());
 }
 
-function parseBusinessCoordinates(body) {
-  const hasLatitude = Object.prototype.hasOwnProperty.call(body, 'latitude');
-  const hasLongitude = Object.prototype.hasOwnProperty.call(body, 'longitude');
-  if (!hasLatitude && !hasLongitude) {
-    return { provided: false, valid: true, latitude: null, longitude: null };
-  }
-  const rawLatitude = body.latitude;
-  const rawLongitude = body.longitude;
-  if (
-    (rawLatitude === null || rawLatitude === '') &&
-    (rawLongitude === null || rawLongitude === '')
-  ) {
-    return { provided: true, valid: true, latitude: null, longitude: null };
-  }
-  const latitude = Number(rawLatitude);
-  const longitude = Number(rawLongitude);
-  const valid =
-    Number.isFinite(latitude) &&
-    latitude >= -90 &&
-    latitude <= 90 &&
-    Number.isFinite(longitude) &&
-    longitude >= -180 &&
-    longitude <= 180;
-  return {
-    provided: true,
-    valid,
-    latitude: valid ? latitude : null,
-    longitude: valid ? longitude : null,
-  };
-}
-
-function eventDetailsFromBody(body) {
-  const list = (value) =>
-    Array.isArray(value)
-      ? value.filter((item) => typeof item === 'string').slice(0, 20)
-      : [];
-  const integer = (value) => {
-    const parsed = Number(value);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-  };
-  return {
-    eventTypes: list(body.eventTypes),
-    attendanceMin: integer(body.attendanceMin),
-    attendanceMax: integer(body.attendanceMax),
-    accessibilityNeeds: list(body.accessibilityNeeds),
-    parkingNeeds: list(body.parkingNeeds),
-    securityNeeds: list(body.securityNeeds),
-  };
+function paymongoIsConfigured() {
+  return [
+    process.env.PAYMONGO_SECRET_KEY,
+    process.env.PAYMONGO_WEBHOOK_SECRET,
+    process.env.PAYMONGO_SUCCESS_URL,
+    process.env.PAYMONGO_CANCEL_URL,
+  ].every(isConfiguredPaymentValue);
 }
 
 async function saveEventDetails(businessId, body) {
@@ -111,21 +110,6 @@ async function saveEventDetails(businessId, body) {
   );
 }
 
-function parseJsonArray(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== 'string' || value.trim() === '') return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function isValidRole(role) {
-  return role === 'customer' || role === 'merchant';
-}
-
 function createToken(user) {
   return jwt.sign(
     { sub: String(user.id), email: user.email, role: user.role },
@@ -134,47 +118,30 @@ function createToken(user) {
   );
 }
 
-function publicUser(user) {
-  return {
-    id: user.id,
-    email: user.email,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    phone: user.phone || null,
-    avatarUrl: user.avatar_url || null,
-    address: user.address || null,
-    hobby: user.hobby || null,
-    role: user.role,
-    status: user.status,
-  };
-}
-
-function createVerificationCode() {
-  return String(crypto.randomInt(100000, 1000000));
-}
-
-function hashVerificationCode(code) {
-  return crypto.createHash('sha256').update(code).digest('hex');
-}
-
-function createBookingToken() {
-  return crypto.randomBytes(18).toString('hex').toUpperCase();
-}
-
-function hashBookingToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
-
-function publicMessageUser(user) {
-  return {
-    id: user.id,
-    email: user.email,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    phone: user.phone || null,
-    avatarUrl: user.avatar_url || null,
-    role: user.role,
-  };
+async function recordUserActivity(
+  executor,
+  userId,
+  activityType,
+  title,
+  description,
+  venueDetails = null,
+) {
+  await executor.execute(
+    `INSERT INTO user_activity_logs
+       (user_id, activity_type, title, description, venue_id, venue_name,
+        sport_type, details_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      activityType,
+      title,
+      description,
+      venueDetails?.venueId ?? null,
+      venueDetails?.venueName ?? null,
+      venueDetails?.sportType ?? null,
+      venueDetails ? JSON.stringify(venueDetails.details ?? {}) : null,
+    ],
+  );
 }
 
 function requireAuth(req, res, next) {
@@ -363,6 +330,13 @@ app.post('/api/auth/register', async (req, res, next) => {
          VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
         [existing[0].id, hashVerificationCode(code)],
       );
+      await recordUserActivity(
+        connection,
+        existing[0].id,
+        'account_registration',
+        'Registration restarted',
+        'A new email verification code was requested.',
+      );
       await sendVerificationCode(email, code);
       await connection.commit();
 
@@ -392,6 +366,13 @@ app.post('/api/auth/register', async (req, res, next) => {
        (user_id, token_hash, expires_at)
        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
       [result.insertId, hashVerificationCode(code)],
+    );
+    await recordUserActivity(
+      connection,
+      result.insertId,
+      'account_registration',
+      'Account created',
+      'Your account registration was submitted.',
     );
     await sendVerificationCode(email, code);
     await connection.commit();
@@ -438,6 +419,13 @@ app.post('/api/auth/verify-email', async (req, res, next) => {
       await connection.beginTransaction();
       await connection.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', token.id]);
       await connection.execute('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [token.token_id]);
+      await recordUserActivity(
+        connection,
+        token.id,
+        'email_verified',
+        'Email verified',
+        'Your email address was verified.',
+      );
       await connection.commit();
     } catch (error) {
       await connection.rollback();
@@ -577,6 +565,13 @@ app.post('/api/auth/reset-password', async (req, res, next) => {
       'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?',
       [token.token_id],
     );
+    await recordUserActivity(
+      connection,
+      token.user_id,
+      'password_changed',
+      'Password changed',
+      'Your account password was changed.',
+    );
     await connection.commit();
     return res.json({ message: 'Your password has been changed. You can now sign in.' });
   } catch (error) {
@@ -644,6 +639,13 @@ app.post('/api/auth/login', async (req, res, next) => {
     }
 
     await pool.execute('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+    await recordUserActivity(
+      pool,
+      user.id,
+      'login',
+      'Signed in',
+      'You signed in to your account.',
+    );
     return res.json({ user: publicUser(user), token: createToken(user) });
   } catch (error) {
     return next(error);
@@ -666,6 +668,24 @@ app.get('/api/auth/me', requireAuth, async (req, res, next) => {
   }
 });
 
+app.get('/api/activity-logs', requireAuth, async (req, res, next) => {
+  try {
+    const [activities] = await pool.execute(
+      `SELECT id, activity_type AS activityType, title, description,
+              venue_id AS venueId, venue_name AS venueName,
+              sport_type AS sportType, details_json AS details,
+              created_at AS createdAt
+       FROM user_activity_logs
+       WHERE user_id = ?
+       ORDER BY created_at DESC, id DESC`,
+      [req.auth.sub],
+    );
+    return res.json({ activities });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.put('/api/auth/profile', requireAuth, async (req, res, next) => {
   const firstName = normalizeText(req.body.firstName, 100);
   const lastName = normalizeText(req.body.lastName, 100);
@@ -681,6 +701,13 @@ app.put('/api/auth/profile', requireAuth, async (req, res, next) => {
     await pool.execute(
       'UPDATE users SET first_name = ?, last_name = ?, phone = ?, address = ?, hobby = ?, avatar_url = ? WHERE id = ?',
       [firstName, lastName || null, phone || null, address || null, hobby || null, avatarUrl || null, req.auth.sub],
+    );
+    await recordUserActivity(
+      pool,
+      req.auth.sub,
+      'profile_updated',
+      'Profile updated',
+      'Your profile details were changed.',
     );
     const [rows] = await pool.execute(
       `SELECT id, email, first_name, last_name, phone, avatar_url, address, hobby, role, status
@@ -1040,6 +1067,13 @@ app.post('/api/messages/conversations/:id', requireAuth, async (req, res, next) 
           : null,
       ],
     );
+    await recordUserActivity(
+      pool,
+      req.auth.sub,
+      'message_sent',
+      'Message sent',
+      'You sent a message in a conversation.',
+    );
     return res.status(201).json({ message: 'Message sent.' });
   } catch (error) {
     return next(error);
@@ -1180,6 +1214,8 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
               b.event_fee AS eventFee,
               b.included_players AS includedPlayers,
               b.additional_player_fee AS additionalPlayerFee,
+              b.slot_count AS slotCount,
+              b.sports_slots_json AS sportsSlots,
               b.visit_url AS visitUrl,
               b.opening_hours AS hours, b.availability,
               b.enabled,
@@ -1220,16 +1256,10 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         'parkingNeeds',
         'securityNeeds',
       ]) {
-        business[field] = parseJsonArray(business[field]);
+        business[field] = parseJsonArray(business[field], field);
       }
-      if (typeof business.imageUrls === 'string') {
-        try {
-          business.imageUrls = JSON.parse(business.imageUrls);
-        } catch {
-          business.imageUrls = [];
-        }
-      }
-      if (!Array.isArray(business.imageUrls)) business.imageUrls = [];
+      business.sportsSlots = parseJsonArray(business.sportsSlots, 'sportsSlots');
+      business.imageUrls = parseJsonArray(business.imageUrls, 'imageUrls');
       if (business.imageUrls.length === 0 && business.imageUrl) {
         try {
           const legacyImages = JSON.parse(business.imageUrl);
@@ -1264,6 +1294,8 @@ app.get('/api/businesses', async (req, res, next) => {
               b.event_fee AS eventFee,
               b.included_players AS includedPlayers,
               b.additional_player_fee AS additionalPlayerFee,
+              b.slot_count AS slotCount,
+              b.sports_slots_json AS sportsSlots,
               b.visit_url AS visitUrl,
               b.opening_hours AS hours, b.availability, b.enabled,
               b.rate_periods AS ratePeriods,
@@ -1302,26 +1334,13 @@ app.get('/api/businesses', async (req, res, next) => {
         'parkingNeeds',
         'securityNeeds',
       ]) {
-        business[field] = parseJsonArray(business[field]);
+        business[field] = parseJsonArray(business[field], field);
       }
       for (const field of ['ratePeriods', 'tags']) {
-        if (typeof business[field] === 'string') {
-          try {
-            business[field] = JSON.parse(business[field]);
-          } catch {
-            business[field] = [];
-          }
-        }
-        if (!Array.isArray(business[field])) business[field] = [];
+        business[field] = parseJsonArray(business[field], field);
       }
-      if (typeof business.imageUrls === 'string') {
-        try {
-          business.imageUrls = JSON.parse(business.imageUrls);
-        } catch {
-          business.imageUrls = [];
-        }
-      }
-      if (!Array.isArray(business.imageUrls)) business.imageUrls = [];
+      business.sportsSlots = parseJsonArray(business.sportsSlots, 'sportsSlots');
+      business.imageUrls = parseJsonArray(business.imageUrls, 'imageUrls');
       if (business.imageUrls.length === 0 && business.imageUrl) {
         try {
           const legacyImages = JSON.parse(business.imageUrl);
@@ -1401,6 +1420,9 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
   const eventFee = Number(req.body.eventFee);
   const includedPlayers = Number(req.body.includedPlayers ?? 0);
   const additionalPlayerFee = Number(req.body.additionalPlayerFee ?? 0);
+  const slotCount = Number(req.body.slotCount ?? 1);
+  const sportsSlots = req.body.sportsSlots === undefined
+    ? null : normalizeSportsSlots(req.body.sportsSlots, slotCount);
   const ratePeriods = Array.isArray(req.body.ratePeriods)
     ? req.body.ratePeriods.slice(0, 20)
     : [];
@@ -1426,7 +1448,9 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
     additionalPlayerFee >= 0 &&
     additionalPlayerFee <= 99999999.99 &&
     (additionalPlayerFee === 0 ||
-      (businessType === 'Sports' && includedPlayers > 0));
+      (businessType === 'Sports' && includedPlayers > 0)) &&
+    (businessType !== 'Sports' || req.body.sportsSlots === undefined ||
+      sportsSlots !== null);
   if (!valid) {
     return res.status(400).json({ error: 'Please check the business details.' });
   }
@@ -1437,7 +1461,7 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
            price_per_hour = ?, event_fee = ?, opening_hours = ?, availability = ?,
            rate_periods = ?, amenities_json = ?, details = ?, image_url = ?,
            image_urls = ?, visit_url = ?, included_players = ?,
-           additional_player_fee = ?,
+           additional_player_fee = ?, slot_count = ?, sports_slots_json = ?,
            latitude = IF(?, ?, latitude), longitude = IF(?, ?, longitude)
        WHERE id = ? AND merchant_id = ?`,
       [
@@ -1449,6 +1473,9 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
         JSON.stringify(imageUrls), visitUrl || null,
         businessType === 'Sports' ? includedPlayers : 0,
         businessType === 'Sports' ? additionalPlayerFee : 0,
+        businessType === 'Sports' ? slotCount : 1,
+        businessType === 'Sports' && sportsSlots
+          ? JSON.stringify(sportsSlots) : null,
         coordinates.provided, coordinates.latitude,
         coordinates.provided, coordinates.longitude,
         id, req.auth.sub,
@@ -1478,6 +1505,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   const eventFee = Number(req.body.eventFee);
   const includedPlayers = Number(req.body.includedPlayers ?? 0);
   const additionalPlayerFee = Number(req.body.additionalPlayerFee ?? 0);
+  const slotCount = Number(req.body.slotCount ?? 1);
+  const sportsSlots = req.body.sportsSlots === undefined
+    ? null : normalizeSportsSlots(req.body.sportsSlots, slotCount);
   const hours = text(req.body.hours, 100);
   const availability = text(req.body.availability, 255);
   const ratePeriods = Array.isArray(req.body.ratePeriods)
@@ -1546,6 +1576,10 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
   ) {
     validationErrors.push('extra-player fee settings');
   }
+  if (businessType === 'Sports' && req.body.sportsSlots !== undefined &&
+      sportsSlots === null) {
+    validationErrors.push('sport slot and pricing settings');
+  }
   if (validationErrors.length > 0) {
     return res.status(400).json({
       error: `Please check: ${validationErrors.join(', ')}.`,
@@ -1566,8 +1600,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
        (merchant_id, business_type, name, category, address, facility_type,
         price_per_hour, event_fee, opening_hours, availability, rate_periods,
         amenities_json, details, image_url, image_urls, visit_url,
-        included_players, additional_player_fee, latitude, longitude)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+        included_players, additional_player_fee, slot_count, sports_slots_json,
+        latitude, longitude)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
       [
         req.auth.sub,
         businessType,
@@ -1587,6 +1622,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         visitUrl || null,
         businessType === 'Sports' ? includedPlayers : 0,
         businessType === 'Sports' ? additionalPlayerFee : 0,
+        businessType === 'Sports' ? slotCount : 1,
+        businessType === 'Sports' && sportsSlots
+          ? JSON.stringify(sportsSlots) : null,
         coordinates.latitude,
         coordinates.longitude,
       ],
@@ -1676,6 +1714,13 @@ app.post('/api/saved-items', requireAuth, async (req, res, next) => {
       [req.auth.sub, itemType, itemKey, title, subtitle || null, imageUrl,
        ownerEmail, ownerPhone],
     );
+    await recordUserActivity(
+      pool,
+      req.auth.sub,
+      'item_saved',
+      'Saved an item',
+      `Saved ${itemType} item: ${title.slice(0, 200)}.`,
+    );
     return res.status(201).json({ message: 'Item saved.' });
   } catch (error) {
     return next(error);
@@ -1687,10 +1732,19 @@ app.delete('/api/saved-items/:itemType/:itemKey', requireAuth, async (req, res, 
     return res.status(400).json({ error: 'Invalid saved item type.' });
   }
   try {
-    await pool.execute(
+    const [result] = await pool.execute(
       'DELETE FROM saved_items WHERE user_id = ? AND item_type = ? AND item_key = ?',
       [req.auth.sub, req.params.itemType, req.params.itemKey],
     );
+    if (result.affectedRows > 0) {
+      await recordUserActivity(
+        pool,
+        req.auth.sub,
+        'item_removed',
+        'Removed a saved item',
+        `Removed a saved ${req.params.itemType} item.`,
+      );
+    }
     return res.json({ message: 'Item removed.' });
   } catch (error) {
     return next(error);
@@ -1811,6 +1865,13 @@ app.post('/api/auth/oauth/google', async (req, res, next) => {
            last_used_at = CURRENT_TIMESTAMP`,
         [user.id, providerUserId, email],
       );
+      await recordUserActivity(
+        connection,
+        user.id,
+        'login',
+        'Signed in with Google',
+        'You signed in to your account using Google.',
+      );
       await connection.commit();
     } catch (error) {
       await connection.rollback();
@@ -1849,6 +1910,70 @@ function validTime(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value);
 }
 
+function normalizeSportsSlots(value, totalSlots) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 20 ||
+      !Number.isInteger(totalSlots) || totalSlots < 1 || totalSlots > 100) {
+    return null;
+  }
+  const names = new Set();
+  const normalized = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') return null;
+    const sportType = typeof item.sportType === 'string'
+      ? item.sportType.trim().slice(0, 100) : '';
+    const pricePerHour = Number(item.pricePerHour);
+    const includedPlayers = item.includedPlayers == null ||
+        item.includedPlayers === ''
+      ? 0 : Number(item.includedPlayers);
+    const additionalPlayerFee = item.additionalPlayerFee == null ||
+        item.additionalPlayerFee === ''
+      ? 0 : Number(item.additionalPlayerFee);
+    const fullStudio = item.fullStudio === true;
+    const slotCount = Number(item.slotCount);
+    const key = sportType.toLowerCase();
+    if (!sportType || names.has(key) || !Number.isFinite(pricePerHour) ||
+        pricePerHour <= 0 || !Number.isInteger(slotCount) ||
+        !Number.isInteger(includedPlayers) || includedPlayers < 0 ||
+        includedPlayers > 30 || !Number.isFinite(additionalPlayerFee) ||
+        additionalPlayerFee < 0 || additionalPlayerFee > 99999999.99 ||
+        (additionalPlayerFee > 0 && includedPlayers < 1) ||
+        slotCount < 1 || slotCount > totalSlots ||
+        (fullStudio && slotCount !== totalSlots)) {
+      return null;
+    }
+    names.add(key);
+    normalized.push({
+      sportType,
+      pricePerHour,
+      includedPlayers,
+      additionalPlayerFee,
+      fullStudio,
+      slotCount,
+    });
+  }
+  return normalized;
+}
+
+function configuredSportsSlots(venue) {
+  let sportsSlots = venue.sports_slots_json ?? venue.sportsSlots;
+  if (typeof sportsSlots === 'string') {
+    try {
+      sportsSlots = JSON.parse(sportsSlots);
+    } catch {
+      sportsSlots = null;
+    }
+  }
+  if (Array.isArray(sportsSlots) && sportsSlots.length > 0) {
+    return sportsSlots;
+  }
+  return [{
+    sportType: venue.category || 'Sports',
+    pricePerHour: Number(venue.price_per_hour ?? venue.pricePerHour),
+    fullStudio: true,
+    slotCount: 1,
+  }];
+}
+
 app.get('/api/bookings/availability', requireAuth, requireRole('customer'), async (req, res, next) => {
   const venueId = Number(req.query.venueId);
   const bookingDate = req.query.date;
@@ -1857,7 +1982,9 @@ app.get('/api/bookings/availability', requireAuth, requireRole('customer'), asyn
   }
   try {
     const [bookings] = await pool.execute(
-      `SELECT start_time AS startTime, duration_hours AS durationHours
+      `SELECT start_time AS startTime, duration_hours AS durationHours,
+              sport_type AS sportType, slot_number AS slotNumber,
+              occupies_full_studio AS occupiesFullStudio
        FROM bookings
        WHERE venue_id = ? AND booking_date = ?
          AND status IN ('pending', 'approved')
@@ -1870,6 +1997,278 @@ app.get('/api/bookings/availability', requireAuth, requireRole('customer'), asyn
   }
 });
 
+app.get(
+  '/api/payments/paymongo/config',
+  requireAuth,
+  requireRole('customer'),
+  (_req, res) => {
+    return res.json({ onlinePaymentsEnabled: paymongoIsConfigured() });
+  },
+);
+
+app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer'), async (req, res, next) => {
+  const bookingId = Number(req.body.bookingId);
+  const paymentMethod = typeof req.body.paymentMethod === 'string'
+    ? req.body.paymentMethod.trim() : '';
+  if (!Number.isSafeInteger(bookingId) || bookingId <= 0 ||
+      !['gcash', 'paymaya'].includes(paymentMethod)) {
+    return res.status(400).json({
+      error: 'Choose GCash or PayMaya before starting online payment.',
+    });
+  }
+  if (!paymongoIsConfigured()) {
+    return res.status(503).json({
+      error: 'Online payment is not fully configured. Ask the app administrator to configure PayMongo checkout and its payment webhook, or choose Cash on Arrival.',
+    });
+  }
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, total_amount AS totalAmount, payment_method AS paymentMethod,
+              payment_status AS paymentStatus, status
+         FROM bookings
+        WHERE id = ? AND customer_id = ?
+        LIMIT 1`,
+      [bookingId, req.auth.sub],
+    );
+    const booking = rows[0];
+    if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+    if (booking.paymentMethod !== 'online' || booking.status !== 'pending') {
+      return res.status(409).json({
+        error: 'Only pending online bookings can start checkout.',
+      });
+    }
+    if (booking.paymentStatus === 'paid') {
+      return res.status(409).json({ error: 'This booking has already been paid.' });
+    }
+    const response = await fetch('https://api.paymongo.com/v1/checkout_sessions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64')}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        data: {
+          attributes: {
+            line_items: [{
+              currency: 'PHP',
+              amount: Math.round(Number(booking.totalAmount) * 100),
+              name: `TinkerPro booking #${booking.id}`,
+              quantity: 1,
+            }],
+            payment_method_types: [paymentMethod],
+            success_url: process.env.PAYMONGO_SUCCESS_URL,
+            cancel_url: process.env.PAYMONGO_CANCEL_URL,
+            description: `TinkerPro booking #${booking.id}`,
+            reference_number: `BOOKING-${booking.id}`,
+            metadata: { booking_id: String(booking.id) },
+          },
+        },
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      return res.status(502).json({
+        error: payload?.errors?.[0]?.detail || 'PayMongo could not create checkout.',
+      });
+    }
+    const checkoutSessionId = payload?.data?.id;
+    const checkoutUrl = payload?.data?.attributes?.checkout_url;
+    if (
+      typeof checkoutSessionId !== 'string' ||
+      checkoutSessionId.trim().length === 0 ||
+      typeof checkoutUrl !== 'string' ||
+      checkoutUrl.trim().length === 0
+    ) {
+      return res.status(502).json({ error: 'PayMongo returned no checkout URL.' });
+    }
+    await pool.execute(
+      `UPDATE bookings
+       SET payment_checkout_session_id = ?, payment_status = 'unpaid'
+       WHERE id = ? AND customer_id = ? AND payment_status <> 'paid'`,
+      [checkoutSessionId, booking.id, req.auth.sub],
+    );
+    return res.json({ checkoutUrl });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
+  const webhookSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(503).json({ error: 'Payment webhook is not configured.' });
+  }
+  if (
+    !hasValidPaymongoSignature(
+      req.rawBody,
+      req.get('paymongo-signature'),
+      req.body?.data?.livemode === true,
+      webhookSecret,
+    )
+  ) {
+    return res.status(401).json({ error: 'Invalid payment webhook signature.' });
+  }
+
+  const event = req.body?.data;
+  if (event?.type !== 'checkout_session.payment.paid') {
+    return res.json({ received: true, ignored: true });
+  }
+  const checkoutSession = event.data;
+  const checkoutSessionId = checkoutSession?.id;
+  const attributes = checkoutSession?.attributes;
+  const payments = Array.isArray(attributes?.payments)
+    ? attributes.payments
+    : [];
+  const paidPayment = payments.find(
+    (payment) => payment?.attributes?.status === 'paid',
+  );
+  if (
+    typeof checkoutSessionId !== 'string' ||
+    !paidPayment ||
+    !Number.isSafeInteger(Number(paidPayment.attributes.amount)) ||
+    String(paidPayment.attributes.currency).toUpperCase() !== 'PHP'
+  ) {
+    return res.status(400).json({ error: 'Paid checkout details are invalid.' });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [rows] = await connection.execute(
+      `SELECT b.id, b.customer_id AS customerId, b.venue_id AS venueId,
+              b.booking_date AS bookingDate, b.start_time AS startTime,
+              b.duration_hours AS durationHours, b.players,
+              b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.occupies_full_studio AS occupiesFullStudio,
+              b.total_amount AS totalAmount, b.payment_method AS paymentMethod,
+              b.payment_status AS paymentStatus, b.status,
+              v.name AS venueName,
+              COALESCE(b.sport_type, v.category) AS sportType,
+              v.merchant_id AS merchantId
+       FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.payment_checkout_session_id = ? LIMIT 1 FOR UPDATE`,
+      [checkoutSessionId],
+    );
+    const booking = rows[0];
+    if (!booking) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Checkout session is not linked to a booking.' });
+    }
+    const expectedBookingId = String(booking.id);
+    const metadataBookingId = attributes?.metadata?.booking_id;
+    const referenceNumber = attributes?.reference_number;
+    if (
+      (metadataBookingId != null &&
+        String(metadataBookingId) !== expectedBookingId) ||
+      (referenceNumber != null &&
+        referenceNumber !== `BOOKING-${expectedBookingId}`)
+    ) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Checkout does not match its booking.' });
+    }
+    if (
+      booking.paymentMethod !== 'online' ||
+      booking.status !== 'pending' ||
+      Number(paidPayment.attributes.amount) !==
+        Math.round(Number(booking.totalAmount) * 100)
+    ) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'Paid checkout does not match the pending booking.' });
+    }
+    if (booking.paymentStatus === 'paid') {
+      await connection.commit();
+      return res.json({ received: true, duplicate: true });
+    }
+
+    const paymentReference = paidPayment.id ?? attributes?.payment_intent?.id ?? checkoutSessionId;
+    await connection.execute(
+      `UPDATE bookings
+       SET payment_status = 'paid', payment_reference = ?, paid_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND payment_status <> 'paid'`,
+      [paymentReference, booking.id],
+    );
+    const [conversations] = await connection.execute(
+      'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
+      ['direct', `Booking ${booking.id}`],
+    );
+    let conversationId = conversations[0]?.id;
+    if (!conversationId) {
+      const [conversation] = await connection.execute(
+        'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+        ['direct', `Booking ${booking.id}`, booking.customerId],
+      );
+      conversationId = conversation.insertId;
+      await connection.execute(
+        'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+        [
+          conversationId,
+          booking.customerId,
+          conversationId,
+          booking.merchantId,
+        ],
+      );
+    }
+    const ticketDetails = {
+      type: 'booking_payment_ticket',
+      bookingId: booking.id,
+      status: 'payment_received',
+      approvalStatus: 'pending',
+      venueName: booking.venueName,
+      sportType: booking.sportType,
+      slotNumber: booking.slotNumber,
+      fullStudio: Number(booking.occupiesFullStudio) === 1,
+      bookingDate: booking.bookingDate,
+      startTime: booking.startTime,
+      durationHours: booking.durationHours,
+      players: booking.players,
+      amount: booking.totalAmount,
+      paymentReference,
+      checkoutSessionId,
+    };
+    await connection.execute(
+      `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+       VALUES (?, ?, ?, ?)`,
+      [
+        conversationId,
+        booking.merchantId,
+        `Payment received for booking #${booking.id}. The venue is reviewing your booking.`,
+        JSON.stringify(ticketDetails),
+      ],
+    );
+    await recordUserActivity(
+      connection,
+      booking.customerId,
+      'booking_paid',
+      'Payment received',
+      `Payment received for booking #${booking.id} at ${booking.venueName}.`,
+      {
+        venueId: booking.venueId,
+        venueName: booking.venueName,
+        sportType: booking.sportType,
+        details: {
+          bookingId: booking.id,
+          bookingDate: booking.bookingDate,
+          startTime: booking.startTime,
+          durationHours: booking.durationHours,
+          players: booking.players,
+          amount: booking.totalAmount,
+          paymentReference,
+        },
+      },
+    );
+    await connection.commit();
+    return res.json({ received: true, bookingId: booking.id });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
 app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
   const venueId = Number(req.body.venueId ?? req.body.businessId);
   const bookingDate = req.body.date;
@@ -1878,6 +2277,9 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
   const players = Number(req.body.players);
   const paymentMethod = typeof req.body.paymentMethod === 'string'
     ? req.body.paymentMethod.trim().slice(0, 50) : '';
+  const sportType = typeof req.body.sportType === 'string'
+    ? req.body.sportType.trim().slice(0, 100) : '';
+  const requestedSlot = Number(req.body.slotNumber);
   const allowedPaymentMethods = new Set(['online', 'cash_on_arrival']);
   if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
       !validTime(startTime) || !Number.isFinite(durationHours) ||
@@ -1886,72 +2288,6 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     return res.status(400).json({
       error: 'Choose Online payment or Cash on Arrival (COA).',
     });
-
-    app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer'), async (req, res, next) => {
-      const bookingId = Number(req.body.bookingId);
-      const paymentMethod = typeof req.body.paymentMethod === 'string'
-        ? req.body.paymentMethod.trim() : '';
-      if (!Number.isSafeInteger(bookingId) || bookingId <= 0 ||
-          !['gcash', 'paymaya'].includes(paymentMethod)) {
-        return res.status(400).json({
-          error: 'Choose GCash or PayMaya before starting online payment.',
-        });
-      }
-      if (!process.env.PAYMONGO_SECRET_KEY) {
-        return res.status(503).json({
-          error: 'Online payment is not configured. Add PAYMONGO_SECRET_KEY to the backend environment.',
-        });
-      }
-      try {
-        const [rows] = await pool.execute(
-          `SELECT id, total_amount AS totalAmount
-             FROM bookings
-            WHERE id = ? AND customer_id = ?
-            LIMIT 1`,
-          [bookingId, req.auth.sub],
-        );
-        const booking = rows[0];
-        if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-        const response = await fetch('https://api.paymongo.com/v1/checkout_sessions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Basic ${Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64')}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            data: {
-              attributes: {
-                line_items: [{
-                  currency: 'PHP',
-                  amount: Math.round(Number(booking.totalAmount) * 100),
-                  name: `TinkerPro booking #${booking.id}`,
-                  quantity: 1,
-                }],
-                payment_method_types: [paymentMethod],
-                success_url: process.env.PAYMONGO_SUCCESS_URL,
-                cancel_url: process.env.PAYMONGO_CANCEL_URL,
-                description: `TinkerPro booking #${booking.id}`,
-                metadata: { booking_id: String(booking.id) },
-              },
-            },
-          }),
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          return res.status(502).json({
-            error: payload?.errors?.[0]?.detail || 'PayMongo could not create checkout.',
-          });
-        }
-        const checkoutUrl = payload?.data?.attributes?.checkout_url;
-        if (typeof checkoutUrl !== 'string' || checkoutUrl.trim().length === 0) {
-          return res.status(502).json({ error: 'PayMongo returned no checkout URL.' });
-        }
-        return res.json({ checkoutUrl });
-      } catch (error) {
-        return next(error);
-      }
-    });
   }
 
   let connection;
@@ -1959,8 +2295,10 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     connection = await pool.getConnection();
     await connection.beginTransaction();
     const [venues] = await connection.execute(
-      `SELECT b.id, b.merchant_id, b.price_per_hour, b.included_players,
-              b.additional_player_fee, b.enabled, u.status AS merchant_status
+      `SELECT b.id, b.merchant_id, b.name, b.category, b.price_per_hour,
+              b.slot_count AS slotCount, b.sports_slots_json AS sportsSlots,
+              b.included_players, b.additional_player_fee, b.enabled,
+              u.status AS merchant_status
        FROM merchant_businesses b JOIN users u ON u.id = b.merchant_id
        WHERE b.id = ? FOR UPDATE`,
       [venueId],
@@ -1970,21 +2308,46 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       await connection.rollback();
       return res.status(404).json({ error: 'The venue is unavailable.' });
     }
+    const sportsSlots = configuredSportsSlots(venue);
+    const selectedSportType = sportType || venue.category || '';
+    const sportConfig = sportsSlots.find(
+      (sport) =>
+        sport.sportType.toLowerCase() === selectedSportType.toLowerCase(),
+    );
+    const fullStudio = sportConfig?.fullStudio === true;
+    const slotNumber = fullStudio ? null : requestedSlot;
+    if (!sportConfig || (!fullStudio &&
+        (!Number.isInteger(slotNumber) || slotNumber < 1 ||
+         slotNumber > Number(sportConfig.slotCount)))) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Choose a valid sport and available slot.' });
+    }
     const [overlaps] = await connection.execute(
-      `SELECT id FROM bookings
+      `SELECT slot_number AS slotNumber,
+              occupies_full_studio AS occupiesFullStudio
+       FROM bookings
        WHERE venue_id = ? AND booking_date = ?
          AND status IN ('pending', 'approved')
          AND start_time < ADDTIME(?, SEC_TO_TIME(? * 3600))
-         AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ? LIMIT 1`,
+         AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ?`,
       [venueId, bookingDate, startTime, durationHours, startTime],
     );
-    if (overlaps.length) {
+    const hasConflict = overlaps.some((booking) =>
+      fullStudio ||
+      Number(booking.occupiesFullStudio) === 1 ||
+      Number(booking.slotNumber) === slotNumber,
+    );
+    if (hasConflict) {
       await connection.rollback();
-      return res.status(409).json({ error: 'The venue is already booked for that time.' });
+      return res.status(409).json({ error: 'That sport slot is already booked for the selected time.' });
     }
-    const pricePerHour = Number(venue.price_per_hour);
-    const includedPlayers = Number(venue.included_players);
-    const additionalPlayerFee = Number(venue.additional_player_fee);
+    const pricePerHour = Number(sportConfig.pricePerHour);
+    const includedPlayers = Number(
+      sportConfig.includedPlayers ?? venue.included_players,
+    );
+    const additionalPlayerFee = Number(
+      sportConfig.additionalPlayerFee ?? venue.additional_player_fee,
+    );
     const extraPlayers = Math.max(0, players - includedPlayers);
     const extraPlayerCharge = Number(
       (extraPlayers * additionalPlayerFee).toFixed(2),
@@ -1997,12 +2360,15 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     const [result] = await connection.execute(
       `INSERT INTO bookings
        (customer_id, venue_id, booking_date, start_time, duration_hours, players,
-        payment_method, price_per_hour, total_amount, downpayment_amount,
-        extra_player_charge, booking_token_hash, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        payment_method, sport_type, slot_number, occupies_full_studio,
+        price_per_hour, total_amount, downpayment_amount,
+        extra_player_charge, booking_token_hash, payment_status, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
-       paymentMethod, pricePerHour, total, downpayment, extraPlayerCharge,
-       hashBookingToken(bookingToken)],
+       paymentMethod, sportConfig.sportType, slotNumber, fullStudio ? 1 : 0,
+       pricePerHour, total, downpayment, extraPlayerCharge,
+       hashBookingToken(bookingToken),
+       paymentMethod === 'online' ? 'unpaid' : 'not_required'],
     );
     const [conversation] = await connection.execute(
       'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
@@ -2025,14 +2391,37 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           bookingId: result.insertId,
           status: 'pending',
           extraPlayerCharge,
+          sportType: sportConfig.sportType,
+          slotNumber,
+          fullStudio,
           bookingToken,
         }),
       ],
     );
+    await recordUserActivity(
+      connection,
+      req.auth.sub,
+      'booking_requested',
+      'Booking requested',
+      `Booking #${result.insertId} was requested for ${bookingDate}.`,
+      {
+        venueId,
+        venueName: venue.name,
+        sportType: sportConfig.sportType,
+        details: {
+          bookingId: result.insertId,
+          bookingDate,
+          startTime,
+          durationHours,
+          players,
+        },
+      },
+    );
     await connection.commit();
     return res.status(201).json({
       booking: { id: result.insertId, venueId, date: bookingDate, startTime,
-        durationHours, players, paymentMethod, pricePerHour, total, downpayment,
+        durationHours, players, sportType: sportConfig.sportType,
+        slotNumber, fullStudio, paymentMethod, pricePerHour, total, downpayment,
         extraPlayers, extraPlayerCharge, status: 'pending', bookingToken },
     });
   } catch (error) {
@@ -2060,9 +2449,14 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               v.image_url AS imageUrl, v.image_urls AS imageUrls,
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
+              b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.occupies_full_studio AS occupiesFullStudio,
               b.price_per_hour AS pricePerHour, b.total_amount AS total,
               b.extra_player_charge AS extraPlayerCharge,
-              b.downpayment_amount AS downpayment, b.status, b.created_at AS createdAt,
+              b.downpayment_amount AS downpayment,
+              b.payment_status AS paymentStatus,
+              b.payment_reference AS paymentReference,
+              b.status, b.created_at AS createdAt,
               r.id AS reviewId, r.rating AS reviewRating
        FROM bookings b
        JOIN merchant_businesses v ON v.id = b.venue_id
@@ -2079,26 +2473,12 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
         'parkingNeeds',
         'securityNeeds',
       ]) {
-        booking[field] = parseJsonArray(booking[field]);
+        booking[field] = parseJsonArray(booking[field], field);
       }
       for (const field of ['ratePeriods', 'amenities']) {
-        if (typeof booking[field] === 'string') {
-          try {
-            booking[field] = JSON.parse(booking[field]);
-          } catch {
-            booking[field] = [];
-          }
-        }
-        if (!Array.isArray(booking[field])) booking[field] = [];
+        booking[field] = parseJsonArray(booking[field], field);
       }
-      if (typeof booking.imageUrls === 'string') {
-        try {
-          booking.imageUrls = JSON.parse(booking.imageUrls);
-        } catch {
-          booking.imageUrls = [];
-        }
-      }
-      if (!Array.isArray(booking.imageUrls)) booking.imageUrls = [];
+      booking.imageUrls = parseJsonArray(booking.imageUrls, 'imageUrls');
       if (booking.imageUrls.length === 0 && booking.imageUrl) {
         try {
           const legacyImages = JSON.parse(booking.imageUrl);
@@ -2128,6 +2508,8 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.venue_id AS venueId, v.name AS venueName,
               v.business_type AS businessType, b.booking_date AS date,
               b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
+              b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.occupies_full_studio AS occupiesFullStudio,
               b.payment_method AS paymentMethod, b.price_per_hour AS pricePerHour,
               b.extra_player_charge AS extraPlayerCharge,
               b.total_amount AS total, b.downpayment_amount AS downpayment,
@@ -2150,15 +2532,37 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
     const [result] = await connection.execute(
       `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        SET b.status = 'approved', b.ticket_token_hash = ?
-       WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'`,
+       WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+         AND (b.payment_method <> 'online' OR b.payment_status = 'paid')`,
       [hashBookingToken(ticketCode), req.params.id, req.auth.sub],
     );
     if (!result.affectedRows) {
+      const [unpaid] = await connection.execute(
+        `SELECT b.id FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+           AND b.payment_method = 'online' AND b.payment_status <> 'paid'
+         LIMIT 1`,
+        [req.params.id, req.auth.sub],
+      );
       await connection.rollback();
+      if (unpaid.length > 0) {
+        return res.status(409).json({
+          error: 'Payment must be verified before approving this booking.',
+        });
+      }
       return res.status(404).json({ error: 'Pending booking not found.' });
     }
     const [rows] = await connection.execute(
-      `SELECT b.id, b.customer_id AS customerId, v.name AS venueName
+      `SELECT b.id, b.customer_id AS customerId, b.venue_id AS venueId,
+              b.booking_date AS bookingDate, b.start_time AS startTime,
+              b.duration_hours AS durationHours, b.players,
+              b.total_amount AS totalAmount,
+              b.payment_reference AS paymentReference,
+              v.name AS venueName,
+              COALESCE(b.sport_type, v.category) AS sportType,
+              b.slot_number AS slotNumber,
+              b.occupies_full_studio AS occupiesFullStudio
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        WHERE b.id = ? AND v.merchant_id = ? LIMIT 1`,
       [req.params.id, req.auth.sub],
@@ -2192,8 +2596,56 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
           bookingId: booking.id,
           status: 'approved',
           ticketCode,
+          venueName: booking.venueName,
+          sportType: booking.sportType,
+          slotNumber: booking.slotNumber,
+          fullStudio: Number(booking.occupiesFullStudio) === 1,
+          bookingDate: booking.bookingDate,
+          startTime: booking.startTime,
+          durationHours: booking.durationHours,
+          players: booking.players,
+          amount: booking.totalAmount,
+          paymentReference: booking.paymentReference,
         }),
       ],
+    );
+    await recordUserActivity(
+      connection,
+      req.auth.sub,
+      'booking_approved',
+      'Booking approved',
+      `Booking #${booking.id} for ${booking.venueName} was approved.`,
+      {
+        venueId: booking.venueId,
+        venueName: booking.venueName,
+        sportType: booking.sportType,
+        details: {
+          bookingId: booking.id,
+          bookingDate: booking.bookingDate,
+          startTime: booking.startTime,
+          durationHours: booking.durationHours,
+          players: booking.players,
+        },
+      },
+    );
+    await recordUserActivity(
+      connection,
+      booking.customerId,
+      'booking_approved',
+      'Booking approved',
+      `Booking #${booking.id} for ${booking.venueName} was approved.`,
+      {
+        venueId: booking.venueId,
+        venueName: booking.venueName,
+        sportType: booking.sportType,
+        details: {
+          bookingId: booking.id,
+          bookingDate: booking.bookingDate,
+          startTime: booking.startTime,
+          durationHours: booking.durationHours,
+          players: booking.players,
+        },
+      },
     );
     await connection.commit();
     return res.json({
@@ -2217,6 +2669,56 @@ app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchan
       [req.params.id, req.auth.sub],
     );
     if (!result.affectedRows) return res.status(404).json({ error: 'Approved booking not found.' });
+    const [bookings] = await pool.execute(
+      `SELECT b.customer_id AS customerId, b.venue_id AS venueId,
+              b.booking_date AS bookingDate, b.start_time AS startTime,
+              b.duration_hours AS durationHours, b.players,
+              v.name AS venueName, v.category AS sportType
+       FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.id = ? AND v.merchant_id = ? LIMIT 1`,
+      [req.params.id, req.auth.sub],
+    );
+    const booking = bookings[0];
+    if (booking) {
+      await recordUserActivity(
+        pool,
+        req.auth.sub,
+        'booking_finished',
+        'Booking marked finished',
+        `Booking #${req.params.id} for ${booking.venueName} was marked finished.`,
+        {
+          venueId: booking.venueId,
+          venueName: booking.venueName,
+          sportType: booking.sportType,
+          details: {
+            bookingId: req.params.id,
+            bookingDate: booking.bookingDate,
+            startTime: booking.startTime,
+            durationHours: booking.durationHours,
+            players: booking.players,
+          },
+        },
+      );
+      await recordUserActivity(
+        pool,
+        booking.customerId,
+        'booking_finished',
+        'Booking completed',
+        `Booking #${req.params.id} for ${booking.venueName} was marked finished.`,
+        {
+          venueId: booking.venueId,
+          venueName: booking.venueName,
+          sportType: booking.sportType,
+          details: {
+            bookingId: req.params.id,
+            bookingDate: booking.bookingDate,
+            startTime: booking.startTime,
+            durationHours: booking.durationHours,
+            players: booking.players,
+          },
+        },
+      );
+    }
     return res.json({ message: 'Booking marked finished.', status: 'finished' });
   } catch (error) { return next(error); }
 });
@@ -2248,6 +2750,8 @@ function newsPostResponse(row) {
     hours: row.opening_hours || null,
     availability: row.availability || null,
     pricePerHour: row.price_per_hour ?? null,
+    slotCount: Number(row.slot_count || 1),
+    sportsSlots: parseArray(row.sports_slots_json),
     eventFee: row.event_fee ?? null,
     ratePeriods: parseArray(row.rate_periods),
     tags: parseArray(row.amenities_json),
@@ -2286,6 +2790,11 @@ function newsPostResponse(row) {
     averageRating: Number(row.average_rating || 0),
     reviewCount: Number(row.review_count || 0),
     ratingUserCount: Number(row.rating_user_count || 0),
+    heartCount: Number(row.heart_count || 0),
+    heartedByMe:
+      row.hearted_by_me === true ||
+      row.hearted_by_me === 1 ||
+      row.hearted_by_me === '1',
   };
 }
 
@@ -2297,6 +2806,7 @@ async function merchantNewsPosts(req, res, next) {
               b.latitude, b.longitude,
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
+              b.slot_count, b.sports_slots_json,
               b.amenities_json, b.details AS business_details,
               b.image_url AS business_image_url, b.image_urls, b.enabled,
               b.visit_url
@@ -2387,6 +2897,7 @@ async function customerNewsFeed(req, res, next) {
               b.latitude, b.longitude,
               b.facility_type, b.opening_hours, b.availability,
               b.price_per_hour, b.event_fee, b.rate_periods,
+              b.slot_count, b.sports_slots_json,
               b.amenities_json, b.details AS business_details,
               b.image_url AS business_image_url, b.image_urls, b.enabled,
               b.visit_url,
@@ -2395,7 +2906,10 @@ async function customerNewsFeed(req, res, next) {
               u.avatar_url AS merchant_avatar_url,
               COALESCE((SELECT AVG(r.rating) FROM venue_reviews r WHERE r.business_id = b.id), 0) AS average_rating,
               (SELECT COUNT(*) FROM venue_reviews r WHERE r.business_id = b.id) AS review_count,
-              (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r WHERE r.business_id = b.id) AS rating_user_count
+              (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r WHERE r.business_id = b.id) AS rating_user_count,
+              (SELECT COUNT(*) FROM venue_hearts h WHERE h.business_id = b.id) AS heart_count,
+              EXISTS(SELECT 1 FROM venue_hearts h
+                     WHERE h.business_id = b.id AND h.user_id = ?) AS hearted_by_me
        FROM merchant_news n
        INNER JOIN merchant_businesses b ON b.id = n.business_id
        INNER JOIN users u ON u.id = b.merchant_id
@@ -2407,10 +2921,82 @@ async function customerNewsFeed(req, res, next) {
          AND COALESCE(NULLIF(TRIM(n.image_url), ''),
                       NULLIF(TRIM(b.image_url), '')) IS NOT NULL
        ORDER BY n.created_at DESC`,
+      [req.auth.sub],
     );
     return res.json({ posts: rows.map(newsPostResponse) });
   } catch (error) { return next(error); }
 }
+
+async function setVenueHeart(req, res, next, hearted) {
+  const businessId = Number(req.params.businessId);
+  if (!Number.isSafeInteger(businessId) || businessId <= 0) {
+    return res.status(400).json({ error: 'A valid venue is required.' });
+  }
+  try {
+    const [venues] = await pool.execute(
+      `SELECT id, name, category FROM merchant_businesses
+       WHERE id = ? AND enabled = 1 LIMIT 1`,
+      [businessId],
+    );
+    if (venues.length === 0) {
+      return res.status(404).json({ error: 'Venue not found.' });
+    }
+    let changed = false;
+    if (hearted) {
+      const [result] = await pool.execute(
+        `INSERT IGNORE INTO venue_hearts (business_id, user_id)
+         VALUES (?, ?)`,
+        [businessId, req.auth.sub],
+      );
+      changed = result.affectedRows > 0;
+    } else {
+      const [result] = await pool.execute(
+        'DELETE FROM venue_hearts WHERE business_id = ? AND user_id = ?',
+        [businessId, req.auth.sub],
+      );
+      changed = result.affectedRows > 0;
+    }
+    if (changed) {
+      await recordUserActivity(
+        pool,
+        req.auth.sub,
+        hearted ? 'venue_hearted' : 'venue_unhearted',
+        hearted ? 'Venue hearted' : 'Venue unhearted',
+        hearted
+          ? 'You hearted a venue.'
+          : 'You removed your heart from a venue.',
+        {
+          venueId: venues[0].id,
+          venueName: venues[0].name,
+          sportType: venues[0].category,
+        },
+      );
+    }
+    const [counts] = await pool.execute(
+      'SELECT COUNT(*) AS heartCount FROM venue_hearts WHERE business_id = ?',
+      [businessId],
+    );
+    return res.json({
+      heartCount: Number(counts[0]?.heartCount || 0),
+      heartedByMe: hearted,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+app.put(
+  '/api/businesses/:businessId/heart',
+  requireAuth,
+  requireRole('customer'),
+  (req, res, next) => setVenueHeart(req, res, next, true),
+);
+app.delete(
+  '/api/businesses/:businessId/heart',
+  requireAuth,
+  requireRole('customer'),
+  (req, res, next) => setVenueHeart(req, res, next, false),
+);
 
 app.get('/api/news/feed', requireAuth, requireRole('customer'), customerNewsFeed);
 app.get('/api/customer/news', requireAuth, requireRole('customer'), customerNewsFeed);
@@ -2425,8 +3011,12 @@ async function submitCustomerReview(req, res, next) {
   }
   try {
     const [bookings] = await pool.execute(
-      `SELECT id, venue_id FROM bookings
-       WHERE id = ? AND customer_id = ? AND status = 'finished' LIMIT 1`,
+      `SELECT b.id, b.venue_id AS venueId, v.name AS venueName,
+              v.category AS sportType, b.booking_date AS bookingDate,
+              b.start_time AS startTime
+       FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.id = ? AND b.customer_id = ? AND b.status = 'finished' LIMIT 1`,
       [bookingId, req.auth.sub],
     );
     if (!bookings[0]) return res.status(403).json({ error: 'Reviews are only allowed for your completed bookings.' });
@@ -2438,7 +3028,7 @@ async function submitCustomerReview(req, res, next) {
     const [result] = await pool.execute(
       `INSERT INTO venue_reviews (business_id, booking_id, customer_id, rating, comment)
        VALUES (?, ?, ?, ?, ?)`,
-      [bookings[0].venue_id, bookingId, req.auth.sub, rating, comment],
+      [bookings[0].venueId, bookingId, req.auth.sub, rating, comment],
     );
     return res.status(201).json({ id: result.insertId, message: 'Review submitted.' });
   } catch (error) {
@@ -2456,7 +3046,8 @@ async function listBusinessReviews(req, res, next) {
     const [rows] = await pool.execute(
       `SELECT r.id, r.business_id AS businessId, r.booking_id AS bookingId,
               r.customer_id AS customerId, r.rating, r.comment, r.created_at AS createdAt,
-              u.first_name AS firstName, u.last_name AS lastName
+              u.first_name AS firstName, u.last_name AS lastName,
+              u.avatar_url AS avatarUrl
        FROM venue_reviews r INNER JOIN users u ON u.id = r.customer_id
        WHERE r.business_id = ? ORDER BY r.created_at DESC`,
       [businessId],
@@ -2494,6 +3085,24 @@ async function submitBusinessReview(req, res, next) {
               rating, comment, created_at AS createdAt
        FROM venue_reviews WHERE id = ?`,
       [result.insertId],
+    );
+    await recordUserActivity(
+      pool,
+      req.auth.sub,
+      'review_submitted',
+      'Review submitted',
+      `You reviewed a venue with ${rating} star${rating === 1 ? '' : 's'}.`,
+      {
+        venueId: bookings[0].venueId,
+        venueName: bookings[0].venueName,
+        sportType: bookings[0].sportType,
+        details: {
+          bookingId: bookings[0].id,
+          bookingDate: bookings[0].bookingDate,
+          startTime: bookings[0].startTime,
+          rating,
+        },
+      },
     );
     return res.status(201).json({ review: reviews[0] });
   } catch (error) {
@@ -2541,6 +3150,8 @@ async function ensureMerchantBusinessesSchema() {
       longitude DOUBLE NULL,
       facility_type VARCHAR(50) NOT NULL,
       price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      slot_count INT UNSIGNED NOT NULL DEFAULT 1,
+      sports_slots_json JSON NULL,
       event_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
       opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours',
       availability VARCHAR(255) NOT NULL DEFAULT 'Any',
@@ -2595,6 +3206,8 @@ async function ensureMerchantBusinessesSchema() {
 
   const columns = [
     ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
+    ['slot_count', 'INT UNSIGNED NOT NULL DEFAULT 1'],
+    ['sports_slots_json', 'JSON NULL'],
     ['event_fee', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
     ['opening_hours', "VARCHAR(100) NOT NULL DEFAULT 'Open hours'"],
     ['rate_periods', 'JSON NULL'],
@@ -2792,12 +3405,17 @@ async function ensureBookingsSchema() {
       extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
       booking_token_hash CHAR(64) NULL,
       ticket_token_hash CHAR(64) NULL,
+      payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
+      payment_checkout_session_id VARCHAR(100) NULL,
+      payment_reference VARCHAR(100) NULL,
+      paid_at DATETIME NULL,
       status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_bookings_customer (customer_id, booking_date, start_time),
       KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
+      UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id),
       CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
         ON UPDATE CASCADE ON DELETE CASCADE,
       CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
@@ -2808,8 +3426,27 @@ async function ensureBookingsSchema() {
     ['booking_token_hash', 'CHAR(64) NULL'],
     ['ticket_token_hash', 'CHAR(64) NULL'],
     ['extra_player_charge', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
+    ['sport_type', 'VARCHAR(100) NULL'],
+    ['slot_number', 'INT UNSIGNED NULL'],
+    ['occupies_full_studio', 'TINYINT(1) NOT NULL DEFAULT 1'],
+    ['payment_status', "ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required'"],
+    ['payment_checkout_session_id', 'VARCHAR(100) NULL'],
+    ['payment_reference', 'VARCHAR(100) NULL'],
+    ['paid_at', 'DATETIME NULL'],
   ]) {
     await ensureTableColumn('bookings', name, definition);
+  }
+  const [indexes] = await pool.execute(
+    `SELECT 1 FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'bookings'
+       AND index_name = 'uq_bookings_checkout_session'
+     LIMIT 1`,
+  );
+  if (indexes.length === 0) {
+    await pool.execute(
+      'ALTER TABLE bookings ADD UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id)',
+    );
   }
 }
 
@@ -2876,10 +3513,88 @@ async function ensureNewsAndReviewsSchema() {
   `);
 }
 
+async function ensureUserActivitySchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS user_activity_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      user_id BIGINT UNSIGNED NOT NULL,
+      activity_type VARCHAR(50) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      description VARCHAR(500) NOT NULL,
+      venue_id BIGINT UNSIGNED NULL,
+      venue_name VARCHAR(255) NULL,
+      sport_type VARCHAR(100) NULL,
+      details_json JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_user_activity_logs_user_created (user_id, created_at, id),
+      CONSTRAINT fk_user_activity_logs_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+  await ensureTableColumn(
+    'user_activity_logs',
+    'venue_id',
+    'BIGINT UNSIGNED NULL',
+  );
+  await ensureTableColumn(
+    'user_activity_logs',
+    'venue_name',
+    'VARCHAR(255) NULL',
+  );
+  await ensureTableColumn(
+    'user_activity_logs',
+    'sport_type',
+    'VARCHAR(100) NULL',
+  );
+  await ensureTableColumn(
+    'user_activity_logs',
+    'details_json',
+    'JSON NULL',
+  );
+  await pool.execute(`
+    UPDATE user_activity_logs a
+    JOIN bookings b
+      ON b.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(a.description, '#', -1), ' ', 1) AS UNSIGNED)
+    JOIN merchant_businesses v ON v.id = b.venue_id
+    SET a.venue_id = b.venue_id,
+        a.venue_name = v.name,
+        a.sport_type = v.category,
+        a.details_json = JSON_OBJECT(
+          'bookingId', b.id,
+          'bookingDate', DATE_FORMAT(b.booking_date, '%Y-%m-%d'),
+          'startTime', TIME_FORMAT(b.start_time, '%H:%i:%s'),
+          'durationHours', b.duration_hours,
+          'players', b.players
+        )
+    WHERE a.venue_id IS NULL
+      AND a.activity_type IN ('booking_requested', 'booking_approved', 'booking_finished')
+      AND a.description REGEXP '^Booking #[0-9]+'
+  `);
+}
+
+async function ensureVenueHeartsSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS venue_hearts (
+      business_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (business_id, user_id),
+      KEY idx_venue_hearts_user (user_id, business_id),
+      CONSTRAINT fk_venue_hearts_business FOREIGN KEY (business_id)
+        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_venue_hearts_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
   .then(() => ensureBookingsSchema())
   .then(() => ensureCustomerProfileSchema())
   .then(() => ensureNewsAndReviewsSchema())
+  .then(() => ensureUserActivitySchema())
+  .then(() => ensureVenueHeartsSchema())
   .then(() => {
     app.listen(port, () => {
       console.log(`TinkerPro Sports API listening on http://localhost:${port}`);

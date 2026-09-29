@@ -68,6 +68,34 @@ class _RatePeriod {
   void dispose() => price.dispose();
 }
 
+class _SportSlotInput {
+  _SportSlotInput({
+    required String sportType,
+    required String pricePerHour,
+    required String includedPlayers,
+    required String additionalPlayerFee,
+    required this.fullStudio,
+    required this.slotCount,
+  }) : sportType = TextEditingController(text: sportType),
+       pricePerHour = TextEditingController(text: pricePerHour),
+       includedPlayers = TextEditingController(text: includedPlayers),
+       additionalPlayerFee = TextEditingController(text: additionalPlayerFee);
+
+  final TextEditingController sportType;
+  final TextEditingController pricePerHour;
+  final TextEditingController includedPlayers;
+  final TextEditingController additionalPlayerFee;
+  bool fullStudio;
+  int slotCount;
+
+  void dispose() {
+    sportType.dispose();
+    pricePerHour.dispose();
+    includedPlayers.dispose();
+    additionalPlayerFee.dispose();
+  }
+}
+
 class MerchantAddPage extends StatefulWidget {
   const MerchantAddPage({
     super.key,
@@ -170,6 +198,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             'Could not look up the address ($error). Tap the map to place the pin manually.';
       }
     }
+    if (!mounted) return null;
     final center = selected ?? const LatLng(10.3157, 123.8854);
     return showDialog<LatLng>(
       context: context,
@@ -299,6 +328,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     );
     final visitUrl = TextEditingController();
     final price = TextEditingController();
+    final totalSlots = TextEditingController(
+      text:
+          '${editingBusiness?['slotCount'] ?? editingBusiness?['slot_count'] ?? 1}',
+    );
     final includedPlayers = TextEditingController();
     final additionalPlayerFee = TextEditingController();
     final details = TextEditingController();
@@ -318,8 +351,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         ? widget.initialBusinessType!
         : 'Sports';
     final existingCategory = editingBusiness?['category'] as String?;
-    String category =
-        {..._categories[type]!, 'Other'}.contains(existingCategory)
+    String category = type == 'Sports'
+        ? existingCategory ?? ''
+        : {..._categories[type]!, 'Other'}.contains(existingCategory)
         ? existingCategory ?? _categories[type]!.first
         : 'Other';
     if (category == 'Other' && existingCategory != null) {
@@ -364,6 +398,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     TimeOfDay? openingTime = hours.$1;
     TimeOfDay? closingTime = hours.$2;
     final ratePeriods = <_RatePeriod>[];
+    final sportSlots = <_SportSlotInput>[];
     final amenities = <String>{};
     final eventTypes = <String>[];
     final accessibilityNeeds = <String>[];
@@ -582,6 +617,51 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         );
       }
     }
+    dynamic rawSportsSlots =
+        editingBusiness?['sportsSlots'] ??
+        editingBusiness?['sports_slots_json'];
+    if (rawSportsSlots is String) {
+      try {
+        rawSportsSlots = jsonDecode(rawSportsSlots);
+      } on FormatException {
+        rawSportsSlots = null;
+      }
+    }
+    if (rawSportsSlots is List) {
+      for (final item in rawSportsSlots.whereType<Map>()) {
+        sportSlots.add(
+          _SportSlotInput(
+            sportType: '${item['sportType'] ?? ''}',
+            pricePerHour: '${item['pricePerHour'] ?? ''}',
+            includedPlayers:
+                '${item['includedPlayers'] ?? editingBusiness?['includedPlayers'] ?? editingBusiness?['included_players'] ?? ''}',
+            additionalPlayerFee:
+                '${item['additionalPlayerFee'] ?? editingBusiness?['additionalPlayerFee'] ?? editingBusiness?['additional_player_fee'] ?? ''}',
+            fullStudio: item['fullStudio'] == true,
+            slotCount: int.tryParse('${item['slotCount']}') ?? 1,
+          ),
+        );
+      }
+    }
+    if (sportSlots.isEmpty && type == 'Sports' && editingBusiness != null) {
+      final total = int.tryParse(totalSlots.text) ?? 1;
+      sportSlots.add(
+        _SportSlotInput(
+          sportType: existingCategory ?? _categories['Sports']!.first,
+          pricePerHour: price.text,
+          includedPlayers: includedPlayers.text,
+          additionalPlayerFee: additionalPlayerFee.text,
+          fullStudio: true,
+          slotCount: total,
+        ),
+      );
+    }
+    if (type == 'Sports') {
+      category = sportSlots
+          .map((sport) => sport.sportType.text.trim())
+          .where((sport) => sport.isNotEmpty)
+          .join(', ');
+    }
     if (type == 'Event') ratePeriods.clear();
     String? validationMessage;
     var submitted = false;
@@ -668,8 +748,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         data: Theme.of(context).copyWith(
                           visualDensity: VisualDensity.compact,
                           textTheme: Theme.of(context).textTheme.copyWith(
-                            bodyLarge: const TextStyle(fontSize: 14),
-                            bodyMedium: const TextStyle(fontSize: 13),
+                            bodyLarge: const TextStyle(
+                              color: _addInk,
+                              fontSize: 14,
+                            ),
+                            bodyMedium: const TextStyle(
+                              color: _addInk,
+                              fontSize: 13,
+                            ),
                             bodySmall: const TextStyle(fontSize: 11),
                           ),
                           inputDecorationTheme: const InputDecorationTheme(
@@ -678,8 +764,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               horizontal: 12,
                               vertical: 11,
                             ),
-                            labelStyle: TextStyle(fontSize: 13),
-                            hintStyle: TextStyle(fontSize: 12),
+                            labelStyle: TextStyle(
+                              color: _addMuted,
+                              fontSize: 13,
+                            ),
+                            hintStyle: TextStyle(
+                              color: _addMuted,
+                              fontSize: 12,
+                            ),
                             helperStyle: TextStyle(fontSize: 11),
                             errorStyle: TextStyle(fontSize: 11),
                             prefixStyle: TextStyle(fontSize: 13),
@@ -756,7 +848,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     if (value == null) return;
                                     setDialogState(() {
                                       type = value;
-                                      category = _categories[type]!.first;
+                                      category = type == 'Sports'
+                                          ? ''
+                                          : _categories[type]!.first;
                                       if (type == 'Event') {
                                         for (final period in ratePeriods) {
                                           period.dispose();
@@ -786,35 +880,214 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                   ),
                                 ),
-                                DropdownButtonFormField<String>(
-                                  initialValue: category,
-                                  decoration: InputDecoration(
-                                    labelText: 'Category / activity',
-                                  ),
-                                  items: [
-                                    for (final item in {
-                                      ..._categories[type]!,
-                                      'Other',
-                                    })
-                                      DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() => category = value);
-                                    }
-                                  },
-                                ),
-                                if (category == 'Other')
-                                  TextFormField(
-                                    controller: categoryOther,
+                                if (type != 'Sports') ...[
+                                  DropdownButtonFormField<String>(
+                                    initialValue: category,
                                     decoration: const InputDecoration(
-                                      labelText: 'Custom category',
-                                      hintText: 'Enter the venue category',
+                                      labelText: 'Category / activity',
+                                    ),
+                                    items: [
+                                      for (final item in {
+                                        ..._categories[type]!,
+                                        'Other',
+                                      })
+                                        DropdownMenuItem(
+                                          value: item,
+                                          child: Text(item),
+                                        ),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        setDialogState(() => category = value);
+                                      }
+                                    },
+                                  ),
+                                  if (category == 'Other')
+                                    TextFormField(
+                                      controller: categoryOther,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Custom category',
+                                        hintText: 'Enter the venue category',
+                                      ),
+                                    ),
+                                ],
+                                if (type == 'Sports') ...[
+                                  _sectionLabel('CHOOSE SPORT CATEGORIES'),
+                                  const Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Select every sport customers can book. Each selected sport gets its own rate and slot settings below.',
+                                      style: TextStyle(
+                                        color: _addMuted,
+                                        fontSize: 11,
+                                      ),
                                     ),
                                   ),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 2,
+                                    children: [
+                                      for (final sportName in {
+                                        ..._categories['Sports']!,
+                                        ...sportSlots.map(
+                                          (sport) => sport.sportType.text,
+                                        ),
+                                      })
+                                        FilterChip(
+                                          label: Text(sportName),
+                                          selected: sportSlots.any(
+                                            (sport) =>
+                                                sport.sportType.text ==
+                                                sportName,
+                                          ),
+                                          selectedColor: _addSoftOrange,
+                                          checkmarkColor: _addOrange,
+                                          side: BorderSide(
+                                            color:
+                                                sportSlots.any(
+                                                  (sport) =>
+                                                      sport.sportType.text ==
+                                                      sportName,
+                                                )
+                                                ? _addOrange
+                                                : _addLine,
+                                          ),
+                                          onSelected: (selected) {
+                                            setDialogState(() {
+                                              if (selected) {
+                                                final wholeCourt =
+                                                    sportName != 'Badminton' &&
+                                                    sportName != 'Pickleball';
+                                                sportSlots.add(
+                                                  _SportSlotInput(
+                                                    sportType: sportName,
+                                                    pricePerHour: '',
+                                                    includedPlayers: '',
+                                                    additionalPlayerFee: '',
+                                                    fullStudio: wholeCourt,
+                                                    slotCount: wholeCourt
+                                                        ? int.tryParse(
+                                                                totalSlots.text,
+                                                              ) ??
+                                                              1
+                                                        : 1,
+                                                  ),
+                                                );
+                                              } else {
+                                                final index = sportSlots
+                                                    .indexWhere(
+                                                      (sport) =>
+                                                          sport
+                                                              .sportType
+                                                              .text ==
+                                                          sportName,
+                                                    );
+                                                if (index >= 0) {
+                                                  sportSlots
+                                                      .removeAt(index)
+                                                      .dispose();
+                                                }
+                                              }
+                                              category = sportSlots
+                                                  .map(
+                                                    (sport) => sport
+                                                        .sportType
+                                                        .text
+                                                        .trim(),
+                                                  )
+                                                  .where(
+                                                    (name) => name.isNotEmpty,
+                                                  )
+                                                  .join(', ');
+                                            });
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        sportSlots.isEmpty
+                                            ? 'No sports selected yet.'
+                                            : 'Chosen categories: ${sportSlots.map((sport) => sport.sportType.text).join(', ')}',
+                                        style: const TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Builder(
+                                    builder: (context) {
+                                      void addCustomSportCategory() {
+                                        final sportName = categoryOther.text
+                                            .trim();
+                                        if (sportName.isEmpty ||
+                                            sportSlots.any(
+                                              (sport) =>
+                                                  sport.sportType.text
+                                                      .toLowerCase() ==
+                                                  sportName.toLowerCase(),
+                                            )) {
+                                          return;
+                                        }
+                                        final wholeCourt =
+                                            sportName.toLowerCase() !=
+                                                'badminton' &&
+                                            sportName.toLowerCase() !=
+                                                'pickleball';
+                                        setDialogState(() {
+                                          sportSlots.add(
+                                            _SportSlotInput(
+                                              sportType: sportName,
+                                              pricePerHour: '',
+                                              includedPlayers: '',
+                                              additionalPlayerFee: '',
+                                              fullStudio: wholeCourt,
+                                              slotCount: wholeCourt
+                                                  ? int.tryParse(
+                                                          totalSlots.text,
+                                                        ) ??
+                                                        1
+                                                  : 1,
+                                            ),
+                                          );
+                                          category = sportSlots
+                                              .map(
+                                                (sport) =>
+                                                    sport.sportType.text.trim(),
+                                              )
+                                              .join(', ');
+                                          categoryOther.clear();
+                                        });
+                                      }
+
+                                      return Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: categoryOther,
+                                              decoration: const InputDecoration(
+                                                labelText: 'Add another sport',
+                                                hintText: 'e.g. Futsal',
+                                              ),
+                                              onSubmitted: (_) =>
+                                                  addCustomSportCategory(),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Add sport category',
+                                            onPressed: addCustomSportCategory,
+                                            icon: const Icon(Icons.add_circle),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ],
                                 TextFormField(
                                   controller: name,
                                   decoration: const InputDecoration(
@@ -825,6 +1098,271 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       ? 'Enter a business name'
                                       : null,
                                 ),
+                                if (type == 'Sports') ...[
+                                  const SizedBox(height: 10),
+                                  _sectionLabel('SPORTS, SLOTS & RATES'),
+                                  const Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Configure a rate and player allowance for each selected sport.',
+                                      style: TextStyle(
+                                        color: _addMuted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                  if (sportSlots.any(
+                                    (sport) => !sport.fullStudio,
+                                  ))
+                                    TextFormField(
+                                      controller: totalSlots,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText:
+                                            'Total small slots in this venue',
+                                        hintText: 'e.g. 5',
+                                        helperText: 'Shared capacity for sports that split the court.',
+                                      ),
+                                      validator: (value) {
+                                        final count = int.tryParse(
+                                          value?.trim() ?? '',
+                                        );
+                                        return count == null ||
+                                                count < 1 ||
+                                                count > 100
+                                            ? 'Enter a slot count from 1 to 100'
+                                            : null;
+                                      },
+                                      onChanged: (value) {
+                                        final count = int.tryParse(value);
+                                        if (count == null ||
+                                            count < 1 ||
+                                            count > 100) {
+                                          return;
+                                        }
+                                        setDialogState(() {
+                                          for (final sport in sportSlots) {
+                                            if (sport.slotCount > count) {
+                                              sport.slotCount = count;
+                                            }
+                                          }
+                                        });
+                                      },
+                                    ),
+                                  for (
+                                    var index = 0;
+                                    index < sportSlots.length;
+                                    index++
+                                  ) ...[
+                                    const SizedBox(height: 8),
+                                    Builder(
+                                      builder: (context) {
+                                        final sport = sportSlots[index];
+                                        final capacity =
+                                            int.tryParse(totalSlots.text) ?? 1;
+                                        return Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8FAFC),
+                                            border: Border.all(
+                                              color: const Color(0xFFE2E7EF),
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      sport.sportType.text,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        fontSize: 15,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              TextFormField(
+                                                controller: sport.pricePerHour,
+                                                keyboardType:
+                                                    const TextInputType.numberWithOptions(
+                                                      decimal: true,
+                                                    ),
+                                                decoration:
+                                                    const InputDecoration(
+                                                      labelText:
+                                                          'Price per hour',
+                                                      prefixText: '₱ ',
+                                                    ),
+                                                validator: (value) {
+                                                  final amount =
+                                                      double.tryParse(
+                                                        value?.trim() ?? '',
+                                                      );
+                                                  return amount == null ||
+                                                          amount <= 0
+                                                      ? 'Enter a price above ₱0'
+                                                      : null;
+                                                },
+                                              ),
+                                              DropdownButtonFormField<bool>(
+                                                initialValue: sport.fullStudio,
+                                                isExpanded: true,
+                                                decoration:
+                                                    const InputDecoration(
+                                                      labelText: 'Court setup',
+                                                    ),
+                                                items: const [
+                                                  DropdownMenuItem(
+                                                    value: true,
+                                                    child: Text(
+                                                      'Whole court (1 slot)',
+                                                    ),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: false,
+                                                    child: Text(
+                                                      'Split court into slots',
+                                                    ),
+                                                  ),
+                                                ],
+                                                onChanged: (value) {
+                                                  if (value == null) return;
+                                                  setDialogState(() {
+                                                    sport.fullStudio = value;
+                                                    sport.slotCount = value
+                                                        ? capacity
+                                                        : 1;
+                                                  });
+                                                },
+                                              ),
+                                              if (!sport.fullStudio)
+                                                DropdownButtonFormField<int>(
+                                                  initialValue: sport.slotCount
+                                                      .clamp(1, capacity)
+                                                      .toInt(),
+                                                  isExpanded: true,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: 'Slots available for this sport',
+                                                      ),
+                                                  items: [
+                                                    for (
+                                                      var slot = 1;
+                                                      slot <= capacity;
+                                                      slot++
+                                                    )
+                                                      DropdownMenuItem(
+                                                        value: slot,
+                                                        child: Text(
+                                                          '$slot slot${slot == 1 ? '' : 's'}',
+                                                        ),
+                                                      ),
+                                                  ],
+                                                  onChanged: (value) {
+                                                    if (value != null) {
+                                                      setDialogState(
+                                                        () => sport.slotCount =
+                                                            value,
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                              const SizedBox(height: 6),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: TextFormField(
+                                                      controller:
+                                                          sport.includedPlayers,
+                                                      keyboardType:
+                                                          TextInputType.number,
+                                                      decoration:
+                                                          const InputDecoration(
+                                                            labelText: 'Included players',
+                                                            hintText:
+                                                                'Optional',
+                                                          ),
+                                                      validator: (value) {
+                                                        final limit =
+                                                            value?.trim() ?? '';
+                                                        final fee = sport
+                                                            .additionalPlayerFee
+                                                            .text
+                                                            .trim();
+                                                        if (limit.isEmpty &&
+                                                            fee.isEmpty) {
+                                                          return null;
+                                                        }
+                                                        final parsed =
+                                                            int.tryParse(limit);
+                                                        return parsed == null ||
+                                                                parsed < 1 ||
+                                                                parsed > 30
+                                                            ? 'Enter 1–30'
+                                                            : null;
+                                                      },
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: TextFormField(
+                                                      controller: sport
+                                                          .additionalPlayerFee,
+                                                      keyboardType:
+                                                          const TextInputType.numberWithOptions(
+                                                            decimal: true,
+                                                          ),
+                                                      decoration:
+                                                          const InputDecoration(
+                                                            labelText: 'Fee per extra player',
+                                                            prefixText: '₱ ',
+                                                            hintText:
+                                                                'Optional',
+                                                          ),
+                                                      validator: (value) {
+                                                        final feeText =
+                                                            value?.trim() ?? '';
+                                                        if (feeText.isEmpty) {
+                                                          return null;
+                                                        }
+                                                        final fee =
+                                                            double.tryParse(
+                                                              feeText,
+                                                            );
+                                                        final playersLimit =
+                                                            int.tryParse(
+                                                              sport
+                                                                  .includedPlayers
+                                                                  .text
+                                                                  .trim(),
+                                                            );
+                                                        if (fee == null ||
+                                                            fee < 0 ||
+                                                            playersLimit ==
+                                                                null ||
+                                                            playersLimit < 1 ||
+                                                            playersLimit > 30) {
+                                                          return 'Enter a fee and player limit';
+                                                        }
+                                                        return null;
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
                                 if (type == 'Event') ...[
                                   const SizedBox(height: 8),
                                   _sectionLabel('EVENT BOOKING DETAILS'),
@@ -941,7 +1479,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                   ),
                                 ],
                                 const SizedBox(height: 8),
-                                _sectionLabel('SCHEDULE AND PRICING'),
+                                _sectionLabel(
+                                  type == 'Sports'
+                                      ? 'SCHEDULE'
+                                      : 'SCHEDULE AND PRICING',
+                                ),
                                 Row(
                                   children: [
                                     Expanded(
@@ -1041,7 +1583,6 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             latitude = null;
                                             longitude = null;
                                           }),
-                                          child: const Text('Clear pin'),
                                           style: TextButton.styleFrom(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 6,
@@ -1054,6 +1595,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               fontSize: 12,
                                             ),
                                           ),
+                                          child: const Text('Clear pin'),
                                         ),
                                     ],
                                   ),
@@ -1097,117 +1639,40 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     return null;
                                   },
                                 ),
-                                TextFormField(
-                                  controller: price,
-                                  enabled:
-                                      type == 'Event' || ratePeriods.isEmpty,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Event'
-                                        ? 'Fee per event booking'
-                                        : type == 'Fitness & Wellness'
-                                        ? 'Session price'
-                                        : 'Booking price per hour',
-                                    prefixText: '₱ ',
-                                    hintText: type == 'Event'
-                                        ? '25000 (one complete event)'
-                                        : type == 'Fitness & Wellness'
-                                        ? '500 (per session)'
-                                        : '300.00 (base booking rate)',
-                                  ),
-                                  validator: (value) {
-                                    if (type != 'Event' &&
-                                        ratePeriods.isNotEmpty) {
-                                      return null;
-                                    }
-                                    final amount = double.tryParse(
-                                      value?.trim() ?? '',
-                                    );
-                                    return amount == null || amount <= 0
-                                        ? type == 'Event'
-                                              ? 'Enter an event fee greater than ₱0'
-                                              : 'Enter a price greater than 0'
-                                        : null;
-                                  },
-                                ),
-                                if (type == 'Sports') ...[
-                                  const SizedBox(height: 8),
-                                  _sectionLabel('OPTIONAL EXTRA-PLAYER FEE'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Charge once per booking for each player above the included limit.',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
-                                      ),
+                                if (type != 'Sports')
+                                  TextFormField(
+                                    controller: price,
+                                    enabled:
+                                        type == 'Event' || ratePeriods.isEmpty,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    decoration: InputDecoration(
+                                      labelText: type == 'Event'
+                                          ? 'Fee per event booking'
+                                          : 'Session price',
+                                      prefixText: '₱ ',
+                                      hintText: type == 'Event'
+                                          ? '25000 (one complete event)'
+                                          : '500 (per session)',
                                     ),
+                                    validator: (value) {
+                                      if (type != 'Event' &&
+                                          ratePeriods.isNotEmpty) {
+                                        return null;
+                                      }
+                                      final amount = double.tryParse(
+                                        value?.trim() ?? '',
+                                      );
+                                      return amount == null || amount <= 0
+                                          ? type == 'Event'
+                                                ? 'Enter an event fee greater than ₱0'
+                                                : 'Enter a price greater than 0'
+                                          : null;
+                                    },
                                   ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: includedPlayers,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Included players',
-                                            hintText: 'e.g. 10',
-                                          ),
-                                          validator: (value) {
-                                            final limit = value?.trim() ?? '';
-                                            final fee = additionalPlayerFee.text
-                                                .trim();
-                                            if (limit.isEmpty && fee.isEmpty) {
-                                              return null;
-                                            }
-                                            final parsed = int.tryParse(limit);
-                                            return parsed == null ||
-                                                    parsed < 1 ||
-                                                    parsed > 30
-                                                ? 'Enter 1–30 players'
-                                                : null;
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: additionalPlayerFee,
-                                          keyboardType:
-                                              const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Fee per extra player',
-                                            prefixText: '₱ ',
-                                            hintText: 'e.g. 50',
-                                          ),
-                                          validator: (value) {
-                                            final fee = value?.trim() ?? '';
-                                            if (includedPlayers.text
-                                                    .trim()
-                                                    .isEmpty &&
-                                                fee.isEmpty) {
-                                              return null;
-                                            }
-                                            final parsed = double.tryParse(fee);
-                                            return parsed == null ||
-                                                    !parsed.isFinite ||
-                                                    parsed <= 0 ||
-                                                    parsed > 99999999.99
-                                                ? 'Enter a valid fee (up to ₱99,999,999.99)'
-                                                : null;
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                                if (type != 'Event') ...[
+                                if (type == 'Fitness & Wellness') ...[
                                   const SizedBox(height: 8),
                                   _sectionLabel('OPTIONAL RATE PERIODS'),
                                   const Align(
@@ -1583,7 +2048,61 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             );
                             return;
                           }
-                          if (type != 'Event') {
+                          if (type == 'Sports') {
+                            final capacity = int.tryParse(
+                              totalSlots.text.trim(),
+                            );
+                            final names = sportSlots
+                                .map(
+                                  (sport) =>
+                                      sport.sportType.text.trim().toLowerCase(),
+                                )
+                                .toList();
+                            final invalidSportConfig =
+                                capacity == null ||
+                                capacity < 1 ||
+                                capacity > 100 ||
+                                sportSlots.isEmpty ||
+                                names.any((name) => name.isEmpty) ||
+                                names.toSet().length != names.length ||
+                                sportSlots.any((sport) {
+                                  final rate = double.tryParse(
+                                    sport.pricePerHour.text.trim(),
+                                  );
+                                  return rate == null ||
+                                      rate <= 0 ||
+                                      sport.slotCount < 1 ||
+                                      sport.slotCount > capacity ||
+                                      ((int.tryParse(
+                                                sport.includedPlayers.text
+                                                    .trim(),
+                                              ) ??
+                                              0) >
+                                          30) ||
+                                      ((sport.additionalPlayerFee.text
+                                              .trim()
+                                              .isNotEmpty) &&
+                                          (int.tryParse(
+                                                    sport.includedPlayers.text
+                                                        .trim(),
+                                                  ) ??
+                                                  0) <
+                                              1) ||
+                                      ((double.tryParse(
+                                                sport.additionalPlayerFee.text
+                                                    .trim(),
+                                              ) ??
+                                              0) >
+                                          99999999.99);
+                                });
+                            if (invalidSportConfig) {
+                              setDialogState(
+                                () => validationMessage = 'Check each sport name and rate, and make sure its slot count fits the studio capacity.',
+                              );
+                              return;
+                            }
+                          }
+                          if (type == 'Fitness & Wellness') {
                             for (final period in ratePeriods) {
                               final amount = double.tryParse(
                                 period.price.text.trim(),
@@ -1716,32 +2235,78 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               'visitUrl': visitUrl.text.trim(),
                               'pricePerHour': type == 'Event'
                                   ? double.parse(price.text.trim())
+                                  : type == 'Sports'
+                                  ? double.parse(
+                                      sportSlots.first.pricePerHour.text.trim(),
+                                    )
                                   : ratePeriods.isEmpty
                                   ? double.parse(price.text.trim())
                                   : 0,
+                              'slotCount': type == 'Sports'
+                                  ? int.parse(totalSlots.text.trim())
+                                  : 1,
+                              'sportsSlots': type == 'Sports'
+                                  ? [
+                                      for (final sport in sportSlots)
+                                        {
+                                          'sportType': sport.sportType.text
+                                              .trim(),
+                                          'pricePerHour': double.parse(
+                                            sport.pricePerHour.text.trim(),
+                                          ),
+                                          'includedPlayers':
+                                              int.tryParse(
+                                                sport.includedPlayers.text
+                                                    .trim(),
+                                              ) ??
+                                              0,
+                                          'additionalPlayerFee':
+                                              double.tryParse(
+                                                sport.additionalPlayerFee.text
+                                                    .trim(),
+                                              ) ??
+                                              0,
+                                          'fullStudio': sport.fullStudio,
+                                          'slotCount': sport.fullStudio
+                                              ? int.parse(
+                                                  totalSlots.text.trim(),
+                                                )
+                                              : sport.slotCount,
+                                        },
+                                    ]
+                                  : const [],
                               'eventFee': type == 'Event'
                                   ? double.parse(price.text.trim())
                                   : 0,
                               'includedPlayers': type == 'Sports'
-                                  ? int.tryParse(includedPlayers.text.trim()) ??
+                                  ? int.tryParse(
+                                          sportSlots.first.includedPlayers.text
+                                              .trim(),
+                                        ) ??
                                         0
                                   : 0,
                               'additionalPlayerFee': type == 'Sports'
                                   ? double.tryParse(
-                                          additionalPlayerFee.text.trim(),
+                                          sportSlots
+                                              .first
+                                              .additionalPlayerFee
+                                              .text
+                                              .trim(),
                                         ) ??
                                         0
                                   : 0,
-                              'ratePeriods': [
-                                for (final period in ratePeriods)
-                                  {
-                                    'start': _formatTime(period.start!),
-                                    'end': _formatTime(period.end!),
-                                    'pricePerHour': double.parse(
-                                      period.price.text.trim(),
-                                    ),
-                                  },
-                              ],
+                              'ratePeriods': type == 'Fitness & Wellness'
+                                  ? [
+                                      for (final period in ratePeriods)
+                                        {
+                                          'start': _formatTime(period.start!),
+                                          'end': _formatTime(period.end!),
+                                          'pricePerHour': double.parse(
+                                            period.price.text.trim(),
+                                          ),
+                                        },
+                                    ]
+                                  : const [],
                               'hours': _formatHours(openingTime, closingTime),
                               'availability': _weekdays
                                   .where(availableDays.contains)
@@ -1852,6 +2417,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     address.dispose();
     visitUrl.dispose();
     price.dispose();
+    totalSlots.dispose();
     includedPlayers.dispose();
     additionalPlayerFee.dispose();
     details.dispose();
@@ -1865,6 +2431,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     securityInput.dispose();
     for (final period in ratePeriods) {
       period.dispose();
+    }
+    for (final sport in sportSlots) {
+      sport.dispose();
     }
     if (added == true && mounted) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -2472,9 +3041,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   List<Map<String, dynamic>> get _filteredNewsCardBusinesses {
-    return widget.businesses
-        .where(_matchesBusinessFilters)
-        .toList();
+    return widget.businesses.where(_matchesBusinessFilters).toList();
   }
 
   bool _matchesBusinessFilters(Map<String, dynamic> business) {
@@ -2517,12 +3084,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   Widget _businessFilterAndSearch() {
-    const businessTypes = [
-      'All',
-      'Sports',
-      'Event',
-      'Fitness & Wellness',
-    ];
+    const businessTypes = ['All', 'Sports', 'Event', 'Fitness & Wellness'];
     return Row(
       children: [
         SizedBox(
@@ -2638,6 +3200,18 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     final extraPlayerFee = extraPlayerFeeValue is num
         ? extraPlayerFeeValue.toDouble()
         : double.tryParse('$extraPlayerFeeValue') ?? 0;
+    dynamic rawSportsSlots =
+        business['sportsSlots'] ?? business['sports_slots_json'];
+    if (rawSportsSlots is String) {
+      try {
+        rawSportsSlots = jsonDecode(rawSportsSlots);
+      } on FormatException {
+        rawSportsSlots = null;
+      }
+    }
+    final configuredSports = rawSportsSlots is List
+        ? rawSportsSlots.whereType<Map>().toList()
+        : <Map>[];
     final ratePeriods = _businessRatePeriods(business);
     final details = business['details'] as String? ?? '';
     final priceText = _formatPrice(
@@ -2696,9 +3270,23 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   _detail(Icons.location_on_outlined, address),
                 if (facility.isNotEmpty)
                   _detail(Icons.business_outlined, 'Facility: $facility'),
-                if (type == 'Sports' && category.isNotEmpty)
+                if (type == 'Sports' &&
+                    configuredSports.isEmpty &&
+                    category.isNotEmpty)
                   _detail(Icons.sports_rounded, 'Sport: $category'),
-                if (type == 'Sports' && extraPlayerFee > 0)
+                if (type == 'Sports' && configuredSports.isNotEmpty)
+                  for (final sport in configuredSports)
+                    _detail(
+                      Icons.sports_rounded,
+                      '${sport['sportType']}: PHP '
+                      '${double.tryParse('${sport['pricePerHour']}')?.toStringAsFixed(2) ?? '0.00'} / hr · '
+                      '${sport['fullStudio'] == true ? 'whole court (1 slot)' : '${sport['slotCount']} slots'}'
+                      '${(int.tryParse('${sport['includedPlayers']}') ?? 0) > 0 ? ' · ${sport['includedPlayers']} included' : ''}'
+                      '${(double.tryParse('${sport['additionalPlayerFee']}') ?? 0) > 0 ? ' · PHP ${double.tryParse('${sport['additionalPlayerFee']}')!.toStringAsFixed(2)} per extra player' : ''}',
+                    ),
+                if (type == 'Sports' &&
+                    configuredSports.isEmpty &&
+                    extraPlayerFee > 0)
                   _detail(
                     Icons.groups_rounded,
                     'Includes $includedPlayerLimit players; '
@@ -2720,15 +3308,16 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   ),
                 if (details.isNotEmpty) _detail(Icons.info_outline, details),
                 const SizedBox(height: 8),
-                _priceBox(
-                  ratePeriods.isNotEmpty
-                      ? 'See special rates above'
-                      : priceText.isEmpty
-                      ? 'Price not set'
-                      : priceText,
-                  label: type == 'Event' ? 'Event fee' : 'Price / hour',
-                  hasRatePeriods: ratePeriods.isNotEmpty,
-                ),
+                if (type != 'Sports' || configuredSports.isEmpty)
+                  _priceBox(
+                    ratePeriods.isNotEmpty
+                        ? 'See special rates above'
+                        : priceText.isEmpty
+                        ? 'Price not set'
+                        : priceText,
+                    label: type == 'Event' ? 'Event fee' : 'Price / hour',
+                    hasRatePeriods: ratePeriods.isNotEmpty,
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   'Amenities',

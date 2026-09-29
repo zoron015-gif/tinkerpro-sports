@@ -12,6 +12,7 @@ import 'sports.dart';
 import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'saved_items.dart';
+import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
 import 'profile_dashboard.dart';
@@ -21,6 +22,7 @@ import 'all_venues_page.dart';
 import 'merchant_business_status.dart';
 import 'app_card_styles.dart';
 import 'app_bottom_navigation.dart';
+import 'filter_panel_style.dart';
 
 const _newsInk = Color(0xFF101B33);
 const _newsMuted = Color(0xFF68748A);
@@ -127,11 +129,13 @@ class NewsFeedPage extends StatefulWidget {
     this.onLogout,
     this.savedOnly = false,
     this.api,
+    this.initialUserPosition,
   });
 
   final Future<void> Function(BuildContext context)? onLogout;
   final bool savedOnly;
   final AuthApi? api;
+  final Position? initialUserPosition;
 
   @override
   State<NewsFeedPage> createState() => _NewsFeedPageState();
@@ -142,6 +146,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   final _searchController = TextEditingController();
   late Future<List<Map<String, dynamic>>> _posts;
   final Set<String> _savedKeys = <String>{};
+  final Set<String> _heartedVenueKeys = <String>{};
+  final Set<String> _heartUpdatesInProgress = <String>{};
+  final Map<String, int> _heartCounts = <String, int>{};
   final MapController _courtMapController = MapController();
   late Future<List<Map<String, dynamic>>> _businesses;
   var _courtMapExpanded = false;
@@ -160,6 +167,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   void initState() {
     super.initState();
     _api = widget.api ?? AuthApi();
+    _userPosition = widget.initialUserPosition;
     _businesses = _api.customerBusinesses();
     _posts = _loadFeed();
     _loadSavedKeys();
@@ -175,6 +183,18 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       );
     }
     final feedPosts = await _api.newsFeed(token);
+    for (final post in feedPosts) {
+      final key = _postHeartKey(post);
+      if (key.isEmpty) continue;
+      _heartCounts[key] = _number(post['heartCount']).toInt();
+      if (post['heartedByMe'] == true ||
+          post['heartedByMe'] == 1 ||
+          post['heartedByMe'] == '1') {
+        _heartedVenueKeys.add(key);
+      } else {
+        _heartedVenueKeys.remove(key);
+      }
+    }
     final enabledBusinesses = await _businesses;
     final enabledBusinessIds = enabledBusinesses
         .map((business) => int.tryParse('${business['id'] ?? ''}'))
@@ -284,16 +304,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       ),
       actions: [
         if (!widget.savedOnly) _courtMapHeaderControl(),
-        IconButton(
+        FilterPanelButton(
           key: const ValueKey('news-feed-open-filters'),
-          tooltip: 'Open filters',
+          activeCount: _activeFeedFilterCount,
           onPressed: _openSportsFilters,
-          icon: const Icon(Icons.tune_rounded),
-          style: IconButton.styleFrom(
-            shape: const CircleBorder(),
-            backgroundColor: const Color(0xFFF7F9FC),
-            foregroundColor: _newsInk,
-          ),
         ),
       ],
     ),
@@ -368,303 +382,339 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   );
 
   void _openSportsFilters() {
-    showModalBottomSheet<void>(
+    showGeneralDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => FutureBuilder<List<Map<String, dynamic>>>(
-        future: _posts,
-        builder: (context, snapshot) {
-          final posts = snapshot.data ?? const <Map<String, dynamic>>[];
-          final areas = _feedOptions(
-            posts,
-            (post) => '${post['address'] ?? ''}',
-            'All areas',
-          );
-          final sports = _feedOptions(
-            posts,
-            (post) => '${post['category'] ?? ''}',
-            'All sports',
-          );
-          return StatefulBuilder(
-            builder: (context, setSheetState) => Container(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * .72,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 10),
-                    Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE1E6ED),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Filter venues',
-                              style: TextStyle(
-                                color: _newsInk,
-                                fontSize: 21,
-                                fontWeight: FontWeight.w900,
+      barrierDismissible: true,
+      barrierLabel: 'Close venue filters',
+      barrierColor: Colors.black54,
+      transitionDuration: filterPanelTransitionDuration,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _posts,
+            builder: (context, snapshot) {
+              final posts = snapshot.data ?? const <Map<String, dynamic>>[];
+              final areas = _feedOptions(
+                posts,
+                (post) => '${post['address'] ?? ''}',
+                'All areas',
+              );
+              final sports = _feedOptions(
+                posts,
+                (post) => '${post['category'] ?? ''}',
+                'All sports',
+              );
+              return Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  key: const ValueKey('filter-panel-surface'),
+                  width: filterPanelWidth(context),
+                  height: double.infinity,
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 24,
+                    child: StatefulBuilder(
+                      builder: (context, setSheetState) => SafeArea(
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: filterPanelHeaderPadding,
+                              child: Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Filter venues',
+                                      style: filterPanelTitleStyle,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    key: const ValueKey(
+                                      'news-feed-filter-reset',
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _feedArea = 'All areas';
+                                        _feedSport = 'All sports';
+                                        _feedCourtType = 'All';
+                                        _feedAvailability = 'Any';
+                                        _feedPriceSort = 'Recommended';
+                                        _feedMaxPrice = 700;
+                                        _feedAmenities.clear();
+                                        _userPosition = null;
+                                      });
+                                      setSheetState(() {});
+                                    },
+                                    child: const Text('Reset'),
+                                  ),
+                                  IconButton(
+                                    key: const ValueKey(
+                                      'news-feed-filter-close',
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(),
+                                    icon: const Icon(Icons.close_rounded),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          TextButton(
-                            key: const ValueKey('news-feed-filter-reset'),
-                            onPressed: () {
-                              setState(() {
-                                _feedArea = 'All areas';
-                                _feedSport = 'All sports';
-                                _feedCourtType = 'All';
-                                _feedAvailability = 'Any';
-                                _feedPriceSort = 'Recommended';
-                                _feedMaxPrice = 700;
-                                _feedAmenities.clear();
-                                _userPosition = null;
-                              });
-                              setSheetState(() {});
-                            },
-                            child: const Text('Reset'),
-                          ),
-                          IconButton(
-                            key: const ValueKey('news-feed-filter-close'),
-                            onPressed: () => Navigator.of(sheetContext).pop(),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Flexible(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                        children: [
-                          _filterLabel('Sport type'),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final value in sports)
-                                ChoiceChip(
-                                  key: ValueKey(
-                                    'news-feed-filter-sport-$value',
+                            const Divider(height: 1),
+                            Flexible(
+                              child: ListView(
+                                padding: filterPanelContentPadding,
+                                children: [
+                                  _filterLabel('Sport type'),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (final value in sports)
+                                        ChoiceChip(
+                                          key: ValueKey(
+                                            'news-feed-filter-sport-$value',
+                                          ),
+                                          label: Text(value),
+                                          selected: _feedSport == value,
+                                          onSelected: (_) {
+                                            setState(() => _feedSport = value);
+                                            setSheetState(() {});
+                                          },
+                                          selectedColor: _newsOrange,
+                                          labelStyle: TextStyle(
+                                            color: _feedSport == value
+                                                ? Colors.white
+                                                : _newsInk,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  label: Text(value),
-                                  selected: _feedSport == value,
-                                  onSelected: (_) {
-                                    setState(() => _feedSport = value);
-                                    setSheetState(() {});
-                                  },
-                                  selectedColor: _newsOrange,
-                                  labelStyle: TextStyle(
-                                    color: _feedSport == value
-                                        ? Colors.white
-                                        : _newsInk,
-                                    fontWeight: FontWeight.w700,
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
                                   ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _filterLabel('Area / city'),
-                          OutlinedButton.icon(
-                            key: const ValueKey('news-feed-use-my-location'),
-                            onPressed: _locationLoading
-                                ? null
-                                : () => _useMyLocation(
-                                    refreshSheet: () {
-                                      if (sheetContext.mounted) {
-                                        setSheetState(() {});
-                                      }
+                                  _filterLabel('Area / city'),
+                                  OutlinedButton.icon(
+                                    key: const ValueKey(
+                                      'news-feed-use-my-location',
+                                    ),
+                                    onPressed: _locationLoading
+                                        ? null
+                                        : () => _useMyLocation(
+                                            refreshSheet: () {
+                                              if (dialogContext.mounted) {
+                                                setSheetState(() {});
+                                              }
+                                            },
+                                          ),
+                                    icon: _locationLoading
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : Icon(
+                                            _userPosition == null
+                                                ? Icons.my_location_rounded
+                                                : Icons.location_on_rounded,
+                                          ),
+                                    label: Text(
+                                      _locationLoading
+                                          ? 'Getting your location...'
+                                          : _userPosition == null
+                                          ? 'Use my location'
+                                          : 'Using my location · nearest first',
+                                    ),
+                                  ),
+                                  _feedDropdown(
+                                    identifier: 'area',
+                                    value: _feedArea,
+                                    values: areas,
+                                    onChanged: (value) {
+                                      setState(() => _feedArea = value);
+                                      setSheetState(() {});
                                     },
                                   ),
-                            icon: _locationLoading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
+                                  _filterLabel('Court type'),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      for (final value in [
+                                        'All',
+                                        ..._feedOptions(
+                                          posts,
+                                          (post) =>
+                                              '${post['facilityType'] ?? ''}',
+                                          '',
+                                        ).where((value) => value.isNotEmpty),
+                                      ])
+                                        ChoiceChip(
+                                          key: ValueKey(
+                                            'news-feed-filter-court-$value',
+                                          ),
+                                          label: Text(value),
+                                          selected: _feedCourtType == value,
+                                          onSelected: (_) {
+                                            setState(
+                                              () => _feedCourtType = value,
+                                            );
+                                            setSheetState(() {});
+                                          },
+                                          selectedColor: _newsOrange,
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
+                                  _filterLabel('Amenities'),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      for (final value in const [
+                                        'Parking',
+                                        'Pet-friendly',
+                                        'Restroom',
+                                        'Shower',
+                                        'Store',
+                                      ])
+                                        FilterChip(
+                                          key: ValueKey(
+                                            'news-feed-filter-amenity-$value',
+                                          ),
+                                          label: Text(value),
+                                          selected: _feedAmenities.contains(
+                                            value,
+                                          ),
+                                          onSelected: (selected) {
+                                            setState(() {
+                                              if (selected) {
+                                                _feedAmenities.add(value);
+                                              } else {
+                                                _feedAmenities.remove(value);
+                                              }
+                                            });
+                                            setSheetState(() {});
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
+                                  _filterLabel('Availability'),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      for (final value in const [
+                                        'Any',
+                                        'Open 24 hours',
+                                      ])
+                                        ChoiceChip(
+                                          key: ValueKey(
+                                            'news-feed-filter-availability-$value',
+                                          ),
+                                          label: Text(value),
+                                          selected: _feedAvailability == value,
+                                          onSelected: (_) {
+                                            setState(
+                                              () => _feedAvailability = value,
+                                            );
+                                            setSheetState(() {});
+                                          },
+                                          selectedColor: _newsOrange,
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
+                                  _filterLabel('Price (PHP / hour)'),
+                                  Slider(
+                                    key: const ValueKey(
+                                      'news-feed-filter-price',
                                     ),
-                                  )
-                                : Icon(
-                                    _userPosition == null
-                                        ? Icons.my_location_rounded
-                                        : Icons.location_on_rounded,
+                                    value: _feedMaxPrice,
+                                    min: 0,
+                                    max: 700,
+                                    divisions: 14,
+                                    label: _feedMaxPrice >= 700
+                                        ? '700+'
+                                        : _feedMaxPrice.round().toString(),
+                                    onChanged: (value) {
+                                      setState(() => _feedMaxPrice = value);
+                                      setSheetState(() {});
+                                    },
                                   ),
-                            label: Text(
-                              _locationLoading
-                                  ? 'Getting your location...'
-                                  : _userPosition == null
-                                  ? 'Use my location'
-                                  : 'Using my location · nearest first',
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
+                                  _filterLabel('Sort price'),
+                                  _feedDropdown(
+                                    identifier: 'price-sort',
+                                    value: _feedPriceSort,
+                                    values: const [
+                                      'Recommended',
+                                      'Lowest to highest',
+                                      'Highest to lowest',
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() => _feedPriceSort = value);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          _feedDropdown(
-                            identifier: 'area',
-                            value: _feedArea,
-                            values: areas,
-                            onChanged: (value) {
-                              setState(() => _feedArea = value);
-                              setSheetState(() {});
-                            },
-                          ),
-                          const SizedBox(height: 20),
-                          _filterLabel('Court type'),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              for (final value in [
-                                'All',
-                                ..._feedOptions(
-                                  posts,
-                                  (post) => '${post['facilityType'] ?? ''}',
-                                  '',
-                                ).where((value) => value.isNotEmpty),
-                              ])
-                                ChoiceChip(
-                                  key: ValueKey(
-                                    'news-feed-filter-court-$value',
+                            Padding(
+                              padding: filterPanelFooterPadding,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton(
+                                  key: const ValueKey('news-feed-filter-apply'),
+                                  onPressed: () =>
+                                      Navigator.of(dialogContext).pop(),
+                                  style: filterPanelApplyButtonStyle,
+                                  child: Text(
+                                    'Show ${_filteredPosts(posts).length} venues',
                                   ),
-                                  label: Text(value),
-                                  selected: _feedCourtType == value,
-                                  onSelected: (_) {
-                                    setState(() => _feedCourtType = value);
-                                    setSheetState(() {});
-                                  },
-                                  selectedColor: _newsOrange,
                                 ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _filterLabel('Amenities'),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              for (final value in const [
-                                'Parking',
-                                'Pet-friendly',
-                                'Restroom',
-                                'Shower',
-                                'Store',
-                              ])
-                                FilterChip(
-                                  key: ValueKey(
-                                    'news-feed-filter-amenity-$value',
-                                  ),
-                                  label: Text(value),
-                                  selected: _feedAmenities.contains(value),
-                                  onSelected: (selected) {
-                                    setState(() {
-                                      if (selected) {
-                                        _feedAmenities.add(value);
-                                      } else {
-                                        _feedAmenities.remove(value);
-                                      }
-                                    });
-                                    setSheetState(() {});
-                                  },
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _filterLabel('Availability'),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              for (final value in const [
-                                'Any',
-                                'Open 24 hours',
-                              ])
-                                ChoiceChip(
-                                  key: ValueKey(
-                                    'news-feed-filter-availability-$value',
-                                  ),
-                                  label: Text(value),
-                                  selected: _feedAvailability == value,
-                                  onSelected: (_) {
-                                    setState(() => _feedAvailability = value);
-                                    setSheetState(() {});
-                                  },
-                                  selectedColor: _newsOrange,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _filterLabel('Price (PHP / hour)'),
-                          Slider(
-                            key: const ValueKey('news-feed-filter-price'),
-                            value: _feedMaxPrice,
-                            min: 0,
-                            max: 700,
-                            divisions: 14,
-                            label: _feedMaxPrice >= 700
-                                ? '700+'
-                                : _feedMaxPrice.round().toString(),
-                            onChanged: (value) {
-                              setState(() => _feedMaxPrice = value);
-                              setSheetState(() {});
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          _filterLabel('Sort price'),
-                          _feedDropdown(
-                            identifier: 'price-sort',
-                            value: _feedPriceSort,
-                            values: const [
-                              'Recommended',
-                              'Lowest to highest',
-                              'Highest to lowest',
-                            ],
-                            onChanged: (value) {
-                              setState(() => _feedPriceSort = value);
-                              setSheetState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          key: const ValueKey('news-feed-filter-apply'),
-                          onPressed: () => Navigator.of(sheetContext).pop(),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _newsInk,
-                            minimumSize: const Size.fromHeight(50),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'Show ${_filteredPosts(posts).length} venues',
-                          ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
     );
   }
+
+  int get _activeFeedFilterCount =>
+      (_feedArea == 'All areas' ? 0 : 1) +
+      (_feedSport == 'All sports' ? 0 : 1) +
+      (_feedCourtType == 'All' ? 0 : 1) +
+      (_feedAvailability == 'Any' ? 0 : 1) +
+      (_feedPriceSort == 'Recommended' ? 0 : 1) +
+      (_feedMaxPrice >= 700 ? 0 : 1) +
+      _feedAmenities.length +
+      (_userPosition == null ? 0 : 1);
 
   List<String> _feedOptions(
     List<Map<String, dynamic>> posts,
@@ -684,15 +734,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Widget _filterLabel(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        color: _newsMuted,
-        fontSize: 12,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1,
-      ),
-    ),
+    child: Text(text.toUpperCase(), style: filterPanelSectionLabelStyle),
   );
 
   Widget _feedDropdown({
@@ -1081,15 +1123,21 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Widget _feedContent(List<Map<String, dynamic>> posts) {
     final popular = [...posts]
-      ..sort(
-        (a, b) =>
-            _number(b['reviewCount']).compareTo(_number(a['reviewCount'])),
-      );
-    final highestRated = [...posts]
-      ..sort(
-        (a, b) =>
-            _number(b['averageRating']).compareTo(_number(a['averageRating'])),
-      );
+      ..sort((a, b) {
+        final byHearts = _postHeartCount(b).compareTo(_postHeartCount(a));
+        return byHearts != 0
+            ? byHearts
+            : '${a['businessName']}'.compareTo('${b['businessName']}');
+      });
+    final highestRated =
+        posts.where((post) => _number(post['reviewCount']) > 0).toList()
+          ..sort((a, b) {
+            final byRating = _number(b['averageRating'])
+                .compareTo(_number(a['averageRating']));
+            return byRating != 0
+                ? byRating
+                : '${a['businessName']}'.compareTo('${b['businessName']}');
+          });
     final featured = popular.take(6).toList();
     final rated = highestRated.take(6).toList();
 
@@ -1098,10 +1146,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
-        _sectionHeader('Most popular', 'Highest review activity', popular),
+        _sectionHeader('Most popular', 'Most hearts from users', popular),
         _horizontalVenues(featured, identifier: 'most-popular'),
         const SizedBox(height: 22),
-        _sectionHeader('Highest rate', 'Top average ratings', highestRated),
+        _sectionHeader(
+          'Highest rate',
+          'Highest average review rating',
+          highestRated,
+        ),
         _horizontalVenues(rated, identifier: 'highest-rate'),
         const SizedBox(height: 24),
         Row(
@@ -1180,12 +1232,28 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   void _openAllVenues(String title, List<Map<String, dynamic>> sectionPosts) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AllVenuesPage(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 320),
+        pageBuilder: (context, animation, secondaryAnimation) => AllVenuesPage(
           title: title,
           posts: sectionPosts,
           cardBuilder: _postCard,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            SlideTransition(
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeInOutCubic,
+                    ),
+                  ),
+              child: child,
+            ),
       ),
     );
   }
@@ -1231,11 +1299,81 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return name.isEmpty ? 'unknown' : name;
   }
 
+  String _postHeartKey(Map<String, dynamic> post) {
+    final businessId = int.tryParse('${post['businessId']}');
+    return businessId != null && businessId > 0 ? '$businessId' : '';
+  }
+
+  int _postHeartCount(Map<String, dynamic> post) =>
+      _heartCounts[_postHeartKey(post)] ?? _number(post['heartCount']).toInt();
+
+  bool _isHearted(Map<String, dynamic> post) {
+    final key = _postHeartKey(post);
+    return key.isNotEmpty
+        ? _heartedVenueKeys.contains(key)
+        : post['heartedByMe'] == true;
+  }
+
+  void _applyHeartState(Map<String, dynamic> post, bool hearted, int count) {
+    final key = _postHeartKey(post);
+    if (key.isEmpty) return;
+    _heartCounts[key] = count;
+    if (hearted) {
+      _heartedVenueKeys.add(key);
+    } else {
+      _heartedVenueKeys.remove(key);
+    }
+    post['heartCount'] = count;
+    post['heartedByMe'] = hearted;
+  }
+
+  Future<void> _toggleHeart(Map<String, dynamic> post) async {
+    final businessId = int.tryParse('${post['businessId']}');
+    if (businessId == null || businessId <= 0) return;
+    final wasHearted = _isHearted(post);
+    final key = '$businessId';
+    if (!_heartUpdatesInProgress.add(key)) return;
+    final previousCount = _postHeartCount(post);
+    final nextHearted = !wasHearted;
+    final nextCount = (previousCount + (nextHearted ? 1 : -1)).clamp(
+      0,
+      0x7fffffff,
+    );
+    setState(() => _applyHeartState(post, nextHearted, nextCount));
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException(
+          'Your session has expired. Please log in again.',
+          401,
+        );
+      }
+      final result = await _api.setBusinessHearted(
+        token: token,
+        businessId: businessId,
+        hearted: nextHearted,
+      );
+      if (!mounted) return;
+      final count = (result['heartCount'] as num?)?.toInt();
+      setState(() => _applyHeartState(post, nextHearted, count ?? nextCount));
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(() => _applyHeartState(post, wasHearted, previousCount));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not update heart: $error')));
+    } finally {
+      _heartUpdatesInProgress.remove(key);
+    }
+  }
+
   Widget _miniVenueCard(Map<String, dynamic> post) {
     final image = '${post['imageUrl'] ?? ''}';
     final name = '${post['businessName'] ?? 'Venue'}';
     final category = '${post['category'] ?? ''}';
     final rating = _number(post['averageRating']);
+    final hearted = _isHearted(post);
+    final heartCount = _postHeartCount(post);
     final priceLabel = _priceLabel(post);
     final unavailable = _isMerchantDisabled(post);
     final availability = '${post['availability'] ?? ''}'.toLowerCase();
@@ -1313,6 +1451,56 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                 const Color(0xCC101B33),
                               ),
                             ),
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: Material(
+                              color: Colors.white.withValues(alpha: .95),
+                              borderRadius: BorderRadius.circular(18),
+                              child: GestureDetector(
+                                key: ValueKey(
+                                  'news-feed-mini-heart-${_venueIdentifier(post)}',
+                                ),
+                                onTap: () => _toggleHeart(post),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: .95),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        hearted
+                                            ? Icons.favorite_rounded
+                                            : Icons.favorite_border_rounded,
+                                        size: 14,
+                                        color: hearted
+                                            ? Colors.red
+                                            : _newsMuted,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '$heartCount',
+                                        key: ValueKey(
+                                          'news-feed-mini-heart-count-${_venueIdentifier(post)}',
+                                        ),
+                                        style: const TextStyle(
+                                          color: _newsInk,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1571,7 +1759,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       if (widget.savedOnly) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => NewsFeedPage(onLogout: widget.onLogout),
+            builder: (_) => NewsFeedPage(
+              onLogout: widget.onLogout,
+              api: _api,
+              initialUserPosition: _userPosition,
+            ),
           ),
         );
       }
@@ -1580,24 +1772,39 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     if (index == 1) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) =>
-              NewsFeedPage(onLogout: widget.onLogout, savedOnly: true),
+          builder: (_) => NewsFeedPage(
+            onLogout: widget.onLogout,
+            savedOnly: true,
+            api: _api,
+            initialUserPosition: _userPosition,
+          ),
         ),
       );
     } else if (index == 2) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const MessagesDashboardPage()));
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MessagesDashboardPage(
+            initialUserPosition: _userPosition,
+            api: _api,
+          ),
+        ),
+      );
     } else if (index == 3) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => CustomerBookingsPage(onLogout: widget.onLogout),
+          builder: (_) => CustomerBookingsPage(
+            onLogout: widget.onLogout,
+            initialUserPosition: _userPosition,
+          ),
         ),
       );
     } else if (index == 4) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
+          builder: (_) => ProfileDashboardPage(
+            onLogout: widget.onLogout,
+            initialUserPosition: _userPosition,
+          ),
         ),
       );
     }
@@ -1638,6 +1845,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final businessName = '${post['businessName'] ?? ''}';
     final saveKey = '${businessId ?? businessName}';
     final isSaved = _savedKeys.contains(saveKey);
+    final isHearted = _isHearted(post);
+    final heartCount = _postHeartCount(post);
     final type = '${post['businessType'] ?? ''}';
     final category = '${post['category'] ?? ''}';
     final address = '${post['address'] ?? ''}';
@@ -1770,9 +1979,37 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                       ),
                       color: isSaved ? _newsOrange : _newsInk,
                       icon: Icon(
-                        isSaved
+                        isSaved ? savedItemSelectedIcon : savedItemIcon,
+                      ),
+                    ),
+                    IconButton(
+                      key: ValueKey(
+                        'news-feed-heart-${_venueIdentifier(post)}',
+                      ),
+                      onPressed: () => _toggleHeart(post),
+                      tooltip: isHearted ? 'Remove heart' : 'Heart venue',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                      color: isHearted ? Colors.red : _newsInk,
+                      icon: Icon(
+                        isHearted
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
+                      ),
+                    ),
+                    Text(
+                      '$heartCount',
+                      key: ValueKey(
+                        'news-feed-heart-count-${_venueIdentifier(post)}',
+                      ),
+                      style: const TextStyle(
+                        color: _newsMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -2381,13 +2618,48 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final parsedPrice = priceRaw is num
         ? priceRaw.toDouble()
         : double.tryParse('$priceRaw') ?? 0;
+    final totalSlots =
+        int.tryParse(
+          '${post['slotCount'] ?? business['slotCount'] ?? post['slot_count'] ?? business['slot_count'] ?? 1}',
+        ) ??
+        1;
+    final sportsSlots = normalizeSportsSlotConfigurations(
+      raw:
+          post['sportsSlots'] ??
+          business['sportsSlots'] ??
+          post['sports_slots_json'] ??
+          business['sports_slots_json'],
+      legacySportTypes: category,
+      legacyPrice: parsedPrice,
+      totalSlots: totalSlots,
+      includedPlayers:
+          int.tryParse(
+            '${post['includedPlayers'] ?? business['includedPlayers'] ?? post['included_players'] ?? business['included_players'] ?? 0}',
+          ) ??
+          0,
+      additionalPlayerFee:
+          double.tryParse(
+            '${post['additionalPlayerFee'] ?? business['additionalPlayerFee'] ?? post['additional_player_fee'] ?? business['additional_player_fee'] ?? 0}',
+          ) ??
+          0,
+    );
+    final sportRateLabels = sportsSlots.map((sport) {
+      final rate = (sport['pricePerHour'] as num).toDouble();
+      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / '
+          '${sport['fullStudio'] == true ? 'whole studio' : 'per slot'}';
+    }).toList();
+    final maxSportPrice = sportsSlots
+        .map((sport) => (sport['pricePerHour'] as num).toDouble())
+        .fold<double>(parsedPrice, (maximum, value) {
+          return value > maximum ? value : maximum;
+        });
     final venueId =
         int.tryParse('${post['businessId'] ?? business['id'] ?? 0}') ?? 0;
 
     return (
       id: venueId,
       name: businessName,
-      sport: category,
+      sport: sportsSlots.map((item) => item['sportType']).join(', '),
       address: address,
       ownerName: ownerName,
       type: type,
@@ -2403,8 +2675,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       images: images,
       priceDay: priceText,
       priceNight: priceText,
-      priceLines: priceText.isEmpty ? const [] : [priceText],
-      maxPrice: parsedPrice,
+      priceLines: sportRateLabels.isNotEmpty
+          ? sportRateLabels
+          : priceText.isEmpty
+          ? const <String>[]
+          : <String>[priceText],
+      maxPrice: maxSportPrice,
       averageRating: _number(post['averageRating']),
       reviewCount: _number(post['reviewCount']).toInt(),
       ratingUserCount: _number(post['ratingUserCount']).toInt(),
@@ -2418,10 +2694,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             '${post['additionalPlayerFee'] ?? business['additionalPlayerFee'] ?? post['additional_player_fee'] ?? business['additional_player_fee'] ?? 0}',
           ) ??
           0,
+      totalSlots: totalSlots,
+      sportsSlots: sportsSlots,
       tags: tags,
-      rateLabels: rateLabels,
+      rateLabels: sportRateLabels.isNotEmpty ? sportRateLabels : rateLabels,
       latitude: 0,
       longitude: 0,
+      distanceLabel: _distanceLabel(post) ?? '',
+      heartCount: _postHeartCount(post),
       visitUrl: _stringValue([
         post['visitUrl'],
         business['visitUrl'],

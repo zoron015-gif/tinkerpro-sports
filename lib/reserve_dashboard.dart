@@ -87,113 +87,107 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {},
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _ReserveHeader(),
-                const SizedBox(height: 14),
-                const Center(
-                  child: Text(
-                    'Choose Your Booking Type',
-                    style: TextStyle(
-                      color: _text,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w900,
-                      height: 1,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Center(
-                  child: Text(
-                    'Select an experience to explore real-time availability and\nluxury venue amenities.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _muted, fontSize: 13, height: 1.35),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _ExperienceCard(
-                  imagePath: 'assets/book-type/sports.jpg',
-                  badge: '18 Courts Open',
-                  title: 'Sports',
-                  description: 'Courts, Arenas, Tournaments &...',
-                  tags: const [
-                    'Tennis',
-                    'Padel',
-                    'Basketball',
-                    'Volleyball',
-                    'badminton',
-                    'pickleball',
-                  ],
-                  icon: Icons.sports_tennis_rounded,
-                  accent: _mint,
-                  selected: _selected == 'Sports',
-                  onTap: () => setState(() => _selected = 'Sports'),
-                ),
-                const SizedBox(height: 12),
-                _ExperienceCard(
-                  imagePath: 'assets/book-type/event.jpg',
-                  badge: 'VIP Banquets & Lounges',
-                  title: 'Event',
-                  description: 'Hotel Venues, Private Dinings &...',
-                  tags: const ['Ballroom', 'Terrace', 'Private Dining'],
-                  icon: Icons.auto_awesome_rounded,
-                  accent: _gold,
-                  selected: _selected == 'Event',
-                  onTap: () => setState(() => _selected = 'Event'),
-                ),
-                const SizedBox(height: 12),
-                _ExperienceCard(
-                  imagePath: 'assets/book-type/fitness.jpg',
-                  badge: 'Fitness Classes Open',
-                  title: 'Fitness & Wellness',
-                  description: 'Gyms, Martial Arts, Yoga & Personal...',
-                  tags: const ['CrossFit', 'Pilates', 'Zumba', 'Boxing'],
-                  icon: Icons.fitness_center_rounded,
-                  accent: _mint,
-                  selected: _selected == 'Fitness & Wellness',
-                  onTap: () => setState(() => _selected = 'Fitness & Wellness'),
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: const [
-                    _Benefit(
-                      icon: Icons.verified_rounded,
-                      label: 'Guaranteed\nSlot',
-                      color: _mint,
-                    ),
-                    SizedBox(width: 8),
-                    _Benefit(
-                      icon: Icons.room_service_rounded,
-                      label: 'VIP Concierge',
-                      color: _gold,
-                    ),
-                    SizedBox(width: 8),
-                    _Benefit(
-                      icon: Icons.schedule_rounded,
-                      label: 'Flexible\nChanges',
-                      color: _navy,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 90),
-              ],
+      body: RefreshIndicator(
+        onRefresh: () async {},
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              centerTitle: true,
+              title: const _ReserveHeader(),
+              backgroundColor: _background,
+              foregroundColor: _text,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
             ),
-          ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const Center(
+                    child: Text(
+                      'Choose your booking type',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _text,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Center(
+                    child: Text(
+                      'Explore live availability and find the right experience.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _muted,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  _ExperienceCard(
+                    imagePath: 'assets/book-type/sports.jpg',
+                    badge: '18 Courts Open',
+                    title: 'Sports',
+                    description: 'Courts, arenas, tournaments and more',
+                    tags: const [
+                      'Tennis',
+                      'Padel',
+                      'Basketball',
+                      'Volleyball',
+                      'Badminton',
+                      'Pickleball',
+                    ],
+                    icon: Icons.sports_tennis_rounded,
+                    accent: _mint,
+                    selected: _selected == 'Sports',
+                    onTap: () => setState(() => _selected = 'Sports'),
+                  ),
+                  const SizedBox(height: 14),
+                  _ExperienceCard(
+                    imagePath: 'assets/book-type/event.jpg',
+                    badge: 'VIP Banquets & Lounges',
+                    title: 'Event',
+                    description: 'Hotel venues, private dining and more',
+                    tags: const ['Ballroom', 'Terrace', 'Private Dining'],
+                    icon: Icons.auto_awesome_rounded,
+                    accent: _gold,
+                    selected: _selected == 'Event',
+                    onTap: () => setState(() => _selected = 'Event'),
+                  ),
+                  const SizedBox(height: 14),
+                  _ExperienceCard(
+                    imagePath: 'assets/book-type/fitness.jpg',
+                    badge: 'Fitness Classes Open',
+                    title: 'Fitness & Wellness',
+                    description:
+                        'Gyms, martial arts, yoga and personal training',
+                    tags: const ['CrossFit', 'Pilates', 'Zumba', 'Boxing'],
+                    icon: Icons.fitness_center_rounded,
+                    accent: _mint,
+                    selected: _selected == 'Fitness & Wellness',
+                    onTap: () =>
+                        setState(() => _selected = 'Fitness & Wellness'),
+                  ),
+                ]),
+              ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
           decoration: BoxDecoration(
-            color: _background,
+            color: _surface,
+            border: const Border(top: BorderSide(color: Color(0xFFE5EAF1))),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: .08),
@@ -205,19 +199,42 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const Row(
+                children: [
+                  _Benefit(
+                    icon: Icons.verified_rounded,
+                    label: 'Guaranteed slot',
+                    color: _mint,
+                    detail: '100% reserved',
+                  ),
+                  _Benefit(
+                    icon: Icons.room_service_rounded,
+                    label: 'VIP concierge',
+                    color: _gold,
+                    detail: 'Personal host',
+                  ),
+                  _Benefit(
+                    icon: Icons.schedule_rounded,
+                    label: 'Flexible changes',
+                    color: _navy,
+                    detail: 'Easy rescheduling',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                height: 56,
+                height: 54,
                 child: FilledButton(
                   onPressed: _continue,
                   style: FilledButton.styleFrom(
                     backgroundColor: _mint,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(36),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     textStyle: const TextStyle(
-                      fontSize: 17,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -226,17 +243,17 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     children: [
                       Text('Continue to $_selected'),
                       const SizedBox(width: 10),
-                      const Icon(Icons.arrow_forward_rounded, size: 22),
+                      const Icon(Icons.arrow_forward_rounded, size: 20),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 8),
               const Text(
-                '●  Instant confirmation · No upfront payment required',
+                'Instant confirmation · No upfront payment required',
                 style: TextStyle(
                   color: Color(0xFF237C63),
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -253,21 +270,10 @@ class _ReserveHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(
-          child: Text(
-            'Reserve Experience',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _text,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        const SizedBox(width: 48),
-      ],
+    return const Text(
+      'Reserve experience',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.w900),
     );
   }
 }
@@ -306,7 +312,7 @@ class _ExperienceCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          height: 190,
+          height: 220,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
@@ -327,7 +333,7 @@ class _ExperienceCard extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 132,
+                width: 124,
                 height: double.infinity,
                 child: Padding(
                   padding: const EdgeInsets.all(10),
@@ -339,7 +345,7 @@ class _ExperienceCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 10, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(8, 12, 14, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -348,39 +354,39 @@ class _ExperienceCard extends StatelessWidget {
                           Expanded(
                             child: _Badge(text: badge, color: accent),
                           ),
-                          const SizedBox(width: 5),
+                          const SizedBox(width: 8),
                           Icon(
                             selected ? Icons.check_circle_rounded : icon,
                             color: accent,
-                            size: 21,
+                            size: 22,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Text(
-                        title.toUpperCase(),
+                        title,
                         style: TextStyle(
                           color: _text,
-                          fontSize: title.length > 10 ? 15 : 19,
+                          fontSize: title.length > 10 ? 17 : 20,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: .7,
+                          letterSpacing: -.2,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: _muted,
-                          fontSize: 9,
-                          height: 1.1,
+                          fontSize: 12,
+                          height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Wrap(
-                        spacing: 5,
-                        runSpacing: 4,
+                        spacing: 6,
+                        runSpacing: 6,
                         children: tags
                             .map((tag) => _OptionChip(label: tag))
                             .toList(),
@@ -406,7 +412,7 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: _surface.withValues(alpha: .94),
         borderRadius: BorderRadius.circular(22),
@@ -424,7 +430,7 @@ class _Badge extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w800,
-                fontSize: 9,
+                fontSize: 10,
                 letterSpacing: .1,
               ),
             ),
@@ -443,7 +449,7 @@ class _OptionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: _surfaceLight,
         borderRadius: BorderRadius.circular(8),
@@ -465,45 +471,43 @@ class _Benefit extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.color,
+    required this.detail,
   });
 
   final IconData icon;
   final String label;
   final Color color;
+  final String detail;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        height: 88,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        decoration: BoxDecoration(
-          color: _surface.withValues(alpha: .7),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: .16)),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 4),
             Text(
               label,
+              maxLines: 1,
               textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: _text,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                height: 1.15,
               ),
             ),
+            const SizedBox(height: 2),
             Text(
-              switch (label) {
-                'Guaranteed\nSlot' => '100% Reserved',
-                'VIP Concierge' => 'Personal Host',
-                _ => 'Free Cancellation',
-              },
+              detail,
+              maxLines: 1,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF94A5BD), fontSize: 8),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _muted, fontSize: 9, height: 1.2),
             ),
           ],
         ),

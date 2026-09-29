@@ -13,6 +13,7 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'saved_items.dart';
+import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
 import 'app_card_styles.dart';
@@ -498,8 +499,8 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
               label: 'Explore',
             ),
             NavigationDestination(
-              icon: Icon(Icons.favorite_border_rounded, size: 24),
-              selectedIcon: Icon(Icons.favorite_rounded, size: 24),
+              icon: Icon(savedItemIcon, size: 24),
+              selectedIcon: Icon(savedItemSelectedIcon, size: 24),
               label: 'Saved',
             ),
             NavigationDestination(
@@ -999,8 +1000,8 @@ class _FitnessDashboardPageState extends State<FitnessDashboardPage> {
                       ),
                       icon: Icon(
                         _savedKeys.contains(item.name)
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
+                            ? savedItemSelectedIcon
+                            : savedItemIcon,
                       ),
                     ),
                     _saveCount(_saveCounts[item.name] ?? 0),

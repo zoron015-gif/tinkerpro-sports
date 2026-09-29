@@ -3,6 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
 import 'package:flutter/material.dart';
+
+import 'saved_icons.dart';
+
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -1782,7 +1785,7 @@ class _OverviewTrustSection extends StatelessWidget {
           SizedBox(width: 12),
           Expanded(
             child: _TrustItem(
-              icon: Icons.favorite_rounded,
+              icon: savedItemSelectedIcon,
               title: 'Save favorites',
               text: 'Keep places ready to book.',
             ),

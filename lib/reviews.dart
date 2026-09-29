@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'app_session.dart';
@@ -245,12 +247,26 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           '${review['firstName'] ?? ''}'.trim(),
           '${review['lastName'] ?? ''}'.trim(),
         ].where((value) => value.isNotEmpty).join(' ');
+        final avatarUrl =
+            '${review['avatarUrl'] ?? review['avatar_url'] ?? ''}'.trim();
+        final avatar = _reviewAvatar(avatarUrl);
         final rating = int.tryParse('${review['rating']}') ?? 0;
         return ListTile(
           contentPadding: EdgeInsets.zero,
           leading: CircleAvatar(
+            radius: 24,
             backgroundColor: const Color(0xFFFFE8D2),
-            child: Text(name.isEmpty ? 'U' : name[0].toUpperCase()),
+            child: avatar == null
+                ? _reviewInitial(name)
+                : ClipOval(
+                    child: Image(
+                      image: avatar,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _reviewInitial(name),
+                    ),
+                  ),
           ),
           title: Text(name.isEmpty ? 'Customer' : name),
           subtitle: Text('${review['comment'] ?? ''}'),
@@ -259,6 +275,30 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
       },
     );
   }
+
+  ImageProvider<Object>? _reviewAvatar(String value) {
+    if (value.startsWith('data:image/')) {
+      final separator = value.indexOf(',');
+      if (separator < 0) return null;
+      try {
+        return MemoryImage(base64Decode(value.substring(separator + 1)));
+      } on FormatException {
+        return null;
+      }
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty) {
+      return null;
+    }
+    return NetworkImage(value);
+  }
+
+  Widget _reviewInitial(String name) => Text(
+    name.isEmpty ? 'U' : name[0].toUpperCase(),
+    style: const TextStyle(fontWeight: FontWeight.w700),
+  );
 
   Widget _reviewForm() {
     if (!_canSubmitReview) {

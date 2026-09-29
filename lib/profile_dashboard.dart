@@ -3,11 +3,13 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_session.dart';
+import 'activity_log_page.dart';
 import 'saved_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
@@ -24,9 +26,14 @@ const _profileMuted = Color(0xFF68748A);
 const _profileLine = Color(0xFFE6EAF0);
 
 class ProfileDashboardPage extends StatefulWidget {
-  const ProfileDashboardPage({super.key, this.onLogout});
+  const ProfileDashboardPage({
+    super.key,
+    this.onLogout,
+    this.initialUserPosition,
+  });
 
   final Future<void> Function(BuildContext context)? onLogout;
+  final Position? initialUserPosition;
 
   @override
   State<ProfileDashboardPage> createState() => _ProfileDashboardPageState();
@@ -459,6 +466,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     onTap: () => Navigator.pop(dialogContext, 'edit'),
                   ),
                   ListTile(
+                    key: const ValueKey('profile-settings-activity-log'),
+                    leading: const Icon(Icons.history_rounded),
+                    title: const Text('Activity log'),
+                    subtitle: const Text('Review activity on your account'),
+                    onTap: () => Navigator.pop(dialogContext, 'activity'),
+                  ),
+                  ListTile(
                     leading: const Icon(Icons.swap_horiz_rounded),
                     title: const Text('Switch to Host Portal'),
                     onTap: () => Navigator.pop(dialogContext, 'switch'),
@@ -557,10 +571,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             child: child,
           ),
     );
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     switch (action) {
       case 'edit':
         await _editProfile();
+      case 'activity':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ActivityLogPage(api: _api)),
+        );
       case 'switch':
         _message(context, 'Host portal is opening soon.');
       case 'logout':
@@ -653,21 +671,31 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           if (index == 1) {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+                builder: (_) => SavedDashboardPage(
+                  onLogout: widget.onLogout,
+                  initialUserPosition: widget.initialUserPosition,
+                ),
               ),
             );
             return;
           }
           if (index == 2) {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MessagesDashboardPage()),
+              MaterialPageRoute(
+                builder: (_) => MessagesDashboardPage(
+                  initialUserPosition: widget.initialUserPosition,
+                ),
+              ),
             );
             return;
           }
           if (index == 3) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (_) => CustomerBookingsPage(onLogout: widget.onLogout),
+                builder: (_) => CustomerBookingsPage(
+                  onLogout: widget.onLogout,
+                  initialUserPosition: widget.initialUserPosition,
+                ),
               ),
             );
             return;
@@ -687,7 +715,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     if (!context.mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => NewsFeedPage(onLogout: widget.onLogout),
+        builder: (_) => NewsFeedPage(
+          onLogout: widget.onLogout,
+          initialUserPosition: widget.initialUserPosition,
+        ),
       ),
     );
   }
@@ -1410,7 +1441,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         else ...[
           const SizedBox(height: 8),
           for (final venue in venues.take(2)) ...[
-            _visitedVenueItem(venue),
+            _visitedVenueItem(
+              venue,
+              onTap: () => _showVisitedVenueTimeline(context, venue),
+            ),
             if (venue != venues.take(2).last) const SizedBox(height: 8),
           ],
         ],
@@ -1420,14 +1454,19 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 
   List<({String name, List<Map<String, dynamic>> bookings})>
   get _visitedVenueEntries {
-    final venues = <String, List<Map<String, dynamic>>>{};
+    final venues =
+        <String, ({String name, List<Map<String, dynamic>> bookings})>{};
     for (final booking in _completed) {
       final name = '${booking['venueName'] ?? 'Venue'}';
-      venues.putIfAbsent(name, () => []).add(booking);
+      final venueId = '${booking['venueId'] ?? ''}'.trim();
+      final key = venueId.isEmpty ? name.toLowerCase() : venueId;
+      final venue = venues.putIfAbsent(
+        key,
+        () => (name: name, bookings: <Map<String, dynamic>>[]),
+      );
+      venue.bookings.add(booking);
     }
-    return venues.entries
-        .map((entry) => (name: entry.key, bookings: entry.value))
-        .toList();
+    return venues.values.toList();
   }
 
   Widget _visitedVenueItem(
@@ -1545,6 +1584,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 const SizedBox(width: 6),
                 _smallPill('${venue.bookings.length} visits'),
               ],
+              if (onTap != null) ...[
+                const SizedBox(width: 2),
+                const Icon(Icons.chevron_right_rounded, color: _profileMuted),
+              ],
             ],
           ),
         ),
@@ -1623,9 +1666,195 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       title: 'Venues visited',
       countLabel: '${venues.length} venues',
       emptyText: 'No completed court visits yet.',
-      children: venues.map(_visitedVenueItem).toList(),
+      children: venues
+          .map(
+            (venue) => _visitedVenueItem(
+              venue,
+              onTap: () => _showVisitedVenueTimeline(context, venue),
+            ),
+          )
+          .toList(),
     );
   }
+
+  Future<void> _showVisitedVenueTimeline(
+    BuildContext context,
+    ({String name, List<Map<String, dynamic>> bookings}) venue,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) => SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * .82,
+        ),
+        decoration: const BoxDecoration(
+          color: _profilePage,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _profileLine,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          venue.name,
+                          style: const TextStyle(
+                            color: _profileInk,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          '${venue.bookings.length} ${venue.bookings.length == 1 ? 'completed visit' : 'completed visits'}',
+                          style: const TextStyle(
+                            color: _profileMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close venue visits',
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _profileLine),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                itemCount: venue.bookings.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final booking = venue.bookings[index];
+                  final sportType = '${booking['category'] ?? ''}'.trim();
+                  final businessType = '${booking['businessType'] ?? ''}'
+                      .trim();
+                  final createdAt = _exactBookingTimestamp(
+                    booking['createdAt'],
+                  );
+                  final visitTime = _visitDateTime(booking);
+                  return Container(
+                    key: ValueKey(
+                      'profile-venue-visit-${booking['id'] ?? index}',
+                    ),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _profileLine),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.event_available_outlined,
+                              color: _profileOrange,
+                              size: 19,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Completed visit ${venue.bookings.length - index}',
+                                style: const TextStyle(
+                                  color: _profileInk,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (sportType.isNotEmpty ||
+                            businessType.isNotEmpty) ...[
+                          const SizedBox(height: 9),
+                          _bookingDetailLine(
+                            Icons.sports_tennis_outlined,
+                            [
+                              if (sportType.isNotEmpty) sportType,
+                              if (businessType.isNotEmpty &&
+                                  businessType.toLowerCase() !=
+                                      sportType.toLowerCase())
+                                businessType,
+                            ].join(' · '),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        _bookingDetailLine(
+                          Icons.schedule_outlined,
+                          'Visit: $visitTime',
+                        ),
+                        if (createdAt.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _bookingDetailLine(
+                            Icons.history_rounded,
+                            'Booking created: $createdAt',
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        _bookingDetailLine(
+                          Icons.group_outlined,
+                          '${booking['durationHours'] ?? 0} hour(s) · '
+                          '${booking['players'] ?? 0} players',
+                        ),
+                        if (booking['id'] != null) ...[
+                          const SizedBox(height: 4),
+                          _bookingDetailLine(
+                            Icons.confirmation_number_outlined,
+                            'Booking #${booking['id']}',
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  String _visitDateTime(Map<String, dynamic> booking) {
+    final date = '${booking['date'] ?? ''}'.trim();
+    final time = '${booking['startTime'] ?? ''}'.trim();
+    if (date.isEmpty && time.isEmpty) return 'Schedule unavailable';
+    if (date.isEmpty) return time;
+    if (time.isEmpty) return date;
+    return '$date · $time';
+  }
+
+  String _exactBookingTimestamp(dynamic value) {
+    final timestamp = DateTime.tryParse('${value ?? ''}');
+    if (timestamp == null) return '';
+    final local = timestamp.toLocal();
+    return '${local.year}-${_twoDigits(local.month)}-${_twoDigits(local.day)} '
+        '${_twoDigits(local.hour)}:${_twoDigits(local.minute)}:${_twoDigits(local.second)}';
+  }
+
+  String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
   Future<void> _showProfileListSheet(
     BuildContext context, {

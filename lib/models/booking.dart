@@ -88,6 +88,9 @@ class Booking {
     this.startTime = '',
     this.durationHours = 0,
     this.players = 0,
+    this.sportType = '',
+    this.slotNumber,
+    this.occupiesFullStudio = true,
     this.paymentMethod = '',
     this.pricePerHour = 0,
     this.total = 0,
@@ -105,6 +108,9 @@ class Booking {
   final String startTime;
   final double durationHours;
   final int players;
+  final String sportType;
+  final int? slotNumber;
+  final bool occupiesFullStudio;
   final String paymentMethod;
   final double pricePerHour;
   final double total;
@@ -122,6 +128,10 @@ class Booking {
     startTime: _text(json['startTime']),
     durationHours: _doubleValue(json['durationHours']),
     players: _intValue(json['players']) ?? 0,
+    sportType: _text(json['sportType']),
+    slotNumber: _intValue(json['slotNumber']),
+    occupiesFullStudio:
+        json['occupiesFullStudio'] == true || json['occupiesFullStudio'] == 1,
     paymentMethod: _text(json['paymentMethod']),
     pricePerHour: _doubleValue(json['pricePerHour']),
     total: _doubleValue(json['total']),
@@ -138,7 +148,10 @@ class Booking {
     'venueId' => venue.id,
     'venueName' => venue.name,
     'businessType' => venue.businessType,
-    'category' => venue.category,
+    'category' => sportType.isNotEmpty ? sportType : venue.category,
+    'sportType' => sportType.isNotEmpty ? sportType : venue.category,
+    'slotNumber' => slotNumber,
+    'occupiesFullStudio' => occupiesFullStudio,
     'address' => venue.address,
     'ownerName' => venue.ownerName,
     'facilityType' => venue.facilityType,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
@@ -12,10 +13,16 @@ import 'news_feed.dart';
 import 'models/booking.dart';
 
 class CustomerBookingsPage extends StatefulWidget {
-  const CustomerBookingsPage({super.key, this.onLogout, this.api});
+  const CustomerBookingsPage({
+    super.key,
+    this.onLogout,
+    this.api,
+    this.initialUserPosition,
+  });
 
   final Future<void> Function(BuildContext context)? onLogout;
   final AuthApi? api;
+  final Position? initialUserPosition;
 
   @override
   State<CustomerBookingsPage> createState() => _CustomerBookingsPageState();
@@ -322,7 +329,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             if (index == 1) {
               _replaceWith(
                 MaterialPageRoute(
-                  builder: (_) => SavedDashboardPage(onLogout: widget.onLogout),
+                  builder: (_) => SavedDashboardPage(
+                    onLogout: widget.onLogout,
+                    initialUserPosition: widget.initialUserPosition,
+                  ),
                 ),
               );
               return;
@@ -330,14 +340,19 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             if (index == 2) {
               _replaceWith(
                 MaterialPageRoute(
-                  builder: (_) => const MessagesDashboardPage(),
+                  builder: (_) => MessagesDashboardPage(
+                    initialUserPosition: widget.initialUserPosition,
+                  ),
                 ),
               );
               return;
             }
             _replaceWith(
               MaterialPageRoute(
-                builder: (_) => ProfileDashboardPage(onLogout: widget.onLogout),
+                builder: (_) => ProfileDashboardPage(
+                  onLogout: widget.onLogout,
+                  initialUserPosition: widget.initialUserPosition,
+                ),
               ),
             );
         },
@@ -447,7 +462,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     if (!mounted) return;
     _replaceWith(
       MaterialPageRoute(
-        builder: (_) => NewsFeedPage(onLogout: widget.onLogout),
+        builder: (_) => NewsFeedPage(
+          onLogout: widget.onLogout,
+          initialUserPosition: widget.initialUserPosition,
+        ),
       ),
     );
   }
@@ -828,7 +846,19 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           _venueDetail(Icons.location_on_outlined, booking['address']),
           _venueDetail(
             Icons.sports_rounded,
-            _labelValue('Sport', booking['category']),
+            _labelValue(
+              'Sport',
+              booking['sportType'] ?? booking['category'],
+            ),
+          ),
+          _venueDetail(
+            Icons.grid_view_rounded,
+            _labelValue(
+              'Booked area',
+              booking['occupiesFullStudio'] == true
+                  ? 'Whole studio'
+                  : 'Slot ${booking['slotNumber'] ?? '—'}',
+            ),
           ),
           _venueDetail(
             Icons.business_center_outlined,

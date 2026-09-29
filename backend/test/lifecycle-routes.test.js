@@ -1,0 +1,928 @@
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const { after, before, beforeEach, test } = require('node:test');
+const Module = require('node:module');
+const path = require('node:path');
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const { hashVerificationCode } = require('../src/normalizers');
+
+const serverFile = path.join(__dirname, '..', 'src', 'server.js');
+const originalLoad = Module._load;
+const originalListen = express.application.listen;
+let server;
+let originalJwtSecret;
+let originalPaymongoSecret;
+let originalPaymongoWebhookSecret;
+let db;
+let sentVerificationCodes;
+let sentResetCodes;
+let paymentBooking;
+
+function response(rows = []) {
+  return [rows, []];
+}
+
+function makeConnection() {
+  return {
+    beginTransaction: async () => {},
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {},
+    execute: async (sql, params = []) => {
+      db.calls.push({ sql, params });
+
+      if (sql.includes('FROM users WHERE email = ? LIMIT 1')) {
+        return response(db.existingRegistrationUser ? [db.existingRegistrationUser] : []);
+      }
+      if (sql.includes('INSERT INTO users')) return [{ insertId: 71 }, []];
+      if (sql.includes('SELECT id FROM users WHERE email = ? AND status != ?')) {
+        return response(db.resetUser ? [{ id: db.resetUser.id }] : []);
+      }
+      if (sql.includes('SELECT t.id AS token_id, t.token_hash, u.id, u.email')) {
+        return response(db.verificationToken ? [db.verificationToken] : []);
+      }
+      if (sql.includes('SELECT t.id AS token_id, t.token_hash, u.id AS user_id')) {
+        return response(db.resetToken ? [db.resetToken] : []);
+      }
+      if (sql.includes('FROM merchant_businesses b JOIN users u')) {
+        return response(db.venue ? [db.venue] : []);
+      }
+      if (sql.includes('FROM bookings') && sql.includes('AND start_time <')) {
+        return response(db.overlapRows ?? (
+          db.overlap
+            ? [{ slotNumber: null, occupiesFullStudio: 1 }]
+            : []
+        ));
+      }
+      if (sql.includes('WHERE b.payment_checkout_session_id = ?')) {
+        return response(
+          db.webhookBooking?.paymentCheckoutSessionId === params[0]
+            ? [db.webhookBooking]
+            : [],
+        );
+      }
+      if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
+        return response([{
+          id: 501,
+          customerId: 42,
+          venueId: 7,
+          venueName: 'Test Court',
+          sportType: 'Basketball',
+          bookingDate: '2026-10-01',
+          startTime: '09:00:00',
+          durationHours: 2,
+          players: 6,
+        }]);
+      }
+      if (sql.includes('SELECT id FROM conversations WHERE type = ?')) {
+        return response([]);
+      }
+      if (sql.includes('INSERT INTO conversations')) return [{ insertId: 601 }, []];
+      if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
+        return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
+      }
+      return [{ affectedRows: 1, insertId: 601 }, []];
+    },
+  };
+}
+
+function resetDatabase() {
+  db = {
+    calls: [],
+    accountStatus: 'active',
+    venueReviews: [],
+    existingRegistrationUser: null,
+    resetUser: null,
+    verificationToken: null,
+    resetToken: null,
+    availabilityRows: [],
+    availabilityError: null,
+    venue: {
+      id: 7,
+      merchant_id: 88,
+      name: 'Test Court',
+      category: 'Basketball',
+      price_per_hour: 120,
+      slot_count: 5,
+      sports_slots_json: [
+        {
+          sportType: 'Basketball',
+          pricePerHour: 120,
+          fullStudio: true,
+          slotCount: 5,
+        },
+        {
+          sportType: 'Badminton',
+          pricePerHour: 90,
+          includedPlayers: 2,
+          additionalPlayerFee: 20,
+          fullStudio: false,
+          slotCount: 4,
+        },
+      ],
+      included_players: 4,
+      additional_player_fee: 15,
+      enabled: 1,
+      merchant_status: 'active',
+    },
+    overlap: false,
+    overlapRows: null,
+    transitionAffected: true,
+    paymentBooking: {
+      id: 501,
+      totalAmount: 270,
+      paymentMethod: 'online',
+      paymentStatus: 'unpaid',
+      status: 'pending',
+    },
+    webhookBooking: null,
+  };
+  paymentBooking = db.paymentBooking;
+  sentVerificationCodes = [];
+  sentResetCodes = [];
+}
+
+function bearer(role = 'customer', id = role === 'merchant' ? '88' : '42') {
+  return jwt.sign({ sub: id, email: `${role}@example.test`, role }, process.env.JWT_SECRET);
+}
+
+async function request(url, { role, ...options } = {}) {
+  const headers = new Headers(options.headers);
+  headers.set('authorization', `Bearer ${bearer(role)}`);
+  if (options.body !== undefined) headers.set('content-type', 'application/json');
+  return fetch(`http://127.0.0.1:${server.address().port}${url}`, {
+    ...options,
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
+}
+
+before(async () => {
+  originalJwtSecret = process.env.JWT_SECRET;
+  originalPaymongoSecret = process.env.PAYMONGO_SECRET_KEY;
+  originalPaymongoWebhookSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  process.env.JWT_SECRET = 'backend-test-only-secret';
+  delete process.env.PAYMONGO_SECRET_KEY;
+  resetDatabase();
+
+  const fakePool = {
+    execute: async (sql, params = []) => {
+      db.calls.push({ sql, params });
+      if (sql.includes('SELECT role, status FROM users WHERE id = ?')) {
+        const role = String(params[0]) === '88' ? 'merchant' : 'customer';
+        return response([{ role, status: db.accountStatus }]);
+      }
+      if (sql.includes('SELECT id, name, category FROM merchant_businesses') && sql.includes('enabled = 1')) {
+        return response([{
+          id: Number(params[0]),
+          name: 'Test Court',
+          category: 'Basketball',
+        }]);
+      }
+      if (sql.includes('SELECT id, total_amount AS totalAmount')) {
+        return response(paymentBooking ? [paymentBooking] : []);
+      }
+      if (sql.includes('FROM venue_reviews r INNER JOIN users u')) {
+        return response(db.venueReviews);
+      }
+      if (sql.includes('SELECT start_time AS startTime')) {
+        if (db.availabilityError) throw db.availabilityError;
+        return response(db.availabilityRows);
+      }
+      if (sql.includes('FROM email_verification_tokens t')) {
+        return response(db.verificationToken ? [db.verificationToken] : []);
+      }
+      if (sql.includes('FROM password_reset_tokens t')) {
+        return response(db.resetToken ? [db.resetToken] : []);
+      }
+      if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
+        return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
+      }
+      return response([]);
+    },
+    query: async () => response([]),
+    getConnection: async () => makeConnection(),
+  };
+
+  let resolveListening;
+  const listening = new Promise((resolve) => {
+    resolveListening = resolve;
+  });
+
+  Module._load = function (requestName, parent, isMain) {
+    if (parent?.filename === serverFile && requestName === 'dotenv') {
+      return { config: () => ({}) };
+    }
+    if (parent?.filename === serverFile && requestName === './db') return fakePool;
+    if (parent?.filename === serverFile && requestName === './mailer') {
+      return {
+        sendPasswordResetCode: async (_email, code) => sentResetCodes.push(code),
+        sendVerificationCode: async (_email, code) => sentVerificationCodes.push(code),
+      };
+    }
+    return originalLoad.call(this, requestName, parent, isMain);
+  };
+  express.application.listen = function () {
+    server = originalListen.call(this, 0, resolveListening);
+    return server;
+  };
+
+  try {
+    require(serverFile);
+    await listening;
+  } finally {
+    Module._load = originalLoad;
+    express.application.listen = originalListen;
+  }
+});
+
+beforeEach(() => resetDatabase());
+
+after(async () => {
+  if (server) {
+    await new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+  if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+  else process.env.JWT_SECRET = originalJwtSecret;
+  if (originalPaymongoSecret === undefined) delete process.env.PAYMONGO_SECRET_KEY;
+  else process.env.PAYMONGO_SECRET_KEY = originalPaymongoSecret;
+  if (originalPaymongoWebhookSecret === undefined) {
+    delete process.env.PAYMONGO_WEBHOOK_SECRET;
+  } else {
+    process.env.PAYMONGO_WEBHOOK_SECRET = originalPaymongoWebhookSecret;
+  }
+});
+
+test('booking rejects malformed input without opening a transaction', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: 'not-a-date',
+      startTime: '25:00',
+      durationHours: 1,
+      players: 2,
+      paymentMethod: 'online',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Choose Online payment or Cash on Arrival (COA).',
+  });
+  assert.equal(db.calls.filter(({ sql }) => sql.includes('FOR UPDATE')).length, 0);
+});
+
+test('activity log reads are scoped to the authenticated user', async () => {
+  const response = await request('/api/activity-logs?userId=88');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { activities: [] });
+  const activityQuery = db.calls.find(({ sql }) =>
+    sql.includes('FROM user_activity_logs') && sql.includes('WHERE user_id = ?'),
+  );
+  assert.ok(activityQuery);
+  assert.deepEqual(activityQuery.params, ['42']);
+  assert.doesNotMatch(activityQuery.sql, /userId/i);
+});
+
+test('venue heart updates validate the venue and remain scoped to the user', async () => {
+  const response = await request('/api/businesses/7/heart', {
+    method: 'PUT',
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    heartCount: 0,
+    heartedByMe: true,
+  });
+  const heartInsert = db.calls.find(({ sql }) =>
+    sql.includes('INSERT IGNORE INTO venue_hearts'),
+  );
+  assert.ok(heartInsert);
+  assert.deepEqual(heartInsert.params, [7, '42']);
+  const countQuery = db.calls.find(({ sql }) =>
+    sql.includes('SELECT COUNT(*) AS heartCount FROM venue_hearts'),
+  );
+  assert.ok(countQuery);
+  assert.deepEqual(countQuery.params, [7]);
+});
+
+test('customer feed reports aggregate hearts and the authenticated user heart state', async () => {
+  const response = await request('/api/news-feed');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { posts: [] });
+  const feedQuery = db.calls.find(({ sql }) =>
+    sql.includes('heart_count') && sql.includes('hearted_by_me'),
+  );
+  assert.ok(feedQuery);
+  assert.deepEqual(feedQuery.params, ['42']);
+});
+
+test('availability returns bookings and validates its required inputs', async () => {
+  db.availabilityRows = [{ startTime: '09:00:00', durationHours: 1 }];
+  const response = await request('/api/bookings/availability?venueId=7&date=2026-10-01');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { bookings: db.availabilityRows });
+
+  const invalid = await request('/api/bookings/availability?venueId=0&date=bad');
+  assert.equal(invalid.status, 400);
+  assert.equal(db.calls.filter(({ sql }) => sql.includes('SELECT start_time AS startTime')).length, 1);
+});
+
+test('availability database failures return the generic server error', async () => {
+  db.availabilityError = new Error('simulated database failure');
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    const response = await request('/api/bookings/availability?venueId=7&date=2026-10-01');
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'An unexpected server error occurred.' });
+  } finally {
+    console.error = originalConsoleError;
+  }
+});
+
+test('booking rejects an occupied interval and does not persist a booking', async () => {
+  db.overlap = true;
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 6,
+      paymentMethod: 'cash_on_arrival',
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: 'That sport slot is already booked for the selected time.',
+  });
+  assert.ok(db.calls.some(({ sql }) => sql.includes('FROM bookings') && sql.includes('AND start_time <')));
+  assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+});
+
+test('booking success calculates add-on charges and downpayment', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 6,
+      paymentMethod: 'online',
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.total, 270);
+  assert.equal(booking.downpayment, 135);
+  assert.equal(booking.extraPlayers, 2);
+  assert.equal(booking.extraPlayerCharge, 30);
+  assert.equal(booking.status, 'pending');
+  assert.equal(typeof booking.bookingToken, 'string');
+  assert.ok(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')));
+  const activityInsert = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO user_activity_logs'),
+  );
+  assert.ok(activityInsert);
+  assert.equal(activityInsert.params[4], 7);
+  assert.equal(activityInsert.params[5], 'Test Court');
+  assert.equal(activityInsert.params[6], 'Basketball');
+  assert.deepEqual(JSON.parse(activityInsert.params[7]), {
+    bookingId: 601,
+    bookingDate: '2026-10-01',
+    startTime: '09:00',
+    durationHours: 2,
+    players: 6,
+  });
+});
+
+test('bookings on separate small slots can overlap and use the selected sport rate', async () => {
+  db.overlapRows = [{ slotNumber: 1, occupiesFullStudio: 0 }];
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 4,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Badminton',
+      slotNumber: 2,
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.sportType, 'Badminton');
+  assert.equal(booking.slotNumber, 2);
+  assert.equal(booking.pricePerHour, 90);
+  assert.equal(booking.total, 220);
+  assert.equal(booking.extraPlayerCharge, 40);
+});
+
+test('two overlapping bookings cannot use the same small slot', async () => {
+  db.overlapRows = [{ slotNumber: 2, occupiesFullStudio: 0 }];
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 2,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Badminton',
+      slotNumber: 2,
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+});
+
+test('whole-studio bookings conflict with an occupied small slot', async () => {
+  db.overlapRows = [{ slotNumber: 2, occupiesFullStudio: 0 }];
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 4,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Basketball',
+    },
+  });
+
+  assert.equal(response.status, 409);
+});
+
+test('merchant approval issues a booking ticket', async () => {
+  const response = await request('/api/merchant/bookings/501/approve', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, 'approved');
+  assert.equal(body.message, 'Booking approved and ticket issued.');
+  assert.equal(typeof body.ticketCode, 'string');
+  const approvalUpdate = db.calls.find(({ sql }) =>
+    sql.includes("SET b.status = 'approved'"),
+  );
+  assert.ok(approvalUpdate);
+  assert.match(
+    approvalUpdate.sql,
+    /b\.payment_method <> 'online' OR b\.payment_status = 'paid'/,
+  );
+});
+
+test('merchant approval rejects bookings outside the pending state', async () => {
+  db.transitionAffected = false;
+  const response = await request('/api/merchant/bookings/501/approve', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'Pending booking not found.' });
+});
+
+test('merchant can finish approved bookings and gets not found for other states', async () => {
+  const finished = await request('/api/merchant/bookings/501/finish', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+  assert.equal(finished.status, 200);
+  assert.deepEqual(await finished.json(), {
+    message: 'Booking marked finished.',
+    status: 'finished',
+  });
+
+  db.transitionAffected = false;
+  const missing = await request('/api/merchant/bookings/501/finish', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { error: 'Approved booking not found.' });
+});
+
+test('registration validates credentials and creates a pending account', async () => {
+  const invalid = await request('/api/auth/register', {
+    method: 'POST',
+    body: { email: 'person@example.test', password: 'short' },
+  });
+  assert.equal(invalid.status, 400);
+
+  const registered = await request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      email: ' Person@Example.Test ',
+      password: 'correct-horse-battery',
+      firstName: ' Taylor ',
+      lastName: ' User ',
+    },
+  });
+  assert.equal(registered.status, 201);
+  const body = await registered.json();
+  assert.equal(body.user.email, 'person@example.test');
+  assert.equal(body.user.firstName, 'Taylor');
+  assert.equal(body.user.status, 'pending');
+  assert.equal(sentVerificationCodes.length, 1);
+  assert.ok(db.calls.some(({ sql }) => sql.includes('INSERT INTO email_verification_tokens')));
+});
+
+test('email verification rejects a wrong code and activates the account for a match', async () => {
+  db.verificationToken = {
+    token_id: 13,
+    token_hash: hashVerificationCode('123456'),
+    id: 71,
+    email: 'person@example.test',
+    first_name: 'Taylor',
+    last_name: 'User',
+    role: 'customer',
+  };
+  const invalid = await request('/api/auth/verify-email', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '000000' },
+  });
+  assert.equal(invalid.status, 400);
+
+  const verified = await request('/api/auth/verify-email', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '123456' },
+  });
+  assert.equal(verified.status, 200);
+  const body = await verified.json();
+  assert.equal(body.user.status, 'active');
+  assert.equal(typeof body.token, 'string');
+  assert.ok(db.calls.some(({ sql }) => sql.includes('UPDATE email_verification_tokens')));
+});
+
+test('password reset handles unknown accounts and accepts only a valid reset token', async () => {
+  const missing = await request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { email: 'missing@example.test' },
+  });
+  assert.equal(missing.status, 404);
+
+  db.resetUser = { id: 71 };
+  const requested = await request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { email: 'person@example.test' },
+  });
+  assert.equal(requested.status, 200);
+  assert.equal(sentResetCodes.length, 1);
+
+  db.resetToken = {
+    token_id: 29,
+    token_hash: hashVerificationCode('654321'),
+    user_id: 71,
+  };
+  const invalid = await request('/api/auth/reset-password', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '111111', password: 'new-password' },
+  });
+  assert.equal(invalid.status, 400);
+
+  const reset = await request('/api/auth/reset-password', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '654321', password: 'new-password' },
+  });
+  assert.equal(reset.status, 200);
+  assert.deepEqual(await reset.json(), {
+    message: 'Your password has been changed. You can now sign in.',
+  });
+  assert.ok(db.calls.some(({ sql }) => sql.includes('UPDATE password_reset_tokens')));
+});
+
+test('password reset code verification requires a matching token', async () => {
+  db.resetToken = { token_hash: hashVerificationCode('654321') };
+  const invalid = await request('/api/auth/verify-password-reset-code', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '111111' },
+  });
+  assert.equal(invalid.status, 400);
+
+  const valid = await request('/api/auth/verify-password-reset-code', {
+    method: 'POST',
+    body: { email: 'person@example.test', code: '654321' },
+  });
+  assert.equal(valid.status, 200);
+  assert.deepEqual(await valid.json(), { message: 'Verification code accepted.' });
+});
+
+test('payment checkout validates method and reports missing configuration', async () => {
+  const originalConfig = [
+    'PAYMONGO_SECRET_KEY',
+    'PAYMONGO_WEBHOOK_SECRET',
+    'PAYMONGO_SUCCESS_URL',
+    'PAYMONGO_CANCEL_URL',
+  ].map((key) => [key, process.env[key]]);
+  for (const [key] of originalConfig) delete process.env[key];
+  let externalFetchCalled = false;
+  const originalFetchImpl = global.fetch;
+  global.fetch = async (url, ...args) => {
+    if (String(url).startsWith('https://api.paymongo.com/')) {
+      externalFetchCalled = true;
+    }
+    return originalFetchImpl(url, ...args);
+  };
+  try {
+    const invalid = await request('/api/payments/paymongo/checkout', {
+      method: 'POST',
+      body: { bookingId: 501, paymentMethod: 'cash_on_arrival' },
+    });
+    assert.equal(invalid.status, 400);
+
+    const unavailable = await request('/api/payments/paymongo/checkout', {
+      method: 'POST',
+      body: { bookingId: 501, paymentMethod: 'gcash' },
+    });
+    assert.equal(unavailable.status, 503);
+    assert.match(
+      (await unavailable.json()).error,
+      /not fully configured/,
+    );
+    assert.equal(externalFetchCalled, false);
+  } finally {
+    global.fetch = originalFetchImpl;
+    for (const [key, value] of originalConfig) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('payment configuration endpoint reports readiness without exposing secrets', async () => {
+  const originalConfig = [
+    'PAYMONGO_SECRET_KEY',
+    'PAYMONGO_WEBHOOK_SECRET',
+    'PAYMONGO_SUCCESS_URL',
+    'PAYMONGO_CANCEL_URL',
+  ].map((key) => [key, process.env[key]]);
+  try {
+    for (const [key] of originalConfig) delete process.env[key];
+    const unavailable = await request('/api/payments/paymongo/config');
+    assert.equal(unavailable.status, 200);
+    assert.deepEqual(await unavailable.json(), { onlinePaymentsEnabled: false });
+
+    process.env.PAYMONGO_SECRET_KEY = 'test-secret';
+    process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+    process.env.PAYMONGO_SUCCESS_URL = 'https://example.test/payment-success';
+    process.env.PAYMONGO_CANCEL_URL = 'https://example.test/payment-cancelled';
+    const ready = await request('/api/payments/paymongo/config');
+    assert.equal(ready.status, 200);
+    assert.deepEqual(await ready.json(), { onlinePaymentsEnabled: true });
+  } finally {
+    for (const [key, value] of originalConfig) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('payment checkout creates a provider session for a customer booking', async () => {
+  const originalConfig = [
+    'PAYMONGO_SECRET_KEY',
+    'PAYMONGO_WEBHOOK_SECRET',
+    'PAYMONGO_SUCCESS_URL',
+    'PAYMONGO_CANCEL_URL',
+  ].map((key) => [key, process.env[key]]);
+  const originalFetchImpl = global.fetch;
+  process.env.PAYMONGO_SECRET_KEY = 'test-secret';
+  process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.PAYMONGO_SUCCESS_URL = 'https://example.test/payment-success';
+  process.env.PAYMONGO_CANCEL_URL = 'https://example.test/payment-cancelled';
+  let providerRequest;
+  global.fetch = async (url, options) => {
+    if (!String(url).startsWith('https://api.paymongo.com/')) {
+      return originalFetchImpl(url, options);
+    }
+    providerRequest = { url, options };
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          id: 'cs_test_501',
+          attributes: { checkout_url: 'https://checkout.example.test/session' },
+        },
+      }),
+    };
+  };
+  try {
+    const response = await request('/api/payments/paymongo/checkout', {
+      method: 'POST',
+      body: { bookingId: 501, paymentMethod: 'gcash' },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      checkoutUrl: 'https://checkout.example.test/session',
+    });
+    assert.equal(providerRequest.url, 'https://api.paymongo.com/v1/checkout_sessions');
+    assert.equal(providerRequest.options.method, 'POST');
+    const payload = JSON.parse(providerRequest.options.body);
+    assert.equal(payload.data.attributes.line_items[0].amount, 27000);
+    assert.deepEqual(payload.data.attributes.payment_method_types, ['gcash']);
+    assert.deepEqual(payload.data.attributes.metadata, { booking_id: '501' });
+    assert.equal(payload.data.attributes.reference_number, 'BOOKING-501');
+    assert.ok(db.calls.some(({ sql, params }) =>
+      sql.includes('SET payment_checkout_session_id = ?') &&
+      params[0] === 'cs_test_501',
+    ));
+  } finally {
+    global.fetch = originalFetchImpl;
+    for (const [key, value] of originalConfig) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('payment checkout reports provider and missing-booking failures', async () => {
+  const originalConfig = [
+    'PAYMONGO_SECRET_KEY',
+    'PAYMONGO_WEBHOOK_SECRET',
+    'PAYMONGO_SUCCESS_URL',
+    'PAYMONGO_CANCEL_URL',
+  ].map((key) => [key, process.env[key]]);
+  const originalFetchImpl = global.fetch;
+  process.env.PAYMONGO_SECRET_KEY = 'test-secret';
+  process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.PAYMONGO_SUCCESS_URL = 'https://example.test/payment-success';
+  process.env.PAYMONGO_CANCEL_URL = 'https://example.test/payment-cancelled';
+  global.fetch = async (url, options) => {
+    if (!String(url).startsWith('https://api.paymongo.com/')) {
+      return originalFetchImpl(url, options);
+    }
+    return {
+      ok: false,
+      json: async () => ({ errors: [{ detail: 'Payment provider rejected checkout.' }] }),
+    };
+  };
+  try {
+    const providerError = await request('/api/payments/paymongo/checkout', {
+      method: 'POST',
+      body: { bookingId: 501, paymentMethod: 'paymaya' },
+    });
+    assert.equal(providerError.status, 502);
+    assert.deepEqual(await providerError.json(), {
+      error: 'Payment provider rejected checkout.',
+    });
+
+    paymentBooking = null;
+    const notFound = await request('/api/payments/paymongo/checkout', {
+      method: 'POST',
+      body: { bookingId: 999, paymentMethod: 'paymaya' },
+    });
+    assert.equal(notFound.status, 404);
+  } finally {
+    global.fetch = originalFetchImpl;
+    for (const [key, value] of originalConfig) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('verified PayMongo payment adds one pending-approval ticket to booking chat', async () => {
+  const originalSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+  db.webhookBooking = {
+    id: 501,
+    customerId: 42,
+    venueId: 7,
+    bookingDate: '2026-10-01',
+    startTime: '09:00:00',
+    durationHours: 2,
+    players: 6,
+    totalAmount: 270,
+    paymentMethod: 'online',
+    paymentStatus: 'unpaid',
+    status: 'pending',
+    venueName: 'Test Court',
+    sportType: 'Basketball',
+    merchantId: 88,
+    paymentCheckoutSessionId: 'cs_test_501',
+  };
+  const payload = {
+    data: {
+      type: 'checkout_session.payment.paid',
+      livemode: false,
+      data: {
+        id: 'cs_test_501',
+        attributes: {
+          reference_number: 'BOOKING-501',
+          metadata: { booking_id: '501' },
+          payments: [
+            {
+              id: 'pay_test_501',
+              attributes: { amount: 27000, currency: 'PHP', status: 'paid' },
+            },
+          ],
+        },
+      },
+    },
+  };
+  const body = JSON.stringify(payload);
+  const timestamp = '1790650000';
+  const signature = crypto
+    .createHmac('sha256', process.env.PAYMONGO_WEBHOOK_SECRET)
+    .update(`${timestamp}.${body}`)
+    .digest('hex');
+  try {
+    const response = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: {
+        'paymongo-signature': `t=${timestamp},te=${signature},li=`,
+      },
+      body: payload,
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { received: true, bookingId: 501 });
+    const ticketMessage = db.calls.find(({ sql }) =>
+      sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+    );
+    assert.ok(ticketMessage);
+    assert.equal(ticketMessage.params[1], 88);
+    const ticket = JSON.parse(ticketMessage.params[3]);
+    assert.equal(ticket.type, 'booking_payment_ticket');
+    assert.equal(ticket.status, 'payment_received');
+    assert.equal(ticket.approvalStatus, 'pending');
+    assert.equal(ticket.venueName, 'Test Court');
+    assert.equal(ticket.sportType, 'Basketball');
+    assert.equal(ticket.amount, 270);
+
+    db.webhookBooking.paymentStatus = 'paid';
+    const duplicate = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: {
+        'paymongo-signature': `t=${timestamp},te=${signature},li=`,
+      },
+      body: payload,
+    });
+    assert.deepEqual(await duplicate.json(), { received: true, duplicate: true });
+    assert.equal(
+      db.calls.filter(({ sql }) =>
+        sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+      ).length,
+      1,
+    );
+  } finally {
+    if (originalSecret === undefined) delete process.env.PAYMONGO_WEBHOOK_SECRET;
+    else process.env.PAYMONGO_WEBHOOK_SECRET = originalSecret;
+  }
+});
+
+test('PayMongo payment webhook rejects an invalid signature', async () => {
+  const originalSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+  try {
+    const response = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: { 'paymongo-signature': 't=1,te=invalid,li=' },
+      body: { data: { type: 'checkout_session.payment.paid' } },
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      error: 'Invalid payment webhook signature.',
+    });
+  } finally {
+    if (originalSecret === undefined) delete process.env.PAYMONGO_WEBHOOK_SECRET;
+    else process.env.PAYMONGO_WEBHOOK_SECRET = originalSecret;
+  }
+});
+
+test('venue reviews include each reviewer profile image URL', async () => {
+  db.venueReviews = [{
+    id: 31,
+    businessId: 12,
+    customerId: 42,
+    firstName: 'Maya',
+    lastName: 'Player',
+    avatarUrl: 'https://images.example.test/maya.png',
+    rating: 5,
+    comment: 'Great court.',
+  }];
+
+  const response = await request('/api/news-feed/12/reviews');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.reviews[0].avatarUrl, 'https://images.example.test/maya.png');
+  assert.ok(db.calls.some(({ sql }) => sql.includes('u.avatar_url AS avatarUrl')));
+});

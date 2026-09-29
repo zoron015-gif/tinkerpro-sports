@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS merchant_businesses (
   address VARCHAR(500) NOT NULL,
   facility_type VARCHAR(50) NOT NULL,
   price_per_hour DECIMAL(10, 2) NOT NULL,
+  slot_count INT UNSIGNED NOT NULL DEFAULT 1,
+  sports_slots_json JSON NULL,
   opening_hours VARCHAR(100) NOT NULL,
   availability VARCHAR(50) NOT NULL DEFAULT 'Any',
   enabled TINYINT(1) NOT NULL DEFAULT 1,
@@ -103,6 +105,10 @@ CREATE TABLE IF NOT EXISTS merchant_businesses (
 ALTER TABLE merchant_businesses
   ADD COLUMN IF NOT EXISTS price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0
   AFTER facility_type;
+
+ALTER TABLE merchant_businesses
+  ADD COLUMN IF NOT EXISTS slot_count INT UNSIGNED NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS sports_slots_json JSON NULL;
 
 ALTER TABLE merchant_businesses
   ADD COLUMN IF NOT EXISTS image_urls JSON NULL
@@ -184,17 +190,33 @@ CREATE TABLE IF NOT EXISTS bookings (
   price_per_hour DECIMAL(10, 2) NOT NULL,
   total_amount DECIMAL(10, 2) NOT NULL,
   downpayment_amount DECIMAL(10, 2) NOT NULL,
+  extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  sport_type VARCHAR(100) NULL,
+  slot_number INT UNSIGNED NULL,
+  occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1,
+  booking_token_hash CHAR(64) NULL,
+  ticket_token_hash CHAR(64) NULL,
+  payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
+  payment_checkout_session_id VARCHAR(100) NULL,
+  payment_reference VARCHAR(100) NULL,
+  paid_at DATETIME NULL,
   status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_bookings_customer (customer_id, booking_date, start_time),
   KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
+  UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id),
   CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
     ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS sport_type VARCHAR(100) NULL,
+  ADD COLUMN IF NOT EXISTS slot_number INT UNSIGNED NULL,
+  ADD COLUMN IF NOT EXISTS occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS merchant_news (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -230,6 +252,18 @@ CREATE TABLE IF NOT EXISTS venue_reviews (
   CONSTRAINT fk_venue_reviews_customer FOREIGN KEY (customer_id)
     REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT chk_venue_reviews_rating CHECK (rating BETWEEN 1 AND 5)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS venue_hearts (
+  business_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id, user_id),
+  KEY idx_venue_hearts_user (user_id, business_id),
+  CONSTRAINT fk_venue_hearts_business FOREIGN KEY (business_id)
+    REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_venue_hearts_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE email_verification_tokens (
@@ -302,6 +336,23 @@ CREATE TABLE saved_items (
     FOREIGN KEY (user_id) REFERENCES users (id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_activity_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  activity_type VARCHAR(50) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description VARCHAR(500) NOT NULL,
+  venue_id BIGINT UNSIGNED NULL,
+  venue_name VARCHAR(255) NULL,
+  sport_type VARCHAR(100) NULL,
+  details_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_user_activity_logs_user_created (user_id, created_at, id),
+  CONSTRAINT fk_user_activity_logs_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE conversations (

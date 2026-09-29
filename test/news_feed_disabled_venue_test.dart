@@ -119,10 +119,12 @@ void main() {
 
 class _PushObserver extends NavigatorObserver {
   int pushCount = 0;
+  Route<dynamic>? lastPushedRoute;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     pushCount++;
+    lastPushedRoute = route;
     super.didPush(route, previousRoute);
   }
 }

@@ -180,6 +180,8 @@ class AuthApi {
     required double durationHours,
     required int players,
     required String paymentMethod,
+    String sportType = '',
+    int slotNumber = 1,
   }) => _request(
     'POST',
     '/api/bookings',
@@ -190,6 +192,8 @@ class AuthApi {
       'durationHours': durationHours,
       'players': players,
       'paymentMethod': paymentMethod,
+      'sportType': sportType,
+      'slotNumber': slotNumber,
     },
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
@@ -222,6 +226,15 @@ class AuthApi {
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
 
+  Future<bool> payMongoPaymentsEnabled(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/payments/paymongo/config',
+      headers: _authHeaders(token),
+    );
+    return response['onlinePaymentsEnabled'] == true;
+  }
+
   Future<List<Map<String, dynamic>>> newsFeed(String token) async {
     final response = await _request(
       'GET',
@@ -233,6 +246,16 @@ class AuthApi {
         .map((value) => Map<String, dynamic>.from(value))
         .toList();
   }
+
+  Future<Map<String, dynamic>> setBusinessHearted({
+    required String token,
+    required int businessId,
+    required bool hearted,
+  }) => _request(
+    hearted ? 'PUT' : 'DELETE',
+    '/api/businesses/$businessId/heart',
+    headers: _authHeaders(token),
+  );
 
   Future<List<Map<String, dynamic>>> newsReviews({
     required String token,
@@ -272,11 +295,7 @@ class AuthApi {
     await _request(
       'POST',
       '/api/customer/reviews',
-      body: {
-        'bookingId': bookingId,
-        'rating': rating,
-        'comment': comment,
-      },
+      body: {'bookingId': bookingId, 'rating': rating, 'comment': comment},
       headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
@@ -462,6 +481,18 @@ class AuthApi {
 
   Future<Map<String, dynamic>> me(String token) =>
       _request('GET', '/api/auth/me', headers: _authHeaders(token));
+
+  Future<List<Map<String, dynamic>>> activityLogs(String token) async {
+    final response = await _request(
+      'GET',
+      '/api/activity-logs',
+      headers: _authHeaders(token),
+    );
+    return (response['activities'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
 
   Future<Map<String, dynamic>> messageOwner({
     required String token,

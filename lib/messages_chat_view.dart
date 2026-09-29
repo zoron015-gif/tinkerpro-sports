@@ -45,6 +45,16 @@ class MessagesChatView extends StatelessWidget {
                     final mine = asInt(message['senderId']) == currentUserId;
                     final attachment = attachmentValue(message);
                     final body = messageBody(message);
+                    final attachmentType = safeString(attachment?['type']);
+                    if (attachmentType == 'booking_payment_ticket' ||
+                        attachmentType == 'booking_ticket') {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 7),
+                        child: Center(
+                          child: MessagesBookingTicket(attachment!),
+                        ),
+                      );
+                    }
                     final bubble = Card(
                       color: mine ? const Color(0xFFFFE8D2) : Colors.white,
                       child: Padding(

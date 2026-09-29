@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'filter_panel_style.dart';
+
 const _venuesMuted = Color(0xFF68748A);
 const _venuesOrange = Color(0xFFFF8200);
-const _venuesInk = Color(0xFF101B33);
 
 class AllVenuesPage extends StatefulWidget {
   const AllVenuesPage({
@@ -143,250 +144,277 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     setSheetState(() {});
   }
 
+  int get _activeFilterCount =>
+      (_area == 'All areas' ? 0 : 1) +
+      (_sport == 'All sports' ? 0 : 1) +
+      (_courtType == 'All' ? 0 : 1) +
+      (_availability == 'Any' ? 0 : 1) +
+      (_priceSort == 'Recommended' ? 0 : 1) +
+      (_maxPrice >= 700 ? 0 : 1) +
+      _amenities.length +
+      (_userPosition == null ? 0 : 1);
+
   void _openFilters() {
-    showModalBottomSheet<void>(
+    showGeneralDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .78,
-          ),
-          decoration: const BoxDecoration(
+      barrierDismissible: true,
+      barrierLabel: 'Close venue filters',
+      barrierColor: Colors.black54,
+      transitionDuration: filterPanelTransitionDuration,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) => Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          key: const ValueKey('filter-panel-surface'),
+          width: filterPanelWidth(context),
+          height: double.infinity,
+          child: Material(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Filter venues',
-                          style: TextStyle(
-                            color: _venuesInk,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
+            elevation: 24,
+            child: StatefulBuilder(
+              builder: (context, setSheetState) => SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: filterPanelHeaderPadding,
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Filter venues',
+                              style: filterPanelTitleStyle,
+                            ),
                           ),
-                        ),
-                      ),
-                      TextButton(
-                        key: const ValueKey('all-venues-filter-reset'),
-                        onPressed: () => _resetFilters(setSheetState),
-                        child: const Text('Reset'),
-                      ),
-                      IconButton(
-                        tooltip: 'Close filters',
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Flexible(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-                    children: [
-                      _filterLabel('Sport type'),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          for (final value in _options(
-                            (post) => '${post['category'] ?? ''}',
-                            'All sports',
-                          ))
-                            ChoiceChip(
-                              key: ValueKey('all-venues-filter-sport-$value'),
-                              label: Text(value),
-                              selected: _sport == value,
-                              selectedColor: _venuesOrange,
-                              onSelected: (_) {
-                                setState(() => _sport = value);
-                                setSheetState(() {});
-                              },
-                            ),
+                          TextButton(
+                            key: const ValueKey('all-venues-filter-reset'),
+                            onPressed: () => _resetFilters(setSheetState),
+                            child: const Text('Reset'),
+                          ),
+                          IconButton(
+                            tooltip: 'Close filters',
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      _filterLabel('Area / city'),
-                      OutlinedButton.icon(
-                        key: const ValueKey('all-venues-use-my-location'),
-                        onPressed: _locationLoading
-                            ? null
-                            : () => _useMyLocation(
-                                refreshSheet: () {
-                                  if (sheetContext.mounted) {
-                                    setSheetState(() {});
-                                  }
-                                },
-                              ),
-                        icon: _locationLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(
-                                _userPosition == null
-                                    ? Icons.my_location_rounded
-                                    : Icons.location_on_rounded,
-                              ),
-                        label: Text(
-                          _locationLoading
-                              ? 'Getting your location...'
-                              : _userPosition == null
-                              ? 'Use my location'
-                              : 'Using my location · nearest first',
-                        ),
-                      ),
-                      _dropdown(
-                        value: _area,
-                        options: _options(
-                          (post) => '${post['address'] ?? ''}',
-                          'All areas',
-                        ),
-                        onChanged: (value) {
-                          setState(() => _area = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      _filterLabel('Court type'),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          for (final value in [
-                            'All',
-                            ..._options(
-                              (post) => '${post['facilityType'] ?? ''}',
-                              '',
-                            ).where((value) => value.isNotEmpty),
-                          ])
-                            ChoiceChip(
-                              key: ValueKey('all-venues-filter-court-$value'),
-                              label: Text(value),
-                              selected: _courtType == value,
-                              selectedColor: _venuesOrange,
-                              onSelected: (_) {
-                                setState(() => _courtType = value);
-                                setSheetState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      _filterLabel('Amenities'),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          for (final value in const [
-                            'Parking',
-                            'Pet-friendly',
-                            'Restroom',
-                            'Shower',
-                            'Store',
-                          ])
-                            FilterChip(
-                              key: ValueKey('all-venues-filter-amenity-$value'),
-                              label: Text(value),
-                              selected: _amenities.contains(value),
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _amenities.add(value);
-                                  } else {
-                                    _amenities.remove(value);
-                                  }
-                                });
-                                setSheetState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      _filterLabel('Availability'),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          for (final value in const ['Any', 'Open 24 hours'])
-                            ChoiceChip(
-                              key: ValueKey(
-                                'all-venues-filter-availability-$value',
-                              ),
-                              label: Text(value),
-                              selected: _availability == value,
-                              selectedColor: _venuesOrange,
-                              onSelected: (_) {
-                                setState(() => _availability = value);
-                                setSheetState(() {});
-                              },
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      _filterLabel('Price (PHP / hour)'),
-                      Slider(
-                        key: const ValueKey('all-venues-filter-price'),
-                        value: _maxPrice,
-                        min: 0,
-                        max: 700,
-                        divisions: 14,
-                        label: _maxPrice >= 700
-                            ? '700+'
-                            : _maxPrice.round().toString(),
-                        onChanged: (value) {
-                          setState(() => _maxPrice = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      _filterLabel('Sort price'),
-                      _dropdown(
-                        value: _priceSort,
-                        options: const [
-                          'Recommended',
-                          'Lowest to highest',
-                          'Highest to lowest',
-                        ],
-                        onChanged: (value) {
-                          setState(() => _priceSort = value);
-                          setSheetState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      key: const ValueKey('all-venues-filter-apply'),
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _venuesInk,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      child: Text('Show ${_visiblePosts.length} venues'),
                     ),
-                  ),
+                    const Divider(height: 1),
+                    Flexible(
+                      child: ListView(
+                        padding: filterPanelContentPadding,
+                        children: [
+                          _filterLabel('Sport type'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final value in _options(
+                                (post) => '${post['category'] ?? ''}',
+                                'All sports',
+                              ))
+                                ChoiceChip(
+                                  key: ValueKey(
+                                    'all-venues-filter-sport-$value',
+                                  ),
+                                  label: Text(value),
+                                  selected: _sport == value,
+                                  selectedColor: _venuesOrange,
+                                  onSelected: (_) {
+                                    setState(() => _sport = value);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: filterPanelSectionSpacing),
+                          _filterLabel('Area / city'),
+                          OutlinedButton.icon(
+                            key: const ValueKey('all-venues-use-my-location'),
+                            onPressed: _locationLoading
+                                ? null
+                                : () => _useMyLocation(
+                                    refreshSheet: () {
+                                      if (dialogContext.mounted) {
+                                        setSheetState(() {});
+                                      }
+                                    },
+                                  ),
+                            icon: _locationLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    _userPosition == null
+                                        ? Icons.my_location_rounded
+                                        : Icons.location_on_rounded,
+                                  ),
+                            label: Text(
+                              _locationLoading
+                                  ? 'Getting your location...'
+                                  : _userPosition == null
+                                  ? 'Use my location'
+                                  : 'Using my location · nearest first',
+                            ),
+                          ),
+                          _dropdown(
+                            value: _area,
+                            options: _options(
+                              (post) => '${post['address'] ?? ''}',
+                              'All areas',
+                            ),
+                            onChanged: (value) {
+                              setState(() => _area = value);
+                              setSheetState(() {});
+                            },
+                          ),
+                          const SizedBox(height: filterPanelSectionSpacing),
+                          _filterLabel('Court type'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final value in [
+                                'All',
+                                ..._options(
+                                  (post) => '${post['facilityType'] ?? ''}',
+                                  '',
+                                ).where((value) => value.isNotEmpty),
+                              ])
+                                ChoiceChip(
+                                  key: ValueKey(
+                                    'all-venues-filter-court-$value',
+                                  ),
+                                  label: Text(value),
+                                  selected: _courtType == value,
+                                  selectedColor: _venuesOrange,
+                                  onSelected: (_) {
+                                    setState(() => _courtType = value);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: filterPanelSectionSpacing),
+                          _filterLabel('Amenities'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final value in const [
+                                'Parking',
+                                'Pet-friendly',
+                                'Restroom',
+                                'Shower',
+                                'Store',
+                              ])
+                                FilterChip(
+                                  key: ValueKey(
+                                    'all-venues-filter-amenity-$value',
+                                  ),
+                                  label: Text(value),
+                                  selected: _amenities.contains(value),
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      if (selected) {
+                                        _amenities.add(value);
+                                      } else {
+                                        _amenities.remove(value);
+                                      }
+                                    });
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: filterPanelSectionSpacing),
+                          _filterLabel('Availability'),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final value in const [
+                                'Any',
+                                'Open 24 hours',
+                              ])
+                                ChoiceChip(
+                                  key: ValueKey(
+                                    'all-venues-filter-availability-$value',
+                                  ),
+                                  label: Text(value),
+                                  selected: _availability == value,
+                                  selectedColor: _venuesOrange,
+                                  onSelected: (_) {
+                                    setState(() => _availability = value);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: filterPanelSectionSpacing),
+                          _filterLabel('Price (PHP / hour)'),
+                          Slider(
+                            key: const ValueKey('all-venues-filter-price'),
+                            value: _maxPrice,
+                            min: 0,
+                            max: 700,
+                            divisions: 14,
+                            label: _maxPrice >= 700
+                                ? '700+'
+                                : _maxPrice.round().toString(),
+                            onChanged: (value) {
+                              setState(() => _maxPrice = value);
+                              setSheetState(() {});
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          _filterLabel('Sort price'),
+                          _dropdown(
+                            value: _priceSort,
+                            options: const [
+                              'Recommended',
+                              'Lowest to highest',
+                              'Highest to lowest',
+                            ],
+                            onChanged: (value) {
+                              setState(() => _priceSort = value);
+                              setSheetState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: filterPanelFooterPadding,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          key: const ValueKey('all-venues-filter-apply'),
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          style: filterPanelApplyButtonStyle,
+                          child: Text('Show ${_visiblePosts.length} venues'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
     );
   }
 
@@ -460,15 +488,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
 
   Widget _filterLabel(String label) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      label.toUpperCase(),
-      style: const TextStyle(
-        color: _venuesMuted,
-        fontSize: 11,
-        fontWeight: FontWeight.w900,
-        letterSpacing: .8,
-      ),
-    ),
+    child: Text(label.toUpperCase(), style: filterPanelSectionLabelStyle),
   );
 
   Widget _dropdown({
@@ -517,11 +537,10 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
         ),
       ),
       actions: [
-        IconButton(
+        FilterPanelButton(
           key: const ValueKey('all-venues-open-filters'),
-          tooltip: 'Filter venues',
+          activeCount: _activeFilterCount,
           onPressed: _openFilters,
-          icon: const Icon(Icons.tune_rounded),
         ),
       ],
     ),
@@ -546,7 +565,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                               fit: BoxFit.scaleDown,
                               child: Text(
                                 widget.title == 'Most popular'
-                                    ? 'Popular courts near you'
+                                    ? 'Courts with the most hearts'
                                     : 'Courts with the highest ratings',
                                 key: const ValueKey('all-venues-header-title'),
                                 maxLines: 1,

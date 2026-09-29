@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'messages_service.dart';
+import 'auth_api.dart';
 import 'messages_ui.dart';
 import 'messages_conversation_list.dart';
 import 'messages_chat_view.dart';
@@ -26,12 +28,16 @@ class MessagesDashboardPage extends StatefulWidget {
     this.businessTitle,
     this.initialConversationId,
     this.onFooterNavigate,
+    this.initialUserPosition,
+    this.api,
   });
 
   final Map<String, dynamic>? owner;
   final String? businessTitle;
   final int? initialConversationId;
   final ValueChanged<int>? onFooterNavigate;
+  final Position? initialUserPosition;
+  final AuthApi? api;
 
   @override
   State<MessagesDashboardPage> createState() => _MessagesDashboardPageState();
@@ -39,7 +45,7 @@ class MessagesDashboardPage extends StatefulWidget {
 
 class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   final _messagesService = MessagesService();
-  final _controller = MessagesController();
+  late final MessagesController _controller;
   final _composer = TextEditingController();
   final _conversationSearch = TextEditingController();
   final _contactSearch = TextEditingController();
@@ -76,6 +82,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   @override
   void initState() {
     super.initState();
+    _controller = MessagesController(service: MessagesService(api: widget.api));
     _controller.addListener(_handleControllerChange);
     _load();
   }
@@ -741,10 +748,23 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           return;
         }
         final page = switch (index) {
-          0 => NewsFeedPage(onLogout: (_) async {}),
-          1 => SavedDashboardPage(onLogout: (_) async {}),
-          3 => CustomerBookingsPage(onLogout: (_) async {}),
-          4 => ProfileDashboardPage(onLogout: (_) async {}),
+          0 => NewsFeedPage(
+            onLogout: (_) async {},
+            api: widget.api,
+            initialUserPosition: widget.initialUserPosition,
+          ),
+          1 => SavedDashboardPage(
+            onLogout: (_) async {},
+            initialUserPosition: widget.initialUserPosition,
+          ),
+          3 => CustomerBookingsPage(
+            onLogout: (_) async {},
+            initialUserPosition: widget.initialUserPosition,
+          ),
+          4 => ProfileDashboardPage(
+            onLogout: (_) async {},
+            initialUserPosition: widget.initialUserPosition,
+          ),
           _ => null,
         };
         if (page != null && mounted) {

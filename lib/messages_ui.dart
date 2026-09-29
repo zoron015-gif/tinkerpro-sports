@@ -117,3 +117,361 @@ class MessagesImageAttachment extends StatelessWidget {
     }
   }
 }
+
+class MessagesBookingTicket extends StatelessWidget {
+  const MessagesBookingTicket(this.data, {super.key});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved =
+        safeString(data['type']) == 'booking_ticket' ||
+        safeString(data['status']) == 'approved';
+    final bookingId = safeString(data['bookingId'], '—');
+    final venueName = safeString(data['venueName'], 'Sports venue');
+    final sportType = safeString(data['sportType']);
+    final fullStudio = data['fullStudio'] == true;
+    final slotNumber = safeString(data['slotNumber']);
+    final date = safeString(data['bookingDate'], 'Date to be confirmed');
+    final time = safeString(data['startTime'], 'Time to be confirmed');
+    final amount = num.tryParse(safeString(data['amount']));
+    final ticketCode = safeString(data['ticketCode']);
+    final paymentReference = safeString(data['paymentReference']);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 370),
+      child: Container(
+        key: const ValueKey('messages-booking-ticket'),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFDCE3EF)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14192B50),
+              blurRadius: 14,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: messageNavy,
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.confirmation_number_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 9),
+                  const Expanded(
+                    child: Text(
+                      'TINKERPRO  ·  COURT PASS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    approved ? Icons.verified_rounded : Icons.receipt_long,
+                    color: Colors.white,
+                    size: 19,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          approved ? 'BOOKING CONFIRMED' : 'PAYMENT RECEIVED',
+                          style: const TextStyle(
+                            color: messageNavy,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .7,
+                          ),
+                        ),
+                      ),
+                      _TicketStatusPill(
+                        label: approved ? 'APPROVED' : 'PENDING APPROVAL',
+                        approved: approved,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    venueName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF101B33),
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (sportType.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      sportType,
+                      style: const TextStyle(
+                        color: messageMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (fullStudio || slotNumber.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      fullStudio ? 'Whole studio' : 'Slot $slotNumber',
+                      style: const TextStyle(
+                        color: messageMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _TicketDetail(
+                          icon: Icons.calendar_month_outlined,
+                          label: 'DATE',
+                          value: date,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _TicketDetail(
+                          icon: Icons.schedule_rounded,
+                          label: 'START',
+                          value: time,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _TicketDetail(
+                          icon: Icons.group_outlined,
+                          label: 'PLAYERS',
+                          value: safeString(data['players'], '—'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _TicketDetail(
+                          icon: Icons.timer_outlined,
+                          label: 'DURATION',
+                          value: '${safeString(data['durationHours'], '—')} hr',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: CustomPaint(
+                painter: _TicketPerforationPainter(),
+                child: const SizedBox(height: 1, width: double.infinity),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          approved ? 'TICKET CODE' : 'BOOKING REFERENCE',
+                          style: const TextStyle(
+                            color: messageMuted,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .8,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          approved && ticketCode.isNotEmpty
+                              ? ticketCode
+                              : 'BK-$bookingId',
+                          key: const ValueKey('messages-ticket-reference'),
+                          style: const TextStyle(
+                            color: messageNavy,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        if (!approved)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Valid after venue approval',
+                              style: TextStyle(
+                                color: messageMuted,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        if (paymentReference.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Payment ref: $paymentReference',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: messageMuted,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (amount != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const Text(
+                          'TOTAL PAID',
+                          style: TextStyle(
+                            color: messageMuted,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .7,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'PHP ${amount.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: messageNavy,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TicketDetail extends StatelessWidget {
+  const _TicketDetail({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: messageOrange, size: 16),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: messageMuted,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .6,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF101B33),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class _TicketStatusPill extends StatelessWidget {
+  const _TicketStatusPill({required this.label, required this.approved});
+
+  final String label;
+  final bool approved;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    decoration: BoxDecoration(
+      color: approved ? const Color(0xFFE7F6ED) : const Color(0xFFFFF1E4),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: approved ? const Color(0xFF247A43) : messageOrange,
+        fontSize: 8,
+        fontWeight: FontWeight.w900,
+        letterSpacing: .3,
+      ),
+    ),
+  );
+}
+
+class _TicketPerforationPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFDCE3EF)
+      ..strokeWidth = 1;
+    const dashWidth = 5.0;
+    const gap = 4.0;
+    for (var x = 0.0; x < size.width; x += dashWidth + gap) {
+      canvas.drawLine(Offset(x, 0), Offset(x + dashWidth, 0), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
