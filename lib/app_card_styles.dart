@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'app_design_system.dart';
+
 abstract final class AppCardStyles {
-  static const borderColor = Color(0xFFE2E7EF);
-  static const marketplaceRadius = 18.0;
-  static const merchantRadius = 16.0;
+  static const borderColor = AppColors.border;
+  static const marketplaceRadius = AppRadii.marketplaceCard;
+  static const merchantRadius = AppRadii.merchantCard;
   static const marketplaceImageAspectRatio = 16 / 10;
   static const merchantImageHeight = 150.0;
   static const elevation = 1.0;

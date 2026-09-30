@@ -16,10 +16,11 @@ import 'saved_dashboard.dart';
 import 'news_feed.dart';
 import 'customer_bookings_page.dart';
 import 'app_bottom_navigation.dart';
+import 'app_design_system.dart';
 
-const _messageBackground = Color(0xFFF7F9FC);
-const _messageNavy = Color(0xFF192B50);
-const _messageOrange = Color(0xFFFF8200);
+const _messageBackground = AppColors.page;
+const _messageNavy = AppColors.navy;
+const _messageOrange = AppColors.orange;
 
 class MessagesDashboardPage extends StatefulWidget {
   const MessagesDashboardPage({
@@ -30,6 +31,7 @@ class MessagesDashboardPage extends StatefulWidget {
     this.onFooterNavigate,
     this.initialUserPosition,
     this.api,
+    this.businessType,
   });
 
   final Map<String, dynamic>? owner;
@@ -38,6 +40,7 @@ class MessagesDashboardPage extends StatefulWidget {
   final ValueChanged<int>? onFooterNavigate;
   final Position? initialUserPosition;
   final AuthApi? api;
+  final String? businessType;
 
   @override
   State<MessagesDashboardPage> createState() => _MessagesDashboardPageState();
@@ -752,6 +755,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
             onLogout: (_) async {},
             api: widget.api,
             initialUserPosition: widget.initialUserPosition,
+            businessType: widget.businessType ?? 'Sports',
           ),
           1 => SavedDashboardPage(
             onLogout: (_) async {},
@@ -760,10 +764,12 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           3 => CustomerBookingsPage(
             onLogout: (_) async {},
             initialUserPosition: widget.initialUserPosition,
+            businessType: widget.businessType,
           ),
           4 => ProfileDashboardPage(
             onLogout: (_) async {},
             initialUserPosition: widget.initialUserPosition,
+            businessType: widget.businessType,
           ),
           _ => null,
         };

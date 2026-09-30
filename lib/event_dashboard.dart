@@ -17,6 +17,7 @@ import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
 import 'app_card_styles.dart';
+import 'app_design_system.dart';
 
 typedef EventVenue = ({
   String name,
@@ -35,13 +36,13 @@ typedef EventVenue = ({
   String visitUrl,
 });
 
-const _eventNavy = Color(0xFF192B50);
-const _eventInk = Color(0xFF101B33);
-const _eventOrange = Color(0xFFFF8200);
-const _eventLine = Color(0xFFE2E7EF);
-const _eventMuted = Color(0xFF68748A);
-const _eventPage = Color(0xFFF7F9FC);
-const _eventSoftOrange = Color(0xFFFFF1E4);
+const _eventNavy = AppColors.navy;
+const _eventInk = AppColors.ink;
+const _eventOrange = AppColors.orange;
+const _eventLine = AppColors.border;
+const _eventMuted = AppColors.muted;
+const _eventPage = AppColors.page;
+const _eventSoftOrange = AppColors.softOrangeAlt;
 
 class EventDashboardPage extends StatefulWidget {
   const EventDashboardPage({super.key, this.onLogout});

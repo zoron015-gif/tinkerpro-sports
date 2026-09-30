@@ -6,11 +6,6 @@ merchants can manage their business profiles, venues, bookings, and news posts.
 The app uses Firebase for sign-in integrations and a Node.js/Express API backed
 by MySQL for application data.
 
-Sports merchants can select multiple sport categories for one venue and set an
-hourly rate, court/slot setup, included-player limit, and optional extra-player
-fee for each sport. Whole-court bookings block every shared slot; split-court
-bookings reserve only the selected slot.
-
 ## Run locally
 
 Prerequisites: Flutter and Dart versions compatible with `pubspec.yaml`, Node.js
@@ -34,6 +29,13 @@ address, and both devices must be able to reach each other.
 Firebase platform options are included in `lib/firebase_options.dart`. Google
 sign-in also depends on the matching Firebase/OAuth configuration and backend
 client ID; see the backend setup instructions.
+
+## UI styling
+
+Use the shared colors, spacing, radii, and text styles in
+`lib/app_design_system.dart`. The application-wide Material theme is defined in
+`lib/app_theme.dart`; reusable card and filter styles live in
+`lib/app_card_styles.dart` and `lib/filter_panel_style.dart`.
 
 ## Match notifications
 

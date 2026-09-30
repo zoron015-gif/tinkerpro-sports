@@ -182,6 +182,8 @@ class AuthApi {
     required String paymentMethod,
     String sportType = '',
     int slotNumber = 1,
+    String fitnessPlanType = '',
+    String fitnessCoachName = '',
   }) => _request(
     'POST',
     '/api/bookings',
@@ -194,14 +196,22 @@ class AuthApi {
       'paymentMethod': paymentMethod,
       'sportType': sportType,
       'slotNumber': slotNumber,
+      'fitnessPlanType': fitnessPlanType,
+      'fitnessCoachName': fitnessCoachName,
     },
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
 
-  Future<List<Map<String, dynamic>>> customerBookings(String token) async {
+  Future<List<Map<String, dynamic>>> customerBookings(
+    String token, {
+    String? businessType,
+  }) async {
+    final path = businessType == null || businessType.trim().isEmpty
+        ? '/api/bookings'
+        : '/api/bookings?businessType=${Uri.encodeQueryComponent(businessType.trim())}';
     final response = await _request(
       'GET',
-      '/api/bookings',
+      path,
       headers: _authHeaders(token),
     );
     return (response['bookings'] as List<dynamic>? ?? [])

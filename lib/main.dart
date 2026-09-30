@@ -6,10 +6,11 @@ import 'package:flutter/material.dart';
 
 import 'saved_icons.dart';
 
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'app_design_system.dart';
+import 'app_theme.dart';
 import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'merchant_dashboard.dart';
@@ -19,11 +20,11 @@ import 'messages_dashboard.dart';
 
 import 'dart:async';
 
-const _navy = Color(0xFF192B50);
-const _ink = Color(0xFF101B33);
-const _orange = Color(0xFFFF8200);
-const _page = Color(0xFFF7F9FC);
-const _muted = Color(0xFF68748A);
+const _navy = AppColors.navy;
+const _ink = AppColors.ink;
+const _orange = AppColors.orange;
+const _page = AppColors.page;
+const _muted = AppColors.muted;
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
@@ -43,150 +44,7 @@ class MyApp extends StatelessWidget {
       navigatorKey: _rootNavigatorKey,
       title: 'TinkerPro',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: const ColorScheme.light(
-          primary: _navy,
-          onPrimary: Colors.white,
-          secondary: _orange,
-          onSecondary: Colors.white,
-          surface: Colors.white,
-          onSurface: _ink,
-          error: Color(0xFFB42318),
-          onError: Colors.white,
-        ),
-        scaffoldBackgroundColor: _page,
-        useMaterial3: true,
-        textTheme: GoogleFonts.montserratTextTheme(),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: _page,
-          surfaceTintColor: Colors.transparent,
-          foregroundColor: _ink,
-          elevation: 0,
-          centerTitle: false,
-          scrolledUnderElevation: 0,
-          titleTextStyle: TextStyle(
-            color: _ink,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          elevation: 2,
-          shadowColor: Color(0x1A192B50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-          ),
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: const Color(0xFFF3F5F8),
-          selectedColor: const Color(0xFFFFE8D2),
-          disabledColor: const Color(0xFFEFF2F5),
-          side: const BorderSide(color: Color(0xFFE2E7EF)),
-          shape: const StadiumBorder(),
-          labelStyle: const TextStyle(
-            color: _ink,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-          secondaryLabelStyle: const TextStyle(
-            color: _navy,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFE2E7EF)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFE2E7EF)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: _navy, width: 1.4),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFB42318)),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFB42318), width: 1.4),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: _orange,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(0, 46),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _navy,
-            side: const BorderSide(color: _navy),
-            minimumSize: const Size(0, 46),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-        ),
-        navigationBarTheme: const NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shadowColor: Color(0x14000000),
-          elevation: 2,
-          height: 72,
-          indicatorColor: Color(0xFFFFE8D2),
-          labelTextStyle: WidgetStatePropertyAll(
-            TextStyle(color: _ink, fontWeight: FontWeight.w600),
-          ),
-        ),
-        tabBarTheme: const TabBarThemeData(
-          dividerColor: Colors.transparent,
-          indicatorColor: _orange,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: _navy,
-          unselectedLabelColor: _muted,
-          labelStyle: TextStyle(fontWeight: FontWeight.w800),
-          unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: _navy,
-          contentTextStyle: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: _orange,
-          linearTrackColor: Color(0xFFFFE8D2),
-        ),
-        dividerTheme: const DividerThemeData(
-          color: Color(0xFFE2E7EF),
-          thickness: 1,
-        ),
-      ),
+      theme: AppTheme.light,
       home: const OverviewPage(),
       builder: (context, child) => MessageNotificationHost(
         child: child ?? const SizedBox.shrink(),
@@ -755,11 +613,11 @@ class _AuthField extends StatelessWidget {
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+            borderSide: const BorderSide(color: AppColors.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+            borderSide: const BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),

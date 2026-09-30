@@ -10,13 +10,14 @@ import 'app_card_styles.dart';
 import 'auth_api.dart';
 import 'merchant_news_cards_section.dart';
 import 'venue_address_geocoder.dart';
+import 'app_design_system.dart';
 
-const _addNavy = Color(0xFF192B50);
-const _addInk = Color(0xFF101B33);
-const _addOrange = Color(0xFFFF8200);
-const _addSoftOrange = Color(0xFFFFE8D2);
-const _addMuted = Color(0xFF68748A);
-const _addLine = Color(0xFFE2E7EF);
+const _addNavy = AppColors.navy;
+const _addInk = AppColors.ink;
+const _addOrange = AppColors.orange;
+const _addSoftOrange = AppColors.softOrange;
+const _addMuted = AppColors.muted;
+const _addLine = AppColors.border;
 
 List<String> _stringList(dynamic value) {
   if (value is List) {
@@ -60,22 +61,14 @@ const _weekdays = [
   'Sunday',
 ];
 
-class _RatePeriod {
-  TimeOfDay? start;
-  TimeOfDay? end;
-  final price = TextEditingController();
-
-  void dispose() => price.dispose();
-}
-
 class _SportSlotInput {
   _SportSlotInput({
     required String sportType,
     required String pricePerHour,
-    required String includedPlayers,
-    required String additionalPlayerFee,
     required this.fullStudio,
     required this.slotCount,
+    required String includedPlayers,
+    required String additionalPlayerFee,
   }) : sportType = TextEditingController(text: sportType),
        pricePerHour = TextEditingController(text: pricePerHour),
        includedPlayers = TextEditingController(text: includedPlayers),
@@ -93,6 +86,54 @@ class _SportSlotInput {
     pricePerHour.dispose();
     includedPlayers.dispose();
     additionalPlayerFee.dispose();
+  }
+}
+
+class _FitnessCategoryInput {
+  _FitnessCategoryInput({
+    required String category,
+    String sessionPrice = '',
+    String monthlyPrice = '',
+    String yearlyPrice = '',
+    this.yearlyDiscountType = 'none',
+    String yearlyDiscountValue = '',
+  }) : category = TextEditingController(text: category),
+       sessionPrice = TextEditingController(text: sessionPrice),
+       monthlyPrice = TextEditingController(text: monthlyPrice),
+       yearlyPrice = TextEditingController(text: yearlyPrice),
+       yearlyDiscountValue = TextEditingController(text: yearlyDiscountValue);
+
+  final TextEditingController category;
+  final TextEditingController sessionPrice;
+  final TextEditingController monthlyPrice;
+  final TextEditingController yearlyPrice;
+  final TextEditingController yearlyDiscountValue;
+  String yearlyDiscountType;
+
+  void dispose() {
+    category.dispose();
+    sessionPrice.dispose();
+    monthlyPrice.dispose();
+    yearlyPrice.dispose();
+    yearlyDiscountValue.dispose();
+  }
+}
+
+class _FitnessCoachInput {
+  _FitnessCoachInput({
+    String name = '',
+    String monthlyPrice = '',
+    this.profileImageUrl,
+  }) : name = TextEditingController(text: name),
+       monthlyPrice = TextEditingController(text: monthlyPrice);
+
+  final TextEditingController name;
+  final TextEditingController monthlyPrice;
+  String? profileImageUrl;
+
+  void dispose() {
+    name.dispose();
+    monthlyPrice.dispose();
   }
 }
 
@@ -116,7 +157,17 @@ class MerchantAddPage extends StatefulWidget {
 
 class MerchantAddPageState extends State<MerchantAddPage> {
   static const _categories = {
-    'Sports': ['Tennis', 'Pickleball', 'Basketball', 'Volleyball', 'Badminton'],
+    'Sports': [
+      'Tennis',
+      'Pickleball',
+      'Basketball',
+      'Volleyball',
+      'Badminton',
+      'Football',
+      'Futsal',
+      'Table Tennis',
+      'Squash',
+    ],
     'Event': ['Ballroom', 'Terrace', 'Private Dining', 'Garden'],
     'Fitness & Wellness': [
       'CrossFit',
@@ -351,9 +402,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         ? widget.initialBusinessType!
         : 'Sports';
     final existingCategory = editingBusiness?['category'] as String?;
-    String category = type == 'Sports'
-        ? existingCategory ?? ''
-        : {..._categories[type]!, 'Other'}.contains(existingCategory)
+    String category =
+        {..._categories[type]!, 'Other'}.contains(existingCategory)
         ? existingCategory ?? _categories[type]!.first
         : 'Other';
     if (category == 'Other' && existingCategory != null) {
@@ -397,8 +447,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     final hours = parseHours(editingBusiness?['hours'] as String?);
     TimeOfDay? openingTime = hours.$1;
     TimeOfDay? closingTime = hours.$2;
-    final ratePeriods = <_RatePeriod>[];
     final sportSlots = <_SportSlotInput>[];
+    final fitnessCategories = <_FitnessCategoryInput>[];
+    final fitnessCoaches = <_FitnessCoachInput>[];
     final amenities = <String>{};
     final eventTypes = <String>[];
     final accessibilityNeeds = <String>[];
@@ -596,27 +647,6 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         amenityOther.text = customAmenities.join(', ');
       }
     }
-    dynamic rawPeriods =
-        editingBusiness?['ratePeriods'] ?? editingBusiness?['rate_periods'];
-    if (rawPeriods is String) {
-      try {
-        rawPeriods = jsonDecode(rawPeriods);
-      } on FormatException {
-        rawPeriods = null;
-      }
-    }
-
-    if (rawPeriods is List) {
-      for (final item in rawPeriods.whereType<Map>()) {
-        ratePeriods.add(
-          _RatePeriod()
-            ..start = parseTime(item['start'])
-            ..end = parseTime(item['end'])
-            ..price.text =
-                '${item['pricePerHour'] ?? item['price_per_hour'] ?? ''}',
-        );
-      }
-    }
     dynamic rawSportsSlots =
         editingBusiness?['sportsSlots'] ??
         editingBusiness?['sports_slots_json'];
@@ -633,39 +663,218 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           _SportSlotInput(
             sportType: '${item['sportType'] ?? ''}',
             pricePerHour: '${item['pricePerHour'] ?? ''}',
-            includedPlayers:
-                '${item['includedPlayers'] ?? editingBusiness?['includedPlayers'] ?? editingBusiness?['included_players'] ?? ''}',
-            additionalPlayerFee:
-                '${item['additionalPlayerFee'] ?? editingBusiness?['additionalPlayerFee'] ?? editingBusiness?['additional_player_fee'] ?? ''}',
             fullStudio: item['fullStudio'] == true,
             slotCount: int.tryParse('${item['slotCount']}') ?? 1,
+            includedPlayers:
+                '${item['includedPlayers'] ?? includedPlayers.text}',
+            additionalPlayerFee:
+                '${item['additionalPlayerFee'] ?? additionalPlayerFee.text}',
           ),
         );
       }
     }
-    if (sportSlots.isEmpty && type == 'Sports' && editingBusiness != null) {
+    if (sportSlots.isEmpty && editingBusiness != null && type == 'Sports') {
       final total = int.tryParse(totalSlots.text) ?? 1;
       sportSlots.add(
         _SportSlotInput(
-          sportType: existingCategory ?? _categories['Sports']!.first,
+          sportType: category == 'Other' ? categoryOther.text.trim() : category,
           pricePerHour: price.text,
-          includedPlayers: includedPlayers.text,
-          additionalPlayerFee: additionalPlayerFee.text,
           fullStudio: true,
           slotCount: total,
+          includedPlayers: includedPlayers.text,
+          additionalPlayerFee: additionalPlayerFee.text,
         ),
       );
     }
-    if (type == 'Sports') {
-      category = sportSlots
-          .map((sport) => sport.sportType.text.trim())
-          .where((sport) => sport.isNotEmpty)
-          .join(', ');
+    List<dynamic> decodeJsonList(dynamic value) {
+      if (value is List) return value;
+      if (value is String && value.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(value);
+          if (decoded is List) return decoded;
+        } on FormatException {
+          return const [];
+        }
+      }
+      return const [];
     }
-    if (type == 'Event') ratePeriods.clear();
+
+    final existingFitnessCategories = decodeJsonList(
+      editingBusiness?['fitnessCategories'] ??
+          editingBusiness?['fitness_categories_json'],
+    );
+    for (final item in existingFitnessCategories.whereType<Map>()) {
+      final discountType = '${item['yearlyDiscountType'] ?? 'none'}';
+      fitnessCategories.add(
+        _FitnessCategoryInput(
+          category: '${item['category'] ?? item['name'] ?? ''}',
+          sessionPrice: '${item['sessionPrice'] ?? ''}',
+          monthlyPrice: '${item['monthlyPrice'] ?? ''}',
+          yearlyPrice: '${item['yearlyPrice'] ?? ''}',
+          yearlyDiscountType:
+              const {'none', 'freeMonths', 'percentage'}.contains(discountType)
+              ? discountType
+              : 'none',
+          yearlyDiscountValue: '${item['yearlyDiscountValue'] ?? ''}',
+        ),
+      );
+    }
+    if (fitnessCategories.isNotEmpty && type == 'Fitness & Wellness') {
+      categoryOther.clear();
+    }
+    if (fitnessCategories.isEmpty &&
+        editingBusiness != null &&
+        type == 'Fitness & Wellness') {
+      fitnessCategories.add(
+        _FitnessCategoryInput(
+          category: existingCategory == 'Other'
+              ? categoryOther.text.trim()
+              : existingCategory ?? '',
+          sessionPrice: price.text,
+        ),
+      );
+    }
+    for (final item in decodeJsonList(
+      editingBusiness?['fitnessCoaches'] ??
+          editingBusiness?['fitness_coaches_json'],
+    ).whereType<Map>()) {
+      fitnessCoaches.add(
+        _FitnessCoachInput(
+          name: '${item['name'] ?? ''}',
+          monthlyPrice: '${item['monthlyPrice'] ?? ''}',
+          profileImageUrl: '${item['profileImageUrl'] ?? ''}'.trim().isEmpty
+              ? null
+              : '${item['profileImageUrl']}',
+        ),
+      );
+    }
+    if (type == 'Sports') categoryOther.clear();
     String? validationMessage;
     var submitted = false;
     var panelOpen = true;
+    var setupStep = 0;
+
+    bool basicsComplete() =>
+        name.text.trim().isNotEmpty &&
+        (type == 'Sports' ||
+            type == 'Fitness & Wellness' ||
+            category != 'Other' ||
+            categoryOther.text.trim().isNotEmpty);
+
+    bool bookingDetailsComplete() {
+      if (type == 'Sports') {
+        final capacity = int.tryParse(totalSlots.text.trim());
+        final names = sportSlots
+            .map((sport) => sport.sportType.text.trim().toLowerCase())
+            .toList();
+        return capacity != null &&
+            capacity >= 1 &&
+            capacity <= 100 &&
+            sportSlots.isNotEmpty &&
+            names.toSet().length == names.length &&
+            sportSlots.every((sport) {
+              final price = double.tryParse(sport.pricePerHour.text.trim());
+              final players = int.tryParse(sport.includedPlayers.text.trim());
+              final fee = double.tryParse(
+                sport.additionalPlayerFee.text.trim(),
+              );
+              return sport.sportType.text.trim().isNotEmpty &&
+                  price != null &&
+                  price.isFinite &&
+                  price > 0 &&
+                  sport.slotCount >= 1 &&
+                  sport.slotCount <= capacity &&
+                  (sport.includedPlayers.text.trim().isEmpty ||
+                      (players != null && players >= 1 && players <= 1000)) &&
+                  (sport.additionalPlayerFee.text.trim().isEmpty ||
+                      (fee != null &&
+                          fee.isFinite &&
+                          fee > 0 &&
+                          fee <= 99999999.99 &&
+                          players != null &&
+                          players >= 1));
+            });
+      }
+      if (type == 'Fitness & Wellness') {
+        final categoryNames = fitnessCategories
+            .map((item) => item.category.text.trim().toLowerCase())
+            .toList();
+        final coachNames = fitnessCoaches
+            .map((coach) => coach.name.text.trim().toLowerCase())
+            .toList();
+        return fitnessCategories.isNotEmpty &&
+            categoryNames.toSet().length == categoryNames.length &&
+            fitnessCategories.every((item) {
+              final prices = [
+                item.sessionPrice.text,
+                item.monthlyPrice.text,
+                item.yearlyPrice.text,
+              ].map((value) => double.tryParse(value.trim()));
+              final discountValue = item.yearlyDiscountValue.text.trim();
+              final discount = double.tryParse(discountValue);
+              final validDiscount = switch (item.yearlyDiscountType) {
+                'none' => discountValue.isEmpty,
+                'freeMonths' =>
+                  discount != null &&
+                      discount.isFinite &&
+                      discount >= 1 &&
+                      discount <= 11 &&
+                      discount == discount.roundToDouble(),
+                'percentage' =>
+                  discount != null &&
+                      discount.isFinite &&
+                      discount > 0 &&
+                      discount <= 100,
+                _ => false,
+              };
+              return item.category.text.trim().isNotEmpty &&
+                  validDiscount &&
+                  prices.every(
+                    (price) =>
+                        price != null &&
+                        price.isFinite &&
+                        price > 0 &&
+                        price <= 99999999.99,
+                  );
+            }) &&
+            coachNames.toSet().length == coachNames.length &&
+            fitnessCoaches.every((coach) {
+              final price = double.tryParse(coach.monthlyPrice.text.trim());
+              return coach.name.text.trim().isNotEmpty &&
+                  price != null &&
+                  price.isFinite &&
+                  price > 0 &&
+                  price <= 99999999.99;
+            });
+      }
+      final minimum = int.tryParse(eventAttendanceMin.text.trim());
+      final maximum = int.tryParse(eventAttendanceMax.text.trim());
+      return eventTypes.isNotEmpty &&
+          (!eventTypes.contains('Other') ||
+              eventTypeOther.text.trim().isNotEmpty) &&
+          minimum != null &&
+          maximum != null &&
+          minimum >= 1 &&
+          maximum >= minimum;
+    }
+
+    bool scheduleComplete() =>
+        openingTime != null &&
+        closingTime != null &&
+        address.text.trim().isNotEmpty &&
+        availableDays.isNotEmpty;
+
+    String currentStepTitle() => switch (setupStep) {
+      0 => 'Business basics',
+      1 => 'Booking details',
+      _ => 'Schedule & review',
+    };
+
+    String bookingDetailsError() => switch (type) {
+      'Sports' => 'Select at least one sport and enter a valid rate and slot setup for each.',
+      'Fitness & Wellness' => 'Select at least one fitness category and enter valid plan prices. Complete any coach you add.',
+      _ => 'Select at least one event type and enter a valid guest range.',
+    };
 
     final added = await showGeneralDialog<bool>(
       context: context,
@@ -740,13 +949,59 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             fontWeight: FontWeight.normal,
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'STEP ${setupStep + 1} OF 3  ·  ${currentStepTitle()}',
+                          style: const TextStyle(
+                            color: _addMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        LinearProgressIndicator(
+                          value: (setupStep + 1) / 3,
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(99),
+                          backgroundColor: _addLine,
+                          color: _addOrange,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _setupStepLabel(
+                              'Basics',
+                              complete: basicsComplete(),
+                              current: setupStep == 0,
+                            ),
+                            const SizedBox(width: 8),
+                            _setupStepLabel(
+                              'Details',
+                              complete: bookingDetailsComplete(),
+                              current: setupStep == 1,
+                            ),
+                            const SizedBox(width: 8),
+                            _setupStepLabel(
+                              'Schedule',
+                              complete: scheduleComplete(),
+                              current: setupStep == 2,
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                     content: SizedBox(
                       width: double.infinity,
+                      height: MediaQuery.sizeOf(context).height * .52,
                       child: Theme(
                         data: Theme.of(context).copyWith(
                           visualDensity: VisualDensity.compact,
+                          textSelectionTheme: const TextSelectionThemeData(
+                            cursorColor: _addNavy,
+                            selectionColor: Color(0x55365A91),
+                            selectionHandleColor: _addNavy,
+                          ),
                           textTheme: Theme.of(context).textTheme.copyWith(
                             bodyLarge: const TextStyle(
                               color: _addInk,
@@ -756,7 +1011,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               color: _addInk,
                               fontSize: 13,
                             ),
-                            bodySmall: const TextStyle(fontSize: 11),
+                            bodySmall: const TextStyle(
+                              color: _addMuted,
+                              fontSize: 11,
+                            ),
                           ),
                           inputDecorationTheme: const InputDecorationTheme(
                             isDense: true,
@@ -768,13 +1026,20 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               color: _addMuted,
                               fontSize: 13,
                             ),
+                            floatingLabelStyle: TextStyle(
+                              color: _addNavy,
+                              fontSize: 13,
+                            ),
                             hintStyle: TextStyle(
                               color: _addMuted,
                               fontSize: 12,
                             ),
                             helperStyle: TextStyle(fontSize: 11),
                             errorStyle: TextStyle(fontSize: 11),
-                            prefixStyle: TextStyle(fontSize: 13),
+                            prefixStyle: TextStyle(
+                              color: _addInk,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                         child: SingleChildScrollView(
@@ -831,297 +1096,118 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                   ),
                                 ],
-                                _sectionLabel('BASIC INFORMATION'),
-                                DropdownButtonFormField<String>(
-                                  initialValue: type,
-                                  decoration: InputDecoration(
-                                    labelText: 'Booking type',
-                                  ),
-                                  items: [
-                                    for (final item in types)
-                                      DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value == null) return;
-                                    setDialogState(() {
-                                      type = value;
-                                      category = type == 'Sports'
-                                          ? ''
-                                          : _categories[type]!.first;
-                                      if (type == 'Event') {
-                                        for (final period in ratePeriods) {
-                                          period.dispose();
-                                        }
-                                        ratePeriods.clear();
-                                      }
-                                    });
-                                  },
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 4,
-                                    bottom: 2,
-                                  ),
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      type == 'Sports'
-                                          ? 'Add courts, fields, and sports facilities for customers to book.'
-                                          : type == 'Event'
-                                          ? 'Add an event venue with the space and amenities needed for gatherings.'
-                                          : 'Add a wellness space for classes, sessions, and fitness activities.',
-                                      style: const TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                if (type != 'Sports') ...[
+                                if (setupStep == 0) ...[
+                                  _sectionLabel('BUSINESS BASICS'),
                                   DropdownButtonFormField<String>(
-                                    initialValue: category,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Category / activity',
+                                    isExpanded: true,
+                                    initialValue: type,
+                                    decoration: InputDecoration(
+                                      labelText: 'Booking type',
                                     ),
                                     items: [
-                                      for (final item in {
-                                        ..._categories[type]!,
-                                        'Other',
-                                      })
+                                      for (final item in types)
                                         DropdownMenuItem(
                                           value: item,
                                           child: Text(item),
                                         ),
                                     ],
                                     onChanged: (value) {
-                                      if (value != null) {
-                                        setDialogState(() => category = value);
-                                      }
+                                      if (value == null) return;
+                                      setDialogState(() {
+                                        type = value;
+                                        category = _categories[type]!.first;
+                                      });
                                     },
                                   ),
-                                  if (category == 'Other')
-                                    TextFormField(
-                                      controller: categoryOther,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Custom category',
-                                        hintText: 'Enter the venue category',
-                                      ),
-                                    ),
-                                ],
-                                if (type == 'Sports') ...[
-                                  _sectionLabel('CHOOSE SPORT CATEGORIES'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Select every sport customers can book. Each selected sport gets its own rate and slot settings below.',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 2,
-                                    children: [
-                                      for (final sportName in {
-                                        ..._categories['Sports']!,
-                                        ...sportSlots.map(
-                                          (sport) => sport.sportType.text,
-                                        ),
-                                      })
-                                        FilterChip(
-                                          label: Text(sportName),
-                                          selected: sportSlots.any(
-                                            (sport) =>
-                                                sport.sportType.text ==
-                                                sportName,
-                                          ),
-                                          selectedColor: _addSoftOrange,
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color:
-                                                sportSlots.any(
-                                                  (sport) =>
-                                                      sport.sportType.text ==
-                                                      sportName,
-                                                )
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) {
-                                            setDialogState(() {
-                                              if (selected) {
-                                                final wholeCourt =
-                                                    sportName != 'Badminton' &&
-                                                    sportName != 'Pickleball';
-                                                sportSlots.add(
-                                                  _SportSlotInput(
-                                                    sportType: sportName,
-                                                    pricePerHour: '',
-                                                    includedPlayers: '',
-                                                    additionalPlayerFee: '',
-                                                    fullStudio: wholeCourt,
-                                                    slotCount: wholeCourt
-                                                        ? int.tryParse(
-                                                                totalSlots.text,
-                                                              ) ??
-                                                              1
-                                                        : 1,
-                                                  ),
-                                                );
-                                              } else {
-                                                final index = sportSlots
-                                                    .indexWhere(
-                                                      (sport) =>
-                                                          sport
-                                                              .sportType
-                                                              .text ==
-                                                          sportName,
-                                                    );
-                                                if (index >= 0) {
-                                                  sportSlots
-                                                      .removeAt(index)
-                                                      .dispose();
-                                                }
-                                              }
-                                              category = sportSlots
-                                                  .map(
-                                                    (sport) => sport
-                                                        .sportType
-                                                        .text
-                                                        .trim(),
-                                                  )
-                                                  .where(
-                                                    (name) => name.isNotEmpty,
-                                                  )
-                                                  .join(', ');
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 4),
+                                    padding: const EdgeInsets.only(
+                                      top: 4,
+                                      bottom: 2,
+                                    ),
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        sportSlots.isEmpty
-                                            ? 'No sports selected yet.'
-                                            : 'Chosen categories: ${sportSlots.map((sport) => sport.sportType.text).join(', ')}',
+                                        type == 'Sports'
+                                            ? 'Add courts, fields, and sports facilities for customers to book.'
+                                            : type == 'Event'
+                                            ? 'Add an event venue with the space and amenities needed for gatherings.'
+                                            : 'Add a wellness space for classes, sessions, and fitness activities.',
                                         style: const TextStyle(
                                           color: _addMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
                                         ),
                                       ),
                                     ),
                                   ),
-                                  Builder(
-                                    builder: (context) {
-                                      void addCustomSportCategory() {
-                                        final sportName = categoryOther.text
-                                            .trim();
-                                        if (sportName.isEmpty ||
-                                            sportSlots.any(
-                                              (sport) =>
-                                                  sport.sportType.text
-                                                      .toLowerCase() ==
-                                                  sportName.toLowerCase(),
-                                            )) {
-                                          return;
-                                        }
-                                        final wholeCourt =
-                                            sportName.toLowerCase() !=
-                                                'badminton' &&
-                                            sportName.toLowerCase() !=
-                                                'pickleball';
-                                        setDialogState(() {
-                                          sportSlots.add(
-                                            _SportSlotInput(
-                                              sportType: sportName,
-                                              pricePerHour: '',
-                                              includedPlayers: '',
-                                              additionalPlayerFee: '',
-                                              fullStudio: wholeCourt,
-                                              slotCount: wholeCourt
-                                                  ? int.tryParse(
-                                                          totalSlots.text,
-                                                        ) ??
-                                                        1
-                                                  : 1,
-                                            ),
+                                  if (type != 'Sports' &&
+                                      type != 'Fitness & Wellness')
+                                    DropdownButtonFormField<String>(
+                                      isExpanded: true,
+                                      initialValue: category,
+                                      decoration: InputDecoration(
+                                        labelText: 'Category / activity',
+                                      ),
+                                      items: [
+                                        for (final item in {
+                                          ..._categories[type]!,
+                                          'Other',
+                                        })
+                                          DropdownMenuItem(
+                                            value: item,
+                                            child: Text(item),
+                                          ),
+                                      ],
+                                      onChanged: (value) {
+                                        if (value != null) {
+                                          setDialogState(
+                                            () => category = value,
                                           );
-                                          category = sportSlots
-                                              .map(
-                                                (sport) =>
-                                                    sport.sportType.text.trim(),
-                                              )
-                                              .join(', ');
-                                          categoryOther.clear();
-                                        });
-                                      }
-
-                                      return Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              controller: categoryOther,
-                                              decoration: const InputDecoration(
-                                                labelText: 'Add another sport',
-                                                hintText: 'e.g. Futsal',
-                                              ),
-                                              onSubmitted: (_) =>
-                                                  addCustomSportCategory(),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Add sport category',
-                                            onPressed: addCustomSportCategory,
-                                            icon: const Icon(Icons.add_circle),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ],
-                                TextFormField(
-                                  controller: name,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Venue name',
-                                  ),
-                                  validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                      ? 'Enter a business name'
-                                      : null,
-                                ),
-                                if (type == 'Sports') ...[
-                                  const SizedBox(height: 10),
-                                  _sectionLabel('SPORTS, SLOTS & RATES'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Configure a rate and player allowance for each selected sport.',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
+                                        }
+                                      },
+                                    ),
+                                  if (type != 'Sports' &&
+                                      type != 'Fitness & Wellness' &&
+                                      category == 'Other')
+                                    TextFormField(
+                                      controller: categoryOther,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Custom category (required)',
+                                        hintText: 'Enter the venue category',
                                       ),
                                     ),
+                                  TextFormField(
+                                    controller: name,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Venue name (required)',
+                                    ),
+                                    onChanged: (_) => setDialogState(() {}),
+                                    validator: (value) =>
+                                        value == null || value.trim().isEmpty
+                                        ? 'Enter a business name'
+                                        : null,
                                   ),
-                                  if (sportSlots.any(
-                                    (sport) => !sport.fullStudio,
-                                  ))
+                                ],
+                                if (setupStep == 1) ...[
+                                  if (type == 'Sports') ...[
+                                    const SizedBox(height: 10),
+                                    _sectionLabel('SPORTS, SLOTS & RATES'),
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Set the studio capacity, then configure each sport. Full-studio sports block all slots.',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
                                     TextFormField(
                                       controller: totalSlots,
                                       keyboardType: TextInputType.number,
                                       decoration: const InputDecoration(
                                         labelText:
-                                            'Total small slots in this venue',
+                                            'Total small slots (required)',
                                         hintText: 'e.g. 5',
-                                        helperText: 'Shared capacity for sports that split the court.',
                                       ),
                                       validator: (value) {
                                         final count = int.tryParse(
@@ -1142,176 +1228,331 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         }
                                         setDialogState(() {
                                           for (final sport in sportSlots) {
-                                            if (sport.slotCount > count) {
+                                            if (sport.fullStudio) {
+                                              sport.slotCount = count;
+                                            } else if (sport.slotCount >
+                                                count) {
                                               sport.slotCount = count;
                                             }
                                           }
                                         });
                                       },
                                     ),
-                                  for (
-                                    var index = 0;
-                                    index < sportSlots.length;
-                                    index++
-                                  ) ...[
                                     const SizedBox(height: 8),
-                                    Builder(
-                                      builder: (context) {
-                                        final sport = sportSlots[index];
-                                        final capacity =
-                                            int.tryParse(totalSlots.text) ?? 1;
-                                        return Container(
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF8FAFC),
-                                            border: Border.all(
-                                              color: const Color(0xFFE2E7EF),
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Choose at least one sport. Each selected sport needs its own rate and slot setup.',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    for (final sportType
+                                        in <String>{
+                                          ..._categories['Sports']!,
+                                          ...sportSlots.map(
+                                            (sport) => sport.sportType.text,
+                                          ),
+                                        }.toList()..sort(
+                                          (left, right) =>
+                                              left.compareTo(right),
+                                        ))
+                                      CheckboxListTile(
+                                        dense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        controlAffinity:
+                                            ListTileControlAffinity.leading,
+                                        title: Text(sportType),
+                                        value: sportSlots.any(
+                                          (sport) =>
+                                              sport.sportType.text == sportType,
+                                        ),
+                                        onChanged: (checked) {
+                                          setDialogState(() {
+                                            if (checked == true) {
+                                              final usesWholeStudio = !const {
+                                                'Badminton',
+                                                'Tennis',
+                                                'Pickleball',
+                                                'Table Tennis',
+                                                'Squash',
+                                              }.contains(sportType);
+                                              sportSlots.add(
+                                                _SportSlotInput(
+                                                  sportType: sportType,
+                                                  pricePerHour: '',
+                                                  fullStudio: usesWholeStudio,
+                                                  slotCount: usesWholeStudio
+                                                      ? (int.tryParse(
+                                                              totalSlots.text,
+                                                            ) ??
+                                                            1)
+                                                      : (int.tryParse(
+                                                              totalSlots.text,
+                                                            ) ??
+                                                            1),
+                                                  includedPlayers: '',
+                                                  additionalPlayerFee: '',
+                                                ),
+                                              );
+                                            } else {
+                                              sportSlots.removeWhere((sport) {
+                                                if (sport.sportType.text !=
+                                                    sportType) {
+                                                  return false;
+                                                }
+                                                sport.dispose();
+                                                return true;
+                                              });
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    TextFormField(
+                                      controller: categoryOther,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Other sport (optional)',
+                                        hintText: 'e.g. Squash',
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed: () {
+                                          final customSport = categoryOther.text
+                                              .trim();
+                                          if (customSport.isEmpty) return;
+                                          if (sportSlots.any(
+                                            (sport) =>
+                                                sport.sportType.text
+                                                    .toLowerCase() ==
+                                                customSport.toLowerCase(),
+                                          )) {
+                                            setDialogState(
+                                              () => validationMessage = 'That sport is already selected.',
+                                            );
+                                            return;
+                                          }
+                                          setDialogState(() {
+                                            validationMessage = null;
+                                            sportSlots.add(
+                                              _SportSlotInput(
+                                                sportType: customSport,
+                                                pricePerHour: '',
+                                                fullStudio: true,
+                                                slotCount:
+                                                    int.tryParse(
+                                                      totalSlots.text,
+                                                    ) ??
+                                                    1,
+                                                includedPlayers: '',
+                                                additionalPlayerFee: '',
+                                              ),
+                                            );
+                                            categoryOther.clear();
+                                          });
+                                        },
+                                        icon: const Icon(Icons.add_rounded),
+                                        label: const Text('Add other sport'),
+                                      ),
+                                    ),
+                                    if (sportSlots.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Chosen categories: ${sportSlots.map((sport) => sport.sportType.text).join(', ')}',
+                                            style: const TextStyle(
+                                              color: _addNavy,
+                                              fontWeight: FontWeight.w800,
                                             ),
                                           ),
-                                          child: Column(
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      sport.sportType.text,
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        fontSize: 15,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
+                                        ),
+                                      ),
+                                    for (
+                                      var index = 0;
+                                      index < sportSlots.length;
+                                      index++
+                                    ) ...[
+                                      const SizedBox(height: 8),
+                                      Builder(
+                                        builder: (context) {
+                                          final sport = sportSlots[index];
+                                          final capacity =
+                                              int.tryParse(totalSlots.text) ??
+                                              1;
+                                          return Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF8FAFC),
+                                              border: Border.all(
+                                                color: const Color(0xFFE2E7EF),
                                               ),
-                                              TextFormField(
-                                                controller: sport.pricePerHour,
-                                                keyboardType:
-                                                    const TextInputType.numberWithOptions(
-                                                      decimal: true,
-                                                    ),
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText:
-                                                          'Price per hour',
-                                                      prefixText: '₱ ',
-                                                    ),
-                                                validator: (value) {
-                                                  final amount =
-                                                      double.tryParse(
-                                                        value?.trim() ?? '',
-                                                      );
-                                                  return amount == null ||
-                                                          amount <= 0
-                                                      ? 'Enter a price above ₱0'
-                                                      : null;
-                                                },
-                                              ),
-                                              DropdownButtonFormField<bool>(
-                                                initialValue: sport.fullStudio,
-                                                isExpanded: true,
-                                                decoration:
-                                                    const InputDecoration(
-                                                      labelText: 'Court setup',
-                                                    ),
-                                                items: const [
-                                                  DropdownMenuItem(
-                                                    value: true,
-                                                    child: Text(
-                                                      'Whole court (1 slot)',
-                                                    ),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: false,
-                                                    child: Text(
-                                                      'Split court into slots',
-                                                    ),
-                                                  ),
-                                                ],
-                                                onChanged: (value) {
-                                                  if (value == null) return;
-                                                  setDialogState(() {
-                                                    sport.fullStudio = value;
-                                                    sport.slotCount = value
-                                                        ? capacity
-                                                        : 1;
-                                                  });
-                                                },
-                                              ),
-                                              if (!sport.fullStudio)
-                                                DropdownButtonFormField<int>(
-                                                  initialValue: sport.slotCount
-                                                      .clamp(1, capacity)
-                                                      .toInt(),
-                                                  isExpanded: true,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                        labelText: 'Slots available for this sport',
-                                                      ),
-                                                  items: [
-                                                    for (
-                                                      var slot = 1;
-                                                      slot <= capacity;
-                                                      slot++
-                                                    )
-                                                      DropdownMenuItem(
-                                                        value: slot,
-                                                        child: Text(
-                                                          '$slot slot${slot == 1 ? '' : 's'}',
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        sport.sportType.text,
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w800,
                                                         ),
                                                       ),
+                                                    ),
                                                   ],
-                                                  onChanged: (value) {
-                                                    if (value != null) {
-                                                      setDialogState(
-                                                        () => sport.slotCount =
-                                                            value,
-                                                      );
-                                                    }
+                                                ),
+                                                TextFormField(
+                                                  controller:
+                                                      sport.pricePerHour,
+                                                  keyboardType:
+                                                      const TextInputType.numberWithOptions(
+                                                        decimal: true,
+                                                      ),
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: 'Price per hour (required)',
+                                                        prefixText: '₱ ',
+                                                      ),
+                                                  validator: (value) {
+                                                    final amount =
+                                                        double.tryParse(
+                                                          value?.trim() ?? '',
+                                                        );
+                                                    return amount == null ||
+                                                            amount <= 0
+                                                        ? 'Enter a price above ₱0'
+                                                        : null;
                                                   },
                                                 ),
-                                              const SizedBox(height: 6),
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: TextFormField(
-                                                      controller:
-                                                          sport.includedPlayers,
-                                                      keyboardType:
-                                                          TextInputType.number,
-                                                      decoration:
-                                                          const InputDecoration(
-                                                            labelText: 'Included players',
-                                                            hintText:
-                                                                'Optional',
-                                                          ),
-                                                      validator: (value) {
-                                                        final limit =
-                                                            value?.trim() ?? '';
-                                                        final fee = sport
-                                                            .additionalPlayerFee
-                                                            .text
-                                                            .trim();
-                                                        if (limit.isEmpty &&
-                                                            fee.isEmpty) {
-                                                          return null;
-                                                        }
-                                                        final parsed =
-                                                            int.tryParse(limit);
-                                                        return parsed == null ||
-                                                                parsed < 1 ||
-                                                                parsed > 30
-                                                            ? 'Enter 1–30'
-                                                            : null;
-                                                      },
+                                                DropdownButtonFormField<bool>(
+                                                  isExpanded: true,
+                                                  initialValue:
+                                                      sport.fullStudio,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: 'Space used by this sport',
+                                                      ),
+                                                  items: const [
+                                                    DropdownMenuItem(
+                                                      value: true,
+                                                      child: Text(
+                                                        'Whole court',
+                                                      ),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: false,
+                                                      child: Text(
+                                                        'Small slots',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  onChanged: (value) {
+                                                    if (value == null) return;
+                                                    setDialogState(() {
+                                                      sport.fullStudio = value;
+                                                      sport.slotCount = value
+                                                          ? capacity
+                                                          : 1;
+                                                    });
+                                                  },
+                                                ),
+                                                Align(
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          left: 12,
+                                                          top: 2,
+                                                        ),
+                                                    child: Text(
+                                                      sport.fullStudio
+                                                          ? 'One booking blocks all small slots.'
+                                                          : 'Customers book one available small slot.',
+                                                      style: const TextStyle(
+                                                        color: _addMuted,
+                                                        fontSize: 11,
+                                                      ),
                                                     ),
                                                   ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: TextFormField(
+                                                ),
+                                                if (!sport.fullStudio)
+                                                  DropdownButtonFormField<int>(
+                                                    initialValue: sport
+                                                        .slotCount
+                                                        .clamp(1, capacity)
+                                                        .toInt(),
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText: 'Number of small slots',
+                                                        ),
+                                                    items: [
+                                                      for (
+                                                        var slot = 1;
+                                                        slot <= capacity;
+                                                        slot++
+                                                      )
+                                                        DropdownMenuItem(
+                                                          value: slot,
+                                                          child: Text(
+                                                            '$slot slot${slot == 1 ? '' : 's'}',
+                                                          ),
+                                                        ),
+                                                    ],
+                                                    onChanged: (value) {
+                                                      if (value != null) {
+                                                        setDialogState(
+                                                          () =>
+                                                              sport.slotCount =
+                                                                  value,
+                                                        );
+                                                      }
+                                                    },
+                                                  ),
+                                                const SizedBox(height: 8),
+                                                Builder(
+                                                  builder: (context) {
+                                                    final includedPlayersField =
+                                                        TextFormField(
+                                                          controller: sport
+                                                              .includedPlayers,
+                                                          keyboardType:
+                                                              TextInputType
+                                                                  .number,
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText: 'Included players (optional)',
+                                                              ),
+                                                          validator: (value) {
+                                                            final raw =
+                                                                value?.trim() ??
+                                                                '';
+                                                            if (raw.isEmpty) {
+                                                              return null;
+                                                            }
+                                                            final count =
+                                                                int.tryParse(
+                                                                  raw,
+                                                                );
+                                                            return count ==
+                                                                        null ||
+                                                                    count < 1 ||
+                                                                    count > 1000
+                                                                ? 'Enter 1–1000'
+                                                                : null;
+                                                          },
+                                                        );
+                                                    final extraPlayerFeeField = TextFormField(
                                                       controller: sport
                                                           .additionalPlayerFee,
                                                       keyboardType:
@@ -1320,690 +1561,939 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                           ),
                                                       decoration:
                                                           const InputDecoration(
-                                                            labelText: 'Fee per extra player',
+                                                            labelText: 'Fee / extra player (optional)',
                                                             prefixText: '₱ ',
-                                                            hintText:
-                                                                'Optional',
                                                           ),
                                                       validator: (value) {
-                                                        final feeText =
+                                                        final raw =
                                                             value?.trim() ?? '';
-                                                        if (feeText.isEmpty) {
+                                                        if (raw.isEmpty) {
                                                           return null;
                                                         }
                                                         final fee =
                                                             double.tryParse(
-                                                              feeText,
+                                                              raw,
                                                             );
-                                                        final playersLimit =
-                                                            int.tryParse(
-                                                              sport
-                                                                  .includedPlayers
-                                                                  .text
-                                                                  .trim(),
-                                                            );
-                                                        if (fee == null ||
-                                                            fee < 0 ||
-                                                            playersLimit ==
-                                                                null ||
-                                                            playersLimit < 1 ||
-                                                            playersLimit > 30) {
-                                                          return 'Enter a fee and player limit';
-                                                        }
-                                                        return null;
+                                                        return fee == null ||
+                                                                !fee.isFinite ||
+                                                                fee <= 0 ||
+                                                                fee >
+                                                                    99999999.99
+                                                            ? 'Enter a valid fee'
+                                                            : null;
                                                       },
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
+                                                    );
+                                                    if (MediaQuery.sizeOf(
+                                                          context,
+                                                        ).width <
+                                                        440) {
+                                                      return Column(
+                                                        children: [
+                                                          includedPlayersField,
+                                                          const SizedBox(
+                                                            height: 8,
+                                                          ),
+                                                          extraPlayerFeeField,
+                                                        ],
+                                                      );
+                                                    }
+                                                    return Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child:
+                                                              includedPlayersField,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Expanded(
+                                                          child:
+                                                              extraPlayerFeeField,
+                                                        ),
+                                                      ],
+                                                    );
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ],
+                                  if (type == 'Fitness & Wellness') ...[
+                                    const SizedBox(height: 10),
+                                    _sectionLabel(
+                                      'FITNESS CATEGORIES & PRICES',
+                                    ),
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Choose at least one activity (up to 20), then set its session, monthly, and yearly prices. Yearly offers may include an optional discount.',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    for (final fitnessCategory
+                                        in <String>{
+                                          ..._categories['Fitness & Wellness']!,
+                                          ...fitnessCategories.map(
+                                            (item) => item.category.text,
                                           ),
-                                        );
-                                      },
+                                        }.toList()..sort(
+                                          (left, right) =>
+                                              left.compareTo(right),
+                                        ))
+                                      CheckboxListTile(
+                                        dense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        controlAffinity:
+                                            ListTileControlAffinity.leading,
+                                        title: Text(fitnessCategory),
+                                        value: fitnessCategories.any(
+                                          (item) =>
+                                              item.category.text
+                                                  .toLowerCase() ==
+                                              fitnessCategory.toLowerCase(),
+                                        ),
+                                        onChanged:
+                                            !fitnessCategories.any(
+                                                  (item) =>
+                                                      item.category.text
+                                                          .toLowerCase() ==
+                                                      fitnessCategory
+                                                          .toLowerCase(),
+                                                ) &&
+                                                fitnessCategories.length >= 20
+                                            ? null
+                                            : (checked) {
+                                                setDialogState(() {
+                                                  if (checked == true) {
+                                                    fitnessCategories.add(
+                                                      _FitnessCategoryInput(
+                                                        category:
+                                                            fitnessCategory,
+                                                      ),
+                                                    );
+                                                  } else {
+                                                    fitnessCategories.removeWhere((
+                                                      item,
+                                                    ) {
+                                                      if (item.category.text
+                                                              .toLowerCase() !=
+                                                          fitnessCategory
+                                                              .toLowerCase()) {
+                                                        return false;
+                                                      }
+                                                      item.dispose();
+                                                      return true;
+                                                    });
+                                                  }
+                                                });
+                                              },
+                                      ),
+                                    TextField(
+                                      controller: categoryOther,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Other fitness category',
+                                        hintText: 'e.g. Strength training',
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed:
+                                            fitnessCategories.length >= 20
+                                            ? null
+                                            : () {
+                                                final custom = categoryOther
+                                                    .text
+                                                    .trim();
+                                                if (custom.isEmpty) return;
+                                                if (fitnessCategories.any(
+                                                  (item) =>
+                                                      item.category.text
+                                                          .toLowerCase() ==
+                                                      custom.toLowerCase(),
+                                                )) {
+                                                  setDialogState(
+                                                    () => validationMessage = 'That fitness category is already selected.',
+                                                  );
+                                                  return;
+                                                }
+                                                setDialogState(() {
+                                                  fitnessCategories.add(
+                                                    _FitnessCategoryInput(
+                                                      category: custom,
+                                                    ),
+                                                  );
+                                                  categoryOther.clear();
+                                                  validationMessage = null;
+                                                });
+                                              },
+                                        icon: const Icon(Icons.add_rounded),
+                                        label: const Text('Add other category'),
+                                      ),
+                                    ),
+                                    if (fitnessCategories.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Chosen categories: ${fitnessCategories.map((item) => item.category.text).join(', ')}',
+                                            style: const TextStyle(
+                                              color: _addNavy,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    for (
+                                      var index = 0;
+                                      index < fitnessCategories.length;
+                                      index++
+                                    ) ...[
+                                      const SizedBox(height: 8),
+                                      _fitnessCategoryCard(
+                                        fitnessCategories[index],
+                                        onDiscountChanged: (value) =>
+                                            setDialogState(() {
+                                              fitnessCategories[index]
+                                                      .yearlyDiscountType =
+                                                  value;
+                                              if (value == 'none') {
+                                                fitnessCategories[index]
+                                                    .yearlyDiscountValue
+                                                    .clear();
+                                              }
+                                            }),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    _sectionLabel('COACH STAFF (OPTIONAL)'),
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Add up to 20 coaches with optional profile photos and individual monthly prices.',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    for (
+                                      var index = 0;
+                                      index < fitnessCoaches.length;
+                                      index++
+                                    ) ...[
+                                      const SizedBox(height: 8),
+                                      _fitnessCoachCard(
+                                        fitnessCoaches[index],
+                                        onPickImage: () async {
+                                          try {
+                                            final picked = await ImagePicker()
+                                                .pickImage(
+                                                  source: ImageSource.gallery,
+                                                  maxWidth: 600,
+                                                  maxHeight: 600,
+                                                  imageQuality: 55,
+                                                );
+                                            if (picked == null) return;
+                                            final image = _dataUri(
+                                              await picked.readAsBytes(),
+                                            );
+                                            if (panelOpen && context.mounted) {
+                                              setDialogState(
+                                                () =>
+                                                    fitnessCoaches[index]
+                                                            .profileImageUrl =
+                                                        image,
+                                              );
+                                            }
+                                          } on Exception catch (error) {
+                                            if (panelOpen && context.mounted) {
+                                              setDialogState(
+                                                () => validationMessage =
+                                                    'Could not load the coach profile image: $error',
+                                              );
+                                            }
+                                          }
+                                        },
+                                        onRemove: () {
+                                          final coach = fitnessCoaches.removeAt(
+                                            index,
+                                          );
+                                          coach.dispose();
+                                          setDialogState(() {});
+                                        },
+                                      ),
+                                    ],
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed: fitnessCoaches.length >= 20
+                                            ? null
+                                            : () => setDialogState(
+                                                () => fitnessCoaches.add(
+                                                  _FitnessCoachInput(),
+                                                ),
+                                              ),
+                                        icon: const Icon(
+                                          Icons.person_add_alt_1,
+                                        ),
+                                        label: const Text('Add coach'),
+                                      ),
+                                    ),
+                                  ],
+                                  if (type == 'Event') ...[
+                                    const SizedBox(height: 8),
+                                    _sectionLabel('EVENT BOOKING DETAILS'),
+                                    const Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Event types this venue can hold (required)',
+                                        style: TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        for (final option in eventTypeOptions)
+                                          FilterChip(
+                                            label: Text(
+                                              option,
+                                              style: TextStyle(
+                                                color:
+                                                    eventTypes.contains(option)
+                                                    ? _addOrange
+                                                    : _addInk,
+                                                fontWeight:
+                                                    eventTypes.contains(option)
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                              ),
+                                            ),
+                                            selected: eventTypes.contains(
+                                              option,
+                                            ),
+                                            showCheckmark: false,
+                                            selectedColor: _addSoftOrange,
+                                            backgroundColor: Colors.white,
+                                            shape: const StadiumBorder(),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            checkmarkColor: _addOrange,
+                                            side: BorderSide(
+                                              color: eventTypes.contains(option)
+                                                  ? _addOrange
+                                                  : _addLine,
+                                            ),
+                                            onSelected: (selected) =>
+                                                setDialogState(() {
+                                                  if (selected) {
+                                                    eventTypes.add(option);
+                                                  } else {
+                                                    eventTypes.remove(option);
+                                                    if (option == 'Other') {
+                                                      eventTypeOther.clear();
+                                                    }
+                                                  }
+                                                }),
+                                          ),
+                                      ],
+                                    ),
+                                    if (eventTypes.contains('Other'))
+                                      TextFormField(
+                                        controller: eventTypeOther,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Other event type',
+                                          hintText: 'Enter another event type',
+                                        ),
+                                      ),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: eventAttendanceMin,
+                                            keyboardType: TextInputType.number,
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  'Minimum guests (required)',
+                                              hintText: '40',
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: eventAttendanceMax,
+                                            keyboardType: TextInputType.number,
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  'Maximum guests (required)',
+                                              hintText: '250',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    _repeatableEventNeeds(
+                                      label: 'Accessibility needs (optional)',
+                                      hint: 'Wheelchair ramp or specialized seating',
+                                      controller: accessibilityInput,
+                                      values: accessibilityNeeds,
+                                      setDialogState: setDialogState,
+                                    ),
+                                    _repeatableEventNeeds(
+                                      label: 'Parking needs (optional)',
+                                      hint: 'Reserved parking or VIP parking',
+                                      controller: parkingInput,
+                                      values: parkingNeeds,
+                                      setDialogState: setDialogState,
+                                    ),
+                                    _repeatableEventNeeds(
+                                      label: 'Security needs (optional)',
+                                      hint: 'Dedicated security personnel or VIP access',
+                                      controller: securityInput,
+                                      values: securityNeeds,
+                                      setDialogState: setDialogState,
                                     ),
                                   ],
                                 ],
-                                if (type == 'Event') ...[
+                                if (setupStep == 2) ...[
                                   const SizedBox(height: 8),
-                                  _sectionLabel('EVENT BOOKING DETAILS'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Event types this venue can hold',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 4,
-                                    children: [
-                                      for (final option in eventTypeOptions)
-                                        FilterChip(
-                                          label: Text(
-                                            option,
-                                            style: TextStyle(
-                                              color: eventTypes.contains(option)
-                                                  ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  eventTypes.contains(option)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
-                                            ),
-                                          ),
-                                          selected: eventTypes.contains(option),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: eventTypes.contains(option)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) =>
-                                              setDialogState(() {
-                                                if (selected) {
-                                                  eventTypes.add(option);
-                                                } else {
-                                                  eventTypes.remove(option);
-                                                  if (option == 'Other') {
-                                                    eventTypeOther.clear();
-                                                  }
-                                                }
-                                              }),
-                                        ),
-                                    ],
-                                  ),
-                                  if (eventTypes.contains('Other'))
-                                    TextFormField(
-                                      controller: eventTypeOther,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Other event type',
-                                        hintText: 'Enter another event type',
-                                      ),
-                                    ),
+                                  _sectionLabel('SCHEDULE AND PRICING'),
                                   Row(
                                     children: [
                                       Expanded(
-                                        child: TextFormField(
-                                          controller: eventAttendanceMin,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Minimum guests',
-                                            hintText: '40',
-                                          ),
+                                        child: _timePickerField(
+                                          context: context,
+                                          label: 'Opens (required)',
+                                          value: openingTime,
+                                          onChanged: (value) =>
+                                              panelOpen && context.mounted
+                                              ? setDialogState(
+                                                  () => openingTime = value,
+                                                )
+                                              : null,
                                         ),
                                       ),
                                       const SizedBox(width: 10),
                                       Expanded(
-                                        child: TextFormField(
-                                          controller: eventAttendanceMax,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Maximum guests',
-                                            hintText: '250',
-                                          ),
+                                        child: _timePickerField(
+                                          context: context,
+                                          label: 'Closes (required)',
+                                          value: closingTime,
+                                          onChanged: (value) =>
+                                              panelOpen && context.mounted
+                                              ? setDialogState(
+                                                  () => closingTime = value,
+                                                )
+                                              : null,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  _repeatableEventNeeds(
-                                    label: 'Accessibility needs (optional)',
-                                    hint: 'Wheelchair ramp or specialized seating',
-                                    controller: accessibilityInput,
-                                    values: accessibilityNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                  _repeatableEventNeeds(
-                                    label: 'Parking needs (optional)',
-                                    hint: 'Reserved parking or VIP parking',
-                                    controller: parkingInput,
-                                    values: parkingNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                  _repeatableEventNeeds(
-                                    label: 'Security needs (optional)',
-                                    hint: 'Dedicated security personnel or VIP access',
-                                    controller: securityInput,
-                                    values: securityNeeds,
-                                    setDialogState: setDialogState,
-                                  ),
-                                ],
-                                const SizedBox(height: 8),
-                                _sectionLabel(
-                                  type == 'Sports'
-                                      ? 'SCHEDULE'
-                                      : 'SCHEDULE AND PRICING',
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _timePickerField(
-                                        context: context,
-                                        label: 'Opens',
-                                        value: openingTime,
-                                        onChanged: (value) =>
-                                            panelOpen && context.mounted
-                                            ? setDialogState(
-                                                () => openingTime = value,
-                                              )
-                                            : null,
+                                  TextFormField(
+                                    controller: address,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Venue address (required)',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 12,
                                       ),
+                                      labelStyle: TextStyle(fontSize: 13),
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: _timePickerField(
-                                        context: context,
-                                        label: 'Closes',
-                                        value: closingTime,
-                                        onChanged: (value) =>
-                                            panelOpen && context.mounted
-                                            ? setDialogState(
-                                                () => closingTime = value,
-                                              )
-                                            : null,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                TextFormField(
-                                  controller: address,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Venue address',
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 12,
-                                    ),
-                                    labelStyle: TextStyle(fontSize: 13),
+                                    style: const TextStyle(fontSize: 14),
+                                    onChanged: (_) => setDialogState(() {}),
+                                    validator: (value) =>
+                                        value == null || value.trim().isEmpty
+                                        ? 'Enter an address'
+                                        : null,
                                   ),
-                                  style: const TextStyle(fontSize: 14),
-                                  validator: (value) =>
-                                      value == null || value.trim().isEmpty
-                                      ? 'Enter an address'
-                                      : null,
-                                ),
-                                const SizedBox(height: 4),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    spacing: 6,
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: () async {
-                                          final location =
-                                              await _chooseBusinessLocation(
-                                                latitude: latitude,
-                                                longitude: longitude,
-                                                address: address.text,
-                                              );
-                                          if (location != null && panelOpen) {
-                                            setDialogState(() {
-                                              latitude = location.latitude;
-                                              longitude = location.longitude;
-                                            });
-                                          }
-                                        },
-                                        icon: const Icon(
-                                          Icons.location_on_outlined,
-                                          size: 18,
-                                        ),
-                                        label: Text(
-                                          latitude == null || longitude == null
-                                              ? 'Choose map pin'
-                                              : 'Update map pin',
-                                        ),
-                                        style: OutlinedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 6,
+                                  const SizedBox(height: 4),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      spacing: 6,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed: () async {
+                                            final location =
+                                                await _chooseBusinessLocation(
+                                                  latitude: latitude,
+                                                  longitude: longitude,
+                                                  address: address.text,
+                                                );
+                                            if (location != null && panelOpen) {
+                                              setDialogState(() {
+                                                latitude = location.latitude;
+                                                longitude = location.longitude;
+                                              });
+                                            }
+                                          },
+                                          icon: const Icon(
+                                            Icons.location_on_outlined,
+                                            size: 18,
                                           ),
-                                          minimumSize: const Size(0, 34),
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          textStyle: const TextStyle(
-                                            fontSize: 11,
+                                          label: Text(
+                                            latitude == null ||
+                                                    longitude == null
+                                                ? 'Choose map pin'
+                                                : 'Update map pin',
                                           ),
-                                        ),
-                                      ),
-                                      if (latitude != null && longitude != null)
-                                        TextButton(
-                                          onPressed: () => setDialogState(() {
-                                            latitude = null;
-                                            longitude = null;
-                                          }),
-                                          style: TextButton.styleFrom(
+                                          style: OutlinedButton.styleFrom(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 4,
+                                              horizontal: 10,
+                                              vertical: 6,
                                             ),
-                                            minimumSize: const Size(0, 30),
+                                            minimumSize: const Size(0, 34),
                                             tapTargetSize: MaterialTapTargetSize
                                                 .shrinkWrap,
                                             textStyle: const TextStyle(
-                                              fontSize: 12,
+                                              fontSize: 11,
                                             ),
                                           ),
-                                          child: const Text('Clear pin'),
                                         ),
-                                    ],
+                                        if (latitude != null &&
+                                            longitude != null)
+                                          TextButton(
+                                            onPressed: () => setDialogState(() {
+                                              latitude = null;
+                                              longitude = null;
+                                            }),
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 4,
+                                                  ),
+                                              minimumSize: const Size(0, 30),
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              textStyle: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            child: const Text('Clear pin'),
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      latitude == null || longitude == null
-                                          ? 'Map pin is optional.'
-                                          : 'Pinned at ${latitude!.toStringAsFixed(5)}, '
-                                                '${longitude!.toStringAsFixed(5)}',
-                                      style: const TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        latitude == null || longitude == null
+                                            ? 'Map pin is optional.'
+                                            : 'Pinned at ${latitude!.toStringAsFixed(5)}, '
+                                                  '${longitude!.toStringAsFixed(5)}',
+                                        style: const TextStyle(
+                                          color: _addMuted,
+                                          fontSize: 11,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                TextFormField(
-                                  controller: visitUrl,
-                                  keyboardType: TextInputType.url,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Visit link (optional)',
-                                    hintText: 'https://example.com',
-                                    helperText:
-                                        'Customers open this link from Visit.',
-                                  ),
-                                  validator: (value) {
-                                    final text = value?.trim() ?? '';
-                                    if (text.isEmpty) return null;
-                                    final uri = Uri.tryParse(text);
-                                    if (uri == null ||
-                                        !uri.hasScheme ||
-                                        (uri.scheme != 'http' &&
-                                            uri.scheme != 'https') ||
-                                        uri.host.isEmpty) {
-                                      return 'Enter a valid http:// or https:// link';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                if (type != 'Sports')
                                   TextFormField(
-                                    controller: price,
-                                    enabled:
-                                        type == 'Event' || ratePeriods.isEmpty,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    decoration: InputDecoration(
-                                      labelText: type == 'Event'
-                                          ? 'Fee per event booking'
-                                          : 'Session price',
-                                      prefixText: '₱ ',
-                                      hintText: type == 'Event'
-                                          ? '25000 (one complete event)'
-                                          : '500 (per session)',
+                                    controller: visitUrl,
+                                    keyboardType: TextInputType.url,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Visit link (optional)',
+                                      hintText: 'https://example.com',
+                                      helperText: 'Customers open this link from Visit.',
                                     ),
                                     validator: (value) {
-                                      if (type != 'Event' &&
-                                          ratePeriods.isNotEmpty) {
-                                        return null;
+                                      final text = value?.trim() ?? '';
+                                      if (text.isEmpty) return null;
+                                      final uri = Uri.tryParse(text);
+                                      if (uri == null ||
+                                          !uri.hasScheme ||
+                                          (uri.scheme != 'http' &&
+                                              uri.scheme != 'https') ||
+                                          uri.host.isEmpty) {
+                                        return 'Enter a valid http:// or https:// link';
                                       }
-                                      final amount = double.tryParse(
-                                        value?.trim() ?? '',
-                                      );
-                                      return amount == null || amount <= 0
-                                          ? type == 'Event'
-                                                ? 'Enter an event fee greater than ₱0'
-                                                : 'Enter a price greater than 0'
-                                          : null;
+                                      return null;
                                     },
                                   ),
-                                if (type == 'Fitness & Wellness') ...[
-                                  const SizedBox(height: 8),
-                                  _sectionLabel('OPTIONAL RATE PERIODS'),
-                                  const Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      'Set different hourly prices for specific time ranges. '
-                                      'The base price is disabled while these are active.',
-                                      style: TextStyle(
-                                        color: _addMuted,
-                                        fontSize: 11,
+                                  if (type == 'Event')
+                                    TextFormField(
+                                      controller: price,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            'Fee per event booking (required)',
+                                        prefixText: '₱ ',
+                                        hintText: '25000 (one complete event)',
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  for (
-                                    var index = 0;
-                                    index < ratePeriods.length;
-                                    index++
-                                  )
-                                    _ratePeriodRow(
-                                      context: context,
-                                      period: ratePeriods[index],
-                                      onStartChanged: (value) => setDialogState(
-                                        () => ratePeriods[index].start = value,
-                                      ),
-                                      onEndChanged: (value) => setDialogState(
-                                        () => ratePeriods[index].end = value,
-                                      ),
-                                      onRemove: () {
-                                        final period = ratePeriods.removeAt(
-                                          index,
+                                      validator: (value) {
+                                        final amount = double.tryParse(
+                                          value?.trim() ?? '',
                                         );
-                                        period.dispose();
-                                        setDialogState(() {});
+                                        return amount == null || amount <= 0
+                                            ? 'Enter an event fee greater than ₱0'
+                                            : null;
                                       },
                                     ),
                                   Align(
                                     alignment: Alignment.centerLeft,
-                                    child: TextButton.icon(
-                                      onPressed: () {
-                                        setDialogState(
-                                          () => ratePeriods.add(_RatePeriod()),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.add),
-                                      label: const Text('Add rate period'),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_month_rounded,
+                                          color: _addNavy,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Availability / booking schedule',
+                                            style: TextStyle(
+                                              color: _addMuted,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.calendar_month_rounded,
-                                        color: _addNavy,
-                                        size: 18,
+                                  const SizedBox(height: 8),
+                                  const Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Available days (required · choose at least one)',
+                                      style: TextStyle(
+                                        color: _addMuted,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Availability / booking schedule',
-                                        style: TextStyle(
-                                          color: _addMuted,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 4,
-                                    children: [
-                                      for (final day in _weekdays)
-                                        FilterChip(
-                                          label: Text(
-                                            day,
-                                            style: TextStyle(
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        for (final day in _weekdays)
+                                          FilterChip(
+                                            label: Text(
+                                              day,
+                                              style: TextStyle(
+                                                color:
+                                                    availableDays.contains(day)
+                                                    ? _addOrange
+                                                    : _addInk,
+                                                fontWeight:
+                                                    availableDays.contains(day)
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                              ),
+                                            ),
+                                            selected: availableDays.contains(
+                                              day,
+                                            ),
+                                            showCheckmark: false,
+                                            selectedColor: _addSoftOrange,
+                                            backgroundColor: Colors.white,
+                                            shape: const StadiumBorder(),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            checkmarkColor: _addOrange,
+                                            side: BorderSide(
                                               color: availableDays.contains(day)
                                                   ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  availableDays.contains(day)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
+                                                  : _addLine,
                                             ),
+                                            onSelected: (selected) {
+                                              setDialogState(() {
+                                                if (selected) {
+                                                  availableDays.add(day);
+                                                } else {
+                                                  availableDays.remove(day);
+                                                }
+                                              });
+                                            },
                                           ),
-                                          selected: availableDays.contains(day),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: availableDays.contains(day)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) {
-                                            setDialogState(() {
-                                              if (selected) {
-                                                availableDays.add(day);
-                                              } else {
-                                                availableDays.remove(day);
-                                              }
-                                            });
-                                          },
-                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _sectionLabel('FACILITY DETAILS'),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: facility,
+                                    decoration: InputDecoration(
+                                      labelText: type == 'Sports'
+                                          ? 'Court / field type'
+                                          : type == 'Event'
+                                          ? 'Event space type'
+                                          : 'Studio / wellness space type',
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'Indoor',
+                                        child: Text('Indoor'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Outdoor',
+                                        child: Text('Outdoor'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Covered',
+                                        child: Text('Covered'),
+                                      ),
                                     ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        setDialogState(() => facility = value);
+                                      }
+                                    },
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                _sectionLabel('FACILITY DETAILS'),
-                                DropdownButtonFormField<String>(
-                                  initialValue: facility,
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Sports'
-                                        ? 'Court / field type'
-                                        : type == 'Event'
-                                        ? 'Event space type'
-                                        : 'Studio / wellness space type',
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: _sectionLabel(
+                                      'AMENITIES (OPTIONAL)',
+                                    ),
                                   ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'Indoor',
-                                      child: Text('Indoor'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Outdoor',
-                                      child: Text('Outdoor'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Covered',
-                                      child: Text('Covered'),
-                                    ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() => facility = value);
-                                    }
-                                  },
-                                ),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: _sectionLabel('Amenities'),
-                                ),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 2,
-                                    children: [
-                                      for (final amenity in amenityOptions)
-                                        FilterChip(
-                                          label: Text(
-                                            amenity,
-                                            style: TextStyle(
-                                              fontSize: 11,
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                      spacing: 6,
+                                      runSpacing: 2,
+                                      children: [
+                                        for (final amenity in amenityOptions)
+                                          FilterChip(
+                                            label: Text(
+                                              amenity,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    amenities.contains(amenity)
+                                                    ? _addOrange
+                                                    : _addInk,
+                                                fontWeight:
+                                                    amenities.contains(amenity)
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                              ),
+                                            ),
+                                            selected: amenities.contains(
+                                              amenity,
+                                            ),
+                                            showCheckmark: false,
+                                            selectedColor: _addSoftOrange,
+                                            backgroundColor: Colors.white,
+                                            shape: const StadiumBorder(),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            checkmarkColor: _addOrange,
+                                            side: BorderSide(
                                               color: amenities.contains(amenity)
                                                   ? _addOrange
-                                                  : _addInk,
-                                              fontWeight:
-                                                  amenities.contains(amenity)
-                                                  ? FontWeight.w800
-                                                  : FontWeight.w600,
+                                                  : _addLine,
                                             ),
-                                          ),
-                                          selected: amenities.contains(amenity),
-                                          showCheckmark: false,
-                                          selectedColor: _addSoftOrange,
-                                          backgroundColor: Colors.white,
-                                          shape: const StadiumBorder(),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          checkmarkColor: _addOrange,
-                                          side: BorderSide(
-                                            color: amenities.contains(amenity)
-                                                ? _addOrange
-                                                : _addLine,
-                                          ),
-                                          onSelected: (selected) {
-                                            setDialogState(() {
-                                              if (selected) {
-                                                amenities.add(amenity);
-                                              } else {
-                                                amenities.remove(amenity);
-                                                if (amenity == 'Other') {
-                                                  amenityOther.clear();
+                                            onSelected: (selected) {
+                                              setDialogState(() {
+                                                if (selected) {
+                                                  amenities.add(amenity);
+                                                } else {
+                                                  amenities.remove(amenity);
+                                                  if (amenity == 'Other') {
+                                                    amenityOther.clear();
+                                                  }
                                                 }
-                                              }
-                                            });
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                if (amenities.contains('Other'))
-                                  TextField(
-                                    controller: amenityOther,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Other amenity',
-                                      hintText: 'Example: Water station',
+                                              });
+                                            },
+                                          ),
+                                      ],
                                     ),
                                   ),
-                                TextField(
-                                  controller: details,
-                                  maxLines: 2,
-                                  decoration: InputDecoration(
-                                    labelText: type == 'Sports'
-                                        ? 'Court or facility details (optional)'
-                                        : type == 'Event'
-                                        ? 'Additional event venue details (optional)'
-                                        : 'Classes, sessions & capacity',
-                                    hintText: type == 'Event'
-                                        ? 'Example: Banquet package • 250 guests'
-                                        : type == 'Fitness & Wellness'
-                                        ? 'Example: 12 classes today • 20 participants/session'
-                                        : 'Example: 2 courts • Equipment included',
+                                  if (amenities.contains('Other'))
+                                    TextField(
+                                      controller: amenityOther,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Other amenity',
+                                        hintText: 'Example: Water station',
+                                      ),
+                                    ),
+                                  TextField(
+                                    controller: details,
+                                    maxLines: 2,
+                                    decoration: InputDecoration(
+                                      labelText: type == 'Sports'
+                                          ? 'Court or facility details (optional)'
+                                          : type == 'Event'
+                                          ? 'Additional event venue details (optional)'
+                                          : 'Classes, sessions & capacity',
+                                      hintText: type == 'Event'
+                                          ? 'Example: Banquet package • 250 guests'
+                                          : type == 'Fitness & Wellness'
+                                          ? 'Example: 12 classes today • 20 participants/session'
+                                          : 'Example: 2 courts • Equipment included',
+                                    ),
                                   ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: () async {
-                                    try {
-                                      final picked = await ImagePicker()
-                                          .pickMultiImage(
-                                            maxWidth: 700,
-                                            maxHeight: 500,
-                                            imageQuality: 50,
+                                  TextButton.icon(
+                                    onPressed: () async {
+                                      try {
+                                        final picked = await ImagePicker()
+                                            .pickMultiImage(
+                                              maxWidth: 700,
+                                              maxHeight: 500,
+                                              imageQuality: 50,
+                                            );
+                                        if (picked.isEmpty) return;
+                                        final selected = <String>[];
+                                        for (final file in picked.take(3)) {
+                                          selected.add(
+                                            _dataUri(await file.readAsBytes()),
                                           );
-                                      if (picked.isEmpty) return;
-                                      final selected = <String>[];
-                                      for (final file in picked.take(3)) {
-                                        selected.add(
-                                          _dataUri(await file.readAsBytes()),
-                                        );
+                                        }
+                                        if (panelOpen && context.mounted) {
+                                          setDialogState(
+                                            () => images
+                                              ..clear()
+                                              ..addAll(selected),
+                                          );
+                                        }
+                                      } on Exception catch (error) {
+                                        if (panelOpen && context.mounted) {
+                                          setDialogState(
+                                            () => validationMessage =
+                                                'Could not load the selected images: $error',
+                                          );
+                                        }
                                       }
-                                      if (panelOpen && context.mounted) {
-                                        setDialogState(
-                                          () => images
-                                            ..clear()
-                                            ..addAll(selected),
-                                        );
-                                      }
-                                    } on Exception catch (error) {
-                                      if (panelOpen && context.mounted) {
-                                        setDialogState(
-                                          () => validationMessage =
-                                              'Could not load the selected images: $error',
-                                        );
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.add_a_photo_outlined),
-                                  label: Text(
-                                    images.isEmpty
-                                        ? 'Add images'
-                                        : '${images.length} images selected',
+                                    },
+                                    icon: const Icon(
+                                      Icons.add_a_photo_outlined,
+                                    ),
+                                    label: Text(
+                                      images.isEmpty
+                                          ? 'Add images'
+                                          : '${images.length} images selected',
+                                    ),
                                   ),
-                                ),
-                                if (images.isNotEmpty)
-                                  SizedBox(
-                                    height: 72,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        for (
-                                          var index = 0;
-                                          index < images.length;
-                                          index++
-                                        ) ...[
-                                          Stack(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image(
-                                                  image: _imageProvider(
-                                                    images[index],
-                                                  )!,
-                                                  width: 72,
-                                                  height: 72,
-                                                  fit: BoxFit.cover,
-                                                ),
-                                              ),
-                                              Positioned(
-                                                left: 4,
-                                                bottom: 4,
-                                                child: DecoratedBox(
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black54,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
+                                  if (images.isNotEmpty)
+                                    SizedBox(
+                                      height: 72,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (
+                                            var index = 0;
+                                            index < images.length;
+                                            index++
+                                          ) ...[
+                                            Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  child: Image(
+                                                    image: _imageProvider(
+                                                      images[index],
+                                                    )!,
+                                                    width: 72,
+                                                    height: 72,
+                                                    fit: BoxFit.cover,
                                                   ),
-                                                  child: Padding(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 5,
-                                                          vertical: 2,
+                                                ),
+                                                Positioned(
+                                                  left: 4,
+                                                  bottom: 4,
+                                                  child: DecoratedBox(
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black54,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 5,
+                                                            vertical: 2,
+                                                          ),
+                                                      child: Text(
+                                                        '${index + 1} of ${images.length}',
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.w700,
                                                         ),
-                                                    child: Text(
-                                                      '${index + 1} of ${images.length}',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.w700,
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                          if (index < images.length - 1)
-                                            const SizedBox(width: 8),
+                                              ],
+                                            ),
+                                            if (index < images.length - 1)
+                                              const SizedBox(width: 8),
+                                          ],
                                         ],
-                                      ],
+                                      ),
                                     ),
+                                  _businessReviewCard(
+                                    name: name.text.trim(),
+                                    type: type,
+                                    category: type == 'Sports'
+                                        ? sportSlots
+                                              .map(
+                                                (sport) => sport.sportType.text,
+                                              )
+                                              .where(
+                                                (value) => value.isNotEmpty,
+                                              )
+                                              .join(', ')
+                                        : type == 'Fitness & Wellness'
+                                        ? fitnessCategories
+                                              .map((item) => item.category.text)
+                                              .where(
+                                                (value) => value.isNotEmpty,
+                                              )
+                                              .join(', ')
+                                        : category == 'Other'
+                                        ? categoryOther.text.trim()
+                                        : category,
+                                    address: address.text.trim(),
+                                    hours: _formatHours(
+                                      openingTime,
+                                      closingTime,
+                                    ),
+                                    availableDays: _weekdays
+                                        .where(availableDays.contains)
+                                        .join(', '),
+                                    imageCount: images.length,
+                                    complete: scheduleComplete(),
                                   ),
+                                ],
                               ],
                             ),
                           ),
@@ -2025,364 +2515,530 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         ),
                         child: const Text('Cancel'),
                       ),
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _addNavy,
-                          minimumSize: const Size(136, 40),
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      if (setupStep > 0)
+                        TextButton(
+                          onPressed: () => setDialogState(() {
+                            validationMessage = null;
+                            setupStep--;
+                          }),
+                          child: const Text('Back'),
                         ),
-                        onPressed: () async {
-                          setDialogState(() => validationMessage = null);
-                          if (!(formKey.currentState?.validate() ?? false)) {
-                            return;
-                          }
-                          if (openingTime == null || closingTime == null) {
-                            setDialogState(
-                              () => validationMessage =
-                                  'Select both opening and closing times.',
-                            );
-                            return;
-                          }
-                          if (type == 'Sports') {
-                            final capacity = int.tryParse(
-                              totalSlots.text.trim(),
-                            );
-                            final names = sportSlots
-                                .map(
-                                  (sport) =>
-                                      sport.sportType.text.trim().toLowerCase(),
-                                )
-                                .toList();
-                            final invalidSportConfig =
-                                capacity == null ||
-                                capacity < 1 ||
-                                capacity > 100 ||
-                                sportSlots.isEmpty ||
-                                names.any((name) => name.isEmpty) ||
-                                names.toSet().length != names.length ||
-                                sportSlots.any((sport) {
-                                  final rate = double.tryParse(
-                                    sport.pricePerHour.text.trim(),
-                                  );
-                                  return rate == null ||
-                                      rate <= 0 ||
-                                      sport.slotCount < 1 ||
-                                      sport.slotCount > capacity ||
-                                      ((int.tryParse(
-                                                sport.includedPlayers.text
-                                                    .trim(),
-                                              ) ??
-                                              0) >
-                                          30) ||
-                                      ((sport.additionalPlayerFee.text
-                                              .trim()
-                                              .isNotEmpty) &&
-                                          (int.tryParse(
-                                                    sport.includedPlayers.text
-                                                        .trim(),
-                                                  ) ??
-                                                  0) <
-                                              1) ||
-                                      ((double.tryParse(
-                                                sport.additionalPlayerFee.text
-                                                    .trim(),
-                                              ) ??
-                                              0) >
-                                          99999999.99);
-                                });
-                            if (invalidSportConfig) {
-                              setDialogState(
-                                () => validationMessage = 'Check each sport name and rate, and make sure its slot count fits the studio capacity.',
-                              );
-                              return;
-                            }
-                          }
-                          if (type == 'Fitness & Wellness') {
-                            for (final period in ratePeriods) {
-                              final amount = double.tryParse(
-                                period.price.text.trim(),
-                              );
-                              if (period.start == null ||
-                                  period.end == null ||
-                                  amount == null ||
-                                  amount <= 0) {
+                      if (setupStep < 2)
+                        FilledButton(
+                          key: ValueKey('business-setup-next-$setupStep'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _addNavy,
+                            minimumSize: const Size(112, 40),
+                            shape: const StadiumBorder(),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          onPressed: () {
+                            setDialogState(() => validationMessage = null);
+                            if (setupStep == 0) {
+                              if (!(formKey.currentState?.validate() ??
+                                  false)) {
+                                return;
+                              }
+                              if (!basicsComplete()) {
                                 setDialogState(
-                                  () => validationMessage =
-                                      'Complete each rate period with a start time, '
-                                      'end time, and a price greater than ₱0.',
+                                  () => validationMessage = 'Enter a venue name and complete any custom category.',
+                                );
+                                return;
+                              }
+                            } else {
+                              if (!(formKey.currentState?.validate() ??
+                                  false)) {
+                                return;
+                              }
+                              if (!bookingDetailsComplete()) {
+                                setDialogState(
+                                  () =>
+                                      validationMessage = bookingDetailsError(),
                                 );
                                 return;
                               }
                             }
-                          }
-                          if (availableDays.isEmpty) {
-                            setDialogState(
-                              () => validationMessage =
-                                  'Select at least one available day.',
-                            );
-                            return;
-                          }
-                          if (type == 'Event') {
-                            final minimum = int.tryParse(
-                              eventAttendanceMin.text.trim(),
-                            );
-                            final maximum = int.tryParse(
-                              eventAttendanceMax.text.trim(),
-                            );
-                            if (eventTypes.isEmpty) {
-                              setDialogState(
-                                () => validationMessage = 'Select at least one event type this venue can hold.',
-                              );
+                            setDialogState(() => setupStep++);
+                          },
+                          child: Text(setupStep == 0 ? 'Continue' : 'Review'),
+                        ),
+                      if (setupStep == 2)
+                        FilledButton(
+                          key: const ValueKey('business-setup-publish'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _addNavy,
+                            minimumSize: const Size(136, 40),
+                            shape: const StadiumBorder(),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          onPressed: () async {
+                            setDialogState(() => validationMessage = null);
+                            if (name.text.trim().isEmpty) {
+                              setDialogState(() {
+                                validationMessage =
+                                    'Enter a venue name before publishing.';
+                                setupStep = 0;
+                              });
                               return;
                             }
-                            if (eventTypes.contains('Other') &&
-                                eventTypeOther.text.trim().isEmpty) {
-                              setDialogState(
-                                () => validationMessage =
-                                    'Enter the custom event type.',
-                              );
+                            if (!(formKey.currentState?.validate() ?? false)) {
                               return;
                             }
-                            if (minimum == null ||
-                                maximum == null ||
-                                minimum < 1 ||
-                                maximum < minimum) {
+                            if (openingTime == null || closingTime == null) {
                               setDialogState(
                                 () => validationMessage =
-                                    'Enter a valid estimated attendance range.',
+                                    'Select both opening and closing times.',
                               );
                               return;
                             }
-                          }
-                          if (category == 'Other' &&
-                              categoryOther.text.trim().isEmpty) {
-                            setDialogState(
-                              () => validationMessage =
-                                  'Enter the custom category.',
-                            );
-                            return;
-                          }
-                          setDialogState(() => _saving = true);
-                          try {
-                            final selectedEventTypes = eventTypes
-                                .map(
-                                  (value) => value == 'Other'
-                                      ? eventTypeOther.text.trim()
-                                      : value,
-                                )
-                                .where((value) => value.isNotEmpty)
-                                .toList();
-                            final selectedCategory = category == 'Other'
-                                ? categoryOther.text.trim()
-                                : category;
-                            final selectedAmenities = amenities
-                                .map(
-                                  (value) => value == 'Other'
-                                      ? amenityOther.text.trim()
-                                      : value,
-                                )
-                                .where((value) => value.isNotEmpty)
-                                .toList();
-                            if (amenities.contains('Other') &&
-                                amenityOther.text.trim().isEmpty) {
-                              setDialogState(
-                                () => validationMessage =
-                                    'Enter the other amenity before saving.',
+                            if (type == 'Sports') {
+                              final capacity = int.tryParse(
+                                totalSlots.text.trim(),
                               );
-                              return;
-                            }
-                            final submittedDetails = type == 'Event'
-                                ? [
-                                    if (eventTypes.isNotEmpty)
-                                      'Event types: ${selectedEventTypes.join(', ')}',
-                                    if (eventAttendanceMin.text
-                                            .trim()
-                                            .isNotEmpty ||
-                                        eventAttendanceMax.text
-                                            .trim()
-                                            .isNotEmpty)
-                                      'Estimated attendance: ${eventAttendanceMin.text.trim().isEmpty ? '?' : eventAttendanceMin.text.trim()} - ${eventAttendanceMax.text.trim().isEmpty ? '?' : eventAttendanceMax.text.trim()} guests',
-                                    if (accessibilityNeeds.isNotEmpty)
-                                      'Accessibility needs: ${accessibilityNeeds.join(', ')}',
-                                    if (parkingNeeds.isNotEmpty)
-                                      'Parking needs: ${parkingNeeds.join(', ')}',
-                                    if (securityNeeds.isNotEmpty)
-                                      'Security needs: ${securityNeeds.join(', ')}',
-                                    if (details.text.trim().isNotEmpty)
-                                      details.text.trim(),
-                                  ].join('\n')
-                                : details.text.trim();
-                            final session = await AppSession.load();
-                            final token = session.apiToken;
-                            if (token == null || token.isEmpty) {
-                              throw const AuthApiException(
-                                'Your session has expired.',
-                                401,
-                              );
-                            }
-                            final payload = <String, dynamic>{
-                              'businessType': type,
-                              'name': name.text.trim(),
-                              'category': selectedCategory,
-                              'address': address.text.trim(),
-                              'latitude': latitude,
-                              'longitude': longitude,
-                              'visitUrl': visitUrl.text.trim(),
-                              'pricePerHour': type == 'Event'
-                                  ? double.parse(price.text.trim())
-                                  : type == 'Sports'
-                                  ? double.parse(
-                                      sportSlots.first.pricePerHour.text.trim(),
-                                    )
-                                  : ratePeriods.isEmpty
-                                  ? double.parse(price.text.trim())
-                                  : 0,
-                              'slotCount': type == 'Sports'
-                                  ? int.parse(totalSlots.text.trim())
-                                  : 1,
-                              'sportsSlots': type == 'Sports'
-                                  ? [
-                                      for (final sport in sportSlots)
-                                        {
-                                          'sportType': sport.sportType.text
-                                              .trim(),
-                                          'pricePerHour': double.parse(
-                                            sport.pricePerHour.text.trim(),
-                                          ),
-                                          'includedPlayers':
-                                              int.tryParse(
-                                                sport.includedPlayers.text
-                                                    .trim(),
-                                              ) ??
-                                              0,
-                                          'additionalPlayerFee':
-                                              double.tryParse(
-                                                sport.additionalPlayerFee.text
-                                                    .trim(),
-                                              ) ??
-                                              0,
-                                          'fullStudio': sport.fullStudio,
-                                          'slotCount': sport.fullStudio
-                                              ? int.parse(
-                                                  totalSlots.text.trim(),
-                                                )
-                                              : sport.slotCount,
-                                        },
-                                    ]
-                                  : const [],
-                              'eventFee': type == 'Event'
-                                  ? double.parse(price.text.trim())
-                                  : 0,
-                              'includedPlayers': type == 'Sports'
-                                  ? int.tryParse(
-                                          sportSlots.first.includedPlayers.text
-                                              .trim(),
-                                        ) ??
-                                        0
-                                  : 0,
-                              'additionalPlayerFee': type == 'Sports'
-                                  ? double.tryParse(
-                                          sportSlots
-                                              .first
-                                              .additionalPlayerFee
-                                              .text
-                                              .trim(),
-                                        ) ??
-                                        0
-                                  : 0,
-                              'ratePeriods': type == 'Fitness & Wellness'
-                                  ? [
-                                      for (final period in ratePeriods)
-                                        {
-                                          'start': _formatTime(period.start!),
-                                          'end': _formatTime(period.end!),
-                                          'pricePerHour': double.parse(
-                                            period.price.text.trim(),
-                                          ),
-                                        },
-                                    ]
-                                  : const [],
-                              'hours': _formatHours(openingTime, closingTime),
-                              'availability': _weekdays
-                                  .where(availableDays.contains)
-                                  .join(', '),
-                              'tags': selectedAmenities,
-                              'facilityType': facility,
-                              'details': submittedDetails,
-                              'eventTypes': type == 'Event'
-                                  ? selectedEventTypes
-                                  : const [],
-                              'attendanceMin': type == 'Event'
-                                  ? int.tryParse(eventAttendanceMin.text.trim())
-                                  : null,
-                              'attendanceMax': type == 'Event'
-                                  ? int.tryParse(eventAttendanceMax.text.trim())
-                                  : null,
-                              'accessibilityNeeds': type == 'Event'
-                                  ? accessibilityNeeds
-                                  : const [],
-                              'parkingNeeds': type == 'Event'
-                                  ? parkingNeeds
-                                  : const [],
-                              'securityNeeds': type == 'Event'
-                                  ? securityNeeds
-                                  : const [],
-                              'imageUrl': images.isEmpty
-                                  ? null
-                                  : jsonEncode(images),
-                              'imageUrls': images,
-                            };
-                            if (editing) {
-                              await _api.updateMerchantBusiness(
-                                token: token,
-                                id: _businessId(editingBusiness)!,
-                                business: payload,
-                              );
-                            } else {
-                              await _api.createMerchantBusiness(
-                                token: token,
-                                business: payload,
-                              );
-                              await widget.onBusinessesChanged();
-                              await _loadNewsPosts();
-                              if (mounted) {
-                                setState(
-                                  () => _selectedAddSection = 'News cards',
+                              final names = sportSlots
+                                  .map(
+                                    (sport) => sport.sportType.text
+                                        .trim()
+                                        .toLowerCase(),
+                                  )
+                                  .toList();
+                              final invalidSportConfig =
+                                  capacity == null ||
+                                  capacity < 1 ||
+                                  capacity > 100 ||
+                                  sportSlots.isEmpty ||
+                                  names.any((name) => name.isEmpty) ||
+                                  names.toSet().length != names.length ||
+                                  sportSlots.any((sport) {
+                                    final rate = double.tryParse(
+                                      sport.pricePerHour.text.trim(),
+                                    );
+                                    final includedCount = int.tryParse(
+                                      sport.includedPlayers.text.trim(),
+                                    );
+                                    final extraFee = double.tryParse(
+                                      sport.additionalPlayerFee.text.trim(),
+                                    );
+                                    return rate == null ||
+                                        rate <= 0 ||
+                                        sport.slotCount < 1 ||
+                                        sport.slotCount > capacity ||
+                                        (sport.includedPlayers.text
+                                                .trim()
+                                                .isNotEmpty &&
+                                            (includedCount == null ||
+                                                includedCount < 1 ||
+                                                includedCount > 1000)) ||
+                                        (sport.additionalPlayerFee.text
+                                                .trim()
+                                                .isNotEmpty &&
+                                            (extraFee == null ||
+                                                !extraFee.isFinite ||
+                                                extraFee <= 0 ||
+                                                extraFee > 99999999.99 ||
+                                                includedCount == null ||
+                                                includedCount < 1));
+                                  });
+                              if (invalidSportConfig) {
+                                setDialogState(
+                                  () => validationMessage = 'Check each sport name and rate, and make sure its slot count fits the studio capacity.',
                                 );
+                                return;
                               }
                             }
-                            if (dialogContext.mounted) {
-                              submitted = true;
-                              await Navigator.of(dialogContext).maybePop(true);
+                            if (type == 'Fitness & Wellness') {
+                              final names = fitnessCategories
+                                  .map(
+                                    (item) =>
+                                        item.category.text.trim().toLowerCase(),
+                                  )
+                                  .toList();
+                              final invalidCategory =
+                                  fitnessCategories.isEmpty ||
+                                  names.any((name) => name.isEmpty) ||
+                                  names.toSet().length != names.length ||
+                                  fitnessCategories.any((item) {
+                                    final prices =
+                                        [
+                                          item.sessionPrice.text,
+                                          item.monthlyPrice.text,
+                                          item.yearlyPrice.text,
+                                        ].map(
+                                          (value) =>
+                                              double.tryParse(value.trim()),
+                                        );
+                                    if (prices.any(
+                                      (value) =>
+                                          value == null ||
+                                          !value.isFinite ||
+                                          value <= 0 ||
+                                          value > 99999999.99,
+                                    )) {
+                                      return true;
+                                    }
+                                    final discountValue = item
+                                        .yearlyDiscountValue
+                                        .text
+                                        .trim();
+                                    if (item.yearlyDiscountType == 'none') {
+                                      return discountValue.isNotEmpty;
+                                    }
+                                    final discount = double.tryParse(
+                                      discountValue,
+                                    );
+                                    if (discount == null ||
+                                        !discount.isFinite ||
+                                        discount <= 0) {
+                                      return true;
+                                    }
+                                    return item.yearlyDiscountType ==
+                                            'freeMonths'
+                                        ? discount > 11 ||
+                                              discount !=
+                                                  discount.roundToDouble()
+                                        : discount > 100;
+                                  });
+                              if (invalidCategory) {
+                                setDialogState(
+                                  () => validationMessage = 'Choose at least one unique fitness category and enter valid session, monthly, and yearly prices. Check yearly discounts too.',
+                                );
+                                return;
+                              }
+                              final coachNames = fitnessCoaches
+                                  .map(
+                                    (coach) =>
+                                        coach.name.text.trim().toLowerCase(),
+                                  )
+                                  .toList();
+                              final invalidCoach =
+                                  coachNames.any((name) => name.isEmpty) ||
+                                  fitnessCoaches.any((coach) {
+                                    final amount = double.tryParse(
+                                      coach.monthlyPrice.text.trim(),
+                                    );
+                                    return amount == null ||
+                                        !amount.isFinite ||
+                                        amount <= 0 ||
+                                        amount > 99999999.99 ||
+                                        (coach.profileImageUrl?.length ?? 0) >
+                                            400000;
+                                  });
+                              if (invalidCoach) {
+                                setDialogState(
+                                  () => validationMessage = 'Enter a coach name and a valid monthly price for each coach.',
+                                );
+                                return;
+                              }
                             }
-                          } on Exception catch (error) {
-                            if (dialogContext.mounted) {
+                            if (availableDays.isEmpty) {
                               setDialogState(
                                 () => validationMessage =
-                                    'Could not ${editing ? 'update' : 'add'} business: $error',
+                                    'Select at least one available day.',
                               );
+                              return;
                             }
-                          } finally {
-                            if (!submitted && dialogContext.mounted) {
-                              setDialogState(() => _saving = false);
+                            if (type == 'Event') {
+                              final minimum = int.tryParse(
+                                eventAttendanceMin.text.trim(),
+                              );
+                              final maximum = int.tryParse(
+                                eventAttendanceMax.text.trim(),
+                              );
+                              if (eventTypes.isEmpty) {
+                                setDialogState(
+                                  () => validationMessage = 'Select at least one event type this venue can hold.',
+                                );
+                                return;
+                              }
+                              if (eventTypes.contains('Other') &&
+                                  eventTypeOther.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => validationMessage =
+                                      'Enter the custom event type.',
+                                );
+                                return;
+                              }
+                              if (minimum == null ||
+                                  maximum == null ||
+                                  minimum < 1 ||
+                                  maximum < minimum) {
+                                setDialogState(
+                                  () => validationMessage = 'Enter a valid estimated attendance range.',
+                                );
+                                return;
+                              }
                             }
-                          }
-                        },
-                        child: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                            if (type != 'Sports' &&
+                                type != 'Fitness & Wellness' &&
+                                category == 'Other' &&
+                                categoryOther.text.trim().isEmpty) {
+                              setDialogState(
+                                () => validationMessage =
+                                    'Enter the custom category.',
+                              );
+                              return;
+                            }
+                            setDialogState(() => _saving = true);
+                            try {
+                              final selectedEventTypes = eventTypes
+                                  .map(
+                                    (value) => value == 'Other'
+                                        ? eventTypeOther.text.trim()
+                                        : value,
+                                  )
+                                  .where((value) => value.isNotEmpty)
+                                  .toList();
+                              final selectedCategory = type == 'Sports'
+                                  ? sportSlots.first.sportType.text.trim()
+                                  : type == 'Fitness & Wellness'
+                                  ? fitnessCategories.first.category.text.trim()
+                                  : category == 'Other'
+                                  ? categoryOther.text.trim()
+                                  : category;
+                              final selectedAmenities = amenities
+                                  .map(
+                                    (value) => value == 'Other'
+                                        ? amenityOther.text.trim()
+                                        : value,
+                                  )
+                                  .where((value) => value.isNotEmpty)
+                                  .toList();
+                              if (amenities.contains('Other') &&
+                                  amenityOther.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => validationMessage =
+                                      'Enter the other amenity before saving.',
+                                );
+                                return;
+                              }
+                              final submittedDetails = type == 'Event'
+                                  ? [
+                                      if (eventTypes.isNotEmpty)
+                                        'Event types: ${selectedEventTypes.join(', ')}',
+                                      if (eventAttendanceMin.text
+                                              .trim()
+                                              .isNotEmpty ||
+                                          eventAttendanceMax.text
+                                              .trim()
+                                              .isNotEmpty)
+                                        'Estimated attendance: ${eventAttendanceMin.text.trim().isEmpty ? '?' : eventAttendanceMin.text.trim()} - ${eventAttendanceMax.text.trim().isEmpty ? '?' : eventAttendanceMax.text.trim()} guests',
+                                      if (accessibilityNeeds.isNotEmpty)
+                                        'Accessibility needs: ${accessibilityNeeds.join(', ')}',
+                                      if (parkingNeeds.isNotEmpty)
+                                        'Parking needs: ${parkingNeeds.join(', ')}',
+                                      if (securityNeeds.isNotEmpty)
+                                        'Security needs: ${securityNeeds.join(', ')}',
+                                      if (details.text.trim().isNotEmpty)
+                                        details.text.trim(),
+                                    ].join('\n')
+                                  : details.text.trim();
+                              final session = await AppSession.load();
+                              final token = session.apiToken;
+                              if (token == null || token.isEmpty) {
+                                throw const AuthApiException(
+                                  'Your session has expired.',
+                                  401,
+                                );
+                              }
+                              final payload = <String, dynamic>{
+                                'businessType': type,
+                                'name': name.text.trim(),
+                                'category': selectedCategory,
+                                'address': address.text.trim(),
+                                'latitude': latitude,
+                                'longitude': longitude,
+                                'visitUrl': visitUrl.text.trim(),
+                                'pricePerHour': type == 'Event'
+                                    ? double.parse(price.text.trim())
+                                    : type == 'Sports'
+                                    ? double.parse(
+                                        sportSlots.first.pricePerHour.text
+                                            .trim(),
+                                      )
+                                    : type == 'Fitness & Wellness'
+                                    ? double.parse(
+                                        fitnessCategories
+                                            .first
+                                            .sessionPrice
+                                            .text
+                                            .trim(),
+                                      )
+                                    : double.parse(price.text.trim()),
+                                'slotCount': type == 'Sports'
+                                    ? int.parse(totalSlots.text.trim())
+                                    : 1,
+                                'sportsSlots': type == 'Sports'
+                                    ? [
+                                        for (final sport in sportSlots)
+                                          {
+                                            'sportType': sport.sportType.text
+                                                .trim(),
+                                            'pricePerHour': double.parse(
+                                              sport.pricePerHour.text.trim(),
+                                            ),
+                                            'fullStudio': sport.fullStudio,
+                                            'slotCount': sport.fullStudio
+                                                ? int.parse(
+                                                    totalSlots.text.trim(),
+                                                  )
+                                                : sport.slotCount,
+                                            'includedPlayers':
+                                                int.tryParse(
+                                                  sport.includedPlayers.text
+                                                      .trim(),
+                                                ) ??
+                                                0,
+                                            'additionalPlayerFee':
+                                                double.tryParse(
+                                                  sport.additionalPlayerFee.text
+                                                      .trim(),
+                                                ) ??
+                                                0,
+                                          },
+                                      ]
+                                    : const [],
+                                'eventFee': type == 'Event'
+                                    ? double.parse(price.text.trim())
+                                    : 0,
+                                'includedPlayers': 0,
+                                'additionalPlayerFee': 0,
+                                'ratePeriods': const [],
+                                'fitnessCategories':
+                                    type == 'Fitness & Wellness'
+                                    ? [
+                                        for (final item in fitnessCategories)
+                                          {
+                                            'category': item.category.text
+                                                .trim(),
+                                            'sessionPrice': double.parse(
+                                              item.sessionPrice.text.trim(),
+                                            ),
+                                            'monthlyPrice': double.parse(
+                                              item.monthlyPrice.text.trim(),
+                                            ),
+                                            'yearlyPrice': double.parse(
+                                              item.yearlyPrice.text.trim(),
+                                            ),
+                                            'yearlyDiscountType':
+                                                item.yearlyDiscountType,
+                                            'yearlyDiscountValue':
+                                                item.yearlyDiscountType ==
+                                                    'none'
+                                                ? null
+                                                : double.parse(
+                                                    item
+                                                        .yearlyDiscountValue
+                                                        .text
+                                                        .trim(),
+                                                  ),
+                                          },
+                                      ]
+                                    : const [],
+                                'fitnessCoaches': type == 'Fitness & Wellness'
+                                    ? [
+                                        for (final coach in fitnessCoaches)
+                                          {
+                                            'name': coach.name.text.trim(),
+                                            'monthlyPrice': double.parse(
+                                              coach.monthlyPrice.text.trim(),
+                                            ),
+                                            'profileImageUrl':
+                                                coach.profileImageUrl,
+                                          },
+                                      ]
+                                    : const [],
+                                'hours': _formatHours(openingTime, closingTime),
+                                'availability': _weekdays
+                                    .where(availableDays.contains)
+                                    .join(', '),
+                                'tags': selectedAmenities,
+                                'facilityType': facility,
+                                'details': submittedDetails,
+                                'eventTypes': type == 'Event'
+                                    ? selectedEventTypes
+                                    : const [],
+                                'attendanceMin': type == 'Event'
+                                    ? int.tryParse(
+                                        eventAttendanceMin.text.trim(),
+                                      )
+                                    : null,
+                                'attendanceMax': type == 'Event'
+                                    ? int.tryParse(
+                                        eventAttendanceMax.text.trim(),
+                                      )
+                                    : null,
+                                'accessibilityNeeds': type == 'Event'
+                                    ? accessibilityNeeds
+                                    : const [],
+                                'parkingNeeds': type == 'Event'
+                                    ? parkingNeeds
+                                    : const [],
+                                'securityNeeds': type == 'Event'
+                                    ? securityNeeds
+                                    : const [],
+                                'imageUrl': images.isEmpty
+                                    ? null
+                                    : jsonEncode(images),
+                                'imageUrls': images,
+                              };
+                              if (editing) {
+                                await _api.updateMerchantBusiness(
+                                  token: token,
+                                  id: _businessId(editingBusiness)!,
+                                  business: payload,
+                                );
+                              } else {
+                                await _api.createMerchantBusiness(
+                                  token: token,
+                                  business: payload,
+                                );
+                                await widget.onBusinessesChanged();
+                                await _loadNewsPosts();
+                                if (mounted) {
+                                  setState(
+                                    () => _selectedAddSection = 'News cards',
+                                  );
+                                }
+                              }
+                              if (dialogContext.mounted) {
+                                submitted = true;
+                                await Navigator.of(dialogContext)
+                                    .maybePop(true);
+                              }
+                            } on Exception catch (error) {
+                              if (dialogContext.mounted) {
+                                setDialogState(
+                                  () => validationMessage =
+                                      'Could not ${editing ? 'update' : 'add'} business: $error',
+                                );
+                              }
+                            } finally {
+                              if (!submitted && dialogContext.mounted) {
+                                setDialogState(() => _saving = false);
+                              }
+                            }
+                          },
+                          child: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  editing
+                                      ? 'Save changes'
+                                      : 'Publish booking card',
                                 ),
-                              )
-                            : Text(editing ? 'Save changes' : 'Add business'),
-                      ),
+                        ),
                     ],
                   ),
                 ),
@@ -2429,11 +3085,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     accessibilityInput.dispose();
     parkingInput.dispose();
     securityInput.dispose();
-    for (final period in ratePeriods) {
-      period.dispose();
-    }
     for (final sport in sportSlots) {
       sport.dispose();
+    }
+    for (final item in fitnessCategories) {
+      item.dispose();
+    }
+    for (final coach in fitnessCoaches) {
+      coach.dispose();
     }
     if (added == true && mounted) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -2480,47 +3139,133 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     ),
   );
 
-  Widget _ratePeriodRow({
-    required BuildContext context,
-    required _RatePeriod period,
-    required ValueChanged<TimeOfDay> onStartChanged,
-    required ValueChanged<TimeOfDay> onEndChanged,
+  Widget _fitnessCategoryCard(
+    _FitnessCategoryInput category, {
+    required ValueChanged<String> onDiscountChanged,
+  }) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8FAFC),
+      border: Border.all(color: _addLine),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          category.category.text,
+          style: const TextStyle(color: _addNavy, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        for (final entry in <(String, TextEditingController)>[
+          ('Session price (required)', category.sessionPrice),
+          ('Monthly price (required)', category.monthlyPrice),
+          ('Yearly price (required)', category.yearlyPrice),
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextFormField(
+              controller: entry.$2,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: entry.$1,
+                prefixText: '₱ ',
+              ),
+            ),
+          ),
+        DropdownButtonFormField<String>(
+          isExpanded: true,
+          initialValue: category.yearlyDiscountType,
+          decoration: const InputDecoration(
+            labelText: 'Yearly offer (optional)',
+          ),
+          items: const [
+            DropdownMenuItem(value: 'none', child: Text('No discount')),
+            DropdownMenuItem(value: 'freeMonths', child: Text('Free months')),
+            DropdownMenuItem(
+              value: 'percentage',
+              child: Text('Percentage off'),
+            ),
+          ],
+          onChanged: (value) {
+            if (value != null) onDiscountChanged(value);
+          },
+        ),
+        if (category.yearlyDiscountType != 'none')
+          TextFormField(
+            controller: category.yearlyDiscountValue,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: category.yearlyDiscountType == 'freeMonths'
+                  ? 'Free months (1–11)'
+                  : 'Discount percentage (1–100%)',
+              suffixText: category.yearlyDiscountType == 'percentage'
+                  ? '%'
+                  : null,
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _fitnessCoachCard(
+    _FitnessCoachInput coach, {
+    required VoidCallback onPickImage,
     required VoidCallback onRemove,
-  }) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+  }) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8FAFC),
+      border: Border.all(color: _addLine),
+      borderRadius: BorderRadius.circular(12),
+    ),
     child: Column(
       children: [
         Row(
           children: [
-            Expanded(
-              child: _timePickerField(
-                context: context,
-                label: 'From',
-                value: period.start,
-                onChanged: onStartChanged,
+            GestureDetector(
+              onTap: onPickImage,
+              child: CircleAvatar(
+                radius: 26,
+                backgroundColor: _addSoftOrange,
+                backgroundImage: coach.profileImageUrl == null
+                    ? null
+                    : _safeImageProvider(coach.profileImageUrl!),
+                child: coach.profileImageUrl == null
+                    ? const Icon(
+                        Icons.add_a_photo_outlined,
+                        color: _addOrange,
+                        size: 19,
+                      )
+                    : null,
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _timePickerField(
-                context: context,
-                label: 'To',
-                value: period.end,
-                onChanged: onEndChanged,
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Coach profile photo (optional)',
+                style: TextStyle(color: _addMuted, fontSize: 11),
               ),
             ),
             IconButton(
-              tooltip: 'Remove rate period',
+              tooltip: 'Remove coach',
               onPressed: onRemove,
               icon: const Icon(Icons.delete_outline),
             ),
           ],
         ),
-        TextField(
-          controller: period.price,
+        TextFormField(
+          controller: coach.name,
+          decoration: const InputDecoration(labelText: 'Coach name (required)'),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: coach.monthlyPrice,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
-            labelText: 'Rate per hour',
+            labelText: 'Coach monthly price (required)',
             prefixText: '₱ ',
           ),
         ),
@@ -2607,6 +3352,139 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           letterSpacing: .6,
         ),
       ),
+    ),
+  );
+
+  Widget _setupStepLabel(
+    String label, {
+    required bool complete,
+    required bool current,
+  }) => Expanded(
+    child: Row(
+      children: [
+        Icon(
+          complete ? Icons.check_circle_rounded : Icons.circle_outlined,
+          size: 16,
+          color: complete
+              ? Colors.green.shade700
+              : current
+              ? _addOrange
+              : _addMuted,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: current ? _addNavy : _addMuted,
+              fontSize: 10,
+              fontWeight: current ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _businessReviewCard({
+    required String name,
+    required String type,
+    required String category,
+    required String address,
+    required String hours,
+    required String availableDays,
+    required int imageCount,
+    required bool complete,
+  }) => Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(top: 16),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: complete ? const Color(0xFFEAF7EE) : const Color(0xFFFFF8EF),
+      border: Border.all(
+        color: complete ? const Color(0xFFB8DEC2) : const Color(0xFFFFD8AF),
+      ),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              complete ? Icons.task_alt_rounded : Icons.rate_review_outlined,
+              size: 19,
+              color: complete ? Colors.green.shade700 : _addOrange,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                complete ? 'Ready to publish' : 'Finish required details',
+                style: const TextStyle(
+                  color: _addInk,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _reviewRow('Business type', type),
+        _reviewRow('Venue name', name.isEmpty ? 'Not entered' : name),
+        _reviewRow(
+          'Categories',
+          category.isEmpty ? 'Not configured' : category,
+        ),
+        _reviewRow('Address', address.isEmpty ? 'Not entered' : address),
+        _reviewRow('Hours', hours.isEmpty ? 'Not selected' : hours),
+        _reviewRow(
+          'Available',
+          availableDays.isEmpty ? 'Select at least one day' : availableDays,
+        ),
+        _reviewRow(
+          'Photos',
+          imageCount == 0 ? 'Optional · none added' : '$imageCount added',
+        ),
+        const SizedBox(height: 4),
+        Text(
+          complete
+              ? 'Check the information above, then publish your booking card.'
+              : 'Name, opening hours, at least one available day, and address are required. Photos and amenity notes are optional.',
+          style: const TextStyle(color: _addMuted, fontSize: 11, height: 1.35),
+        ),
+      ],
+    ),
+  );
+
+  Widget _reviewRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 82,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _addMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: _addInk,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     ),
   );
 
@@ -3200,18 +4078,6 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     final extraPlayerFee = extraPlayerFeeValue is num
         ? extraPlayerFeeValue.toDouble()
         : double.tryParse('$extraPlayerFeeValue') ?? 0;
-    dynamic rawSportsSlots =
-        business['sportsSlots'] ?? business['sports_slots_json'];
-    if (rawSportsSlots is String) {
-      try {
-        rawSportsSlots = jsonDecode(rawSportsSlots);
-      } on FormatException {
-        rawSportsSlots = null;
-      }
-    }
-    final configuredSports = rawSportsSlots is List
-        ? rawSportsSlots.whereType<Map>().toList()
-        : <Map>[];
     final ratePeriods = _businessRatePeriods(business);
     final details = business['details'] as String? ?? '';
     final priceText = _formatPrice(
@@ -3270,23 +4136,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   _detail(Icons.location_on_outlined, address),
                 if (facility.isNotEmpty)
                   _detail(Icons.business_outlined, 'Facility: $facility'),
-                if (type == 'Sports' &&
-                    configuredSports.isEmpty &&
-                    category.isNotEmpty)
+                if (type == 'Sports' && category.isNotEmpty)
                   _detail(Icons.sports_rounded, 'Sport: $category'),
-                if (type == 'Sports' && configuredSports.isNotEmpty)
-                  for (final sport in configuredSports)
-                    _detail(
-                      Icons.sports_rounded,
-                      '${sport['sportType']}: PHP '
-                      '${double.tryParse('${sport['pricePerHour']}')?.toStringAsFixed(2) ?? '0.00'} / hr · '
-                      '${sport['fullStudio'] == true ? 'whole court (1 slot)' : '${sport['slotCount']} slots'}'
-                      '${(int.tryParse('${sport['includedPlayers']}') ?? 0) > 0 ? ' · ${sport['includedPlayers']} included' : ''}'
-                      '${(double.tryParse('${sport['additionalPlayerFee']}') ?? 0) > 0 ? ' · PHP ${double.tryParse('${sport['additionalPlayerFee']}')!.toStringAsFixed(2)} per extra player' : ''}',
-                    ),
-                if (type == 'Sports' &&
-                    configuredSports.isEmpty &&
-                    extraPlayerFee > 0)
+                if (type == 'Sports' && extraPlayerFee > 0)
                   _detail(
                     Icons.groups_rounded,
                     'Includes $includedPlayerLimit players; '
@@ -3297,6 +4149,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   _detail(Icons.celebration_outlined, 'Event type: $category'),
                 if (type == 'Fitness & Wellness' && category.isNotEmpty)
                   _detail(Icons.fitness_center_rounded, 'Class: $category'),
+                if (type == 'Fitness & Wellness') _fitnessPlanSummary(business),
                 if (hours.isNotEmpty)
                   _detail(Icons.access_time_rounded, 'Hours: $hours'),
                 if (availability.isNotEmpty)
@@ -3308,16 +4161,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   ),
                 if (details.isNotEmpty) _detail(Icons.info_outline, details),
                 const SizedBox(height: 8),
-                if (type != 'Sports' || configuredSports.isEmpty)
-                  _priceBox(
-                    ratePeriods.isNotEmpty
-                        ? 'See special rates above'
-                        : priceText.isEmpty
-                        ? 'Price not set'
-                        : priceText,
-                    label: type == 'Event' ? 'Event fee' : 'Price / hour',
-                    hasRatePeriods: ratePeriods.isNotEmpty,
-                  ),
+                _priceBox(
+                  ratePeriods.isNotEmpty
+                      ? 'See special rates above'
+                      : priceText.isEmpty
+                      ? 'Price not set'
+                      : priceText,
+                  label: type == 'Event' ? 'Event fee' : 'Price / hour',
+                  hasRatePeriods: ratePeriods.isNotEmpty,
+                ),
                 const SizedBox(height: 8),
                 Text(
                   'Amenities',
@@ -3389,6 +4241,86 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fitnessPlanSummary(Map<String, dynamic> business) {
+    dynamic readList(String camelCase, String snakeCase) {
+      final raw = business[camelCase] ?? business[snakeCase];
+      if (raw is List) return raw;
+      if (raw is String && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) return decoded;
+        } on FormatException {
+          return const [];
+        }
+      }
+      return const [];
+    }
+
+    final categories = readList(
+      'fitnessCategories',
+      'fitness_categories_json',
+    ).whereType<Map>().toList();
+    final coaches = readList(
+      'fitnessCoaches',
+      'fitness_coaches_json',
+    ).whereType<Map>().toList();
+    if (categories.isEmpty && coaches.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    String money(dynamic value) {
+      final amount = value is num
+          ? value.toDouble()
+          : double.tryParse('$value');
+      return amount == null ? 'Not set' : '₱${amount.toStringAsFixed(2)}';
+    }
+
+    String yearlyOffer(Map item) => switch (item['yearlyDiscountType']) {
+      'freeMonths' => ' · ${item['yearlyDiscountValue'] ?? ''} free month(s)',
+      'percentage' => ' · ${item['yearlyDiscountValue'] ?? ''}% off yearly',
+      _ => '',
+    };
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: _addLine),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final item in categories) ...[
+            Text(
+              '${item['category'] ?? 'Fitness'} · '
+              'Session ${money(item['sessionPrice'])} · '
+              'Monthly ${money(item['monthlyPrice'])} · '
+              'Yearly ${money(item['yearlyPrice'])}'
+              '${yearlyOffer(item)}',
+              style: const TextStyle(
+                color: _addInk,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (item != categories.last) const SizedBox(height: 4),
+          ],
+          if (coaches.isNotEmpty) ...[
+            if (categories.isNotEmpty) const SizedBox(height: 8),
+            for (final coach in coaches)
+              Text(
+                'Coach ${coach['name'] ?? ''} · '
+                '${money(coach['monthlyPrice'])} / month',
+                style: const TextStyle(color: _addMuted, fontSize: 11),
+              ),
+          ],
         ],
       ),
     );

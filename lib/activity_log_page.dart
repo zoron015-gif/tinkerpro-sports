@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
+import 'app_design_system.dart';
 
-const _activityInk = Color(0xFF101B33);
-const _activityMuted = Color(0xFF68748A);
-const _activityOrange = Color(0xFFFF8200);
-const _activityPage = Color(0xFFF7F9FC);
+const _activityInk = AppColors.ink;
+const _activityMuted = AppColors.muted;
+const _activityOrange = AppColors.orange;
+const _activityPage = AppColors.page;
 
 class ActivityLogPage extends StatefulWidget {
   const ActivityLogPage({super.key, this.api});

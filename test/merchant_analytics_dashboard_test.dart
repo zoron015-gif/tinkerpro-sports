@@ -94,6 +94,8 @@ void main() {
               }),
               200,
             );
+          case '/api/activity-logs':
+            return http.Response(jsonEncode({'activities': []}), 200);
           default:
             return http.Response(
               jsonEncode({'error': 'Unexpected request'}),
@@ -106,6 +108,21 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
     await tester.pumpAndSettle();
 
+    expect(find.text('Needs your attention'), findsOneWidget);
+    expect(find.textContaining('1 booking awaiting approval'), findsOneWidget);
+    expect(
+      find.textContaining('2 approved bookings to complete'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer Two'), findsOneWidget);
+    expect(find.text('Approve'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Data analytics'), findsOneWidget);
     expect(find.text('PHP 500.00'), findsOneWidget);
     expect(find.text('PHP 250.00'), findsOneWidget);
@@ -114,12 +131,59 @@ void main() {
       find.byKey(const ValueKey('merchant-analytics-date-filter')),
       findsOneWidget,
     );
+    final periodFilter = tester.widget<SegmentedButton<String>>(
+      find.byKey(const ValueKey('merchant-analytics-period')),
+    );
+    expect(periodFilter.showSelectedIcon, isFalse);
+    expect(periodFilter.style?.textStyle?.resolve({})?.fontSize, 12);
+    expect(
+      periodFilter.style?.textStyle?.resolve({})?.fontWeight,
+      FontWeight.w700,
+    );
+    expect(
+      periodFilter.style?.minimumSize?.resolve({}),
+      const Size.fromHeight(40),
+    );
     expect(
       find.byKey(const ValueKey('merchant-analytics-view-Sales report')),
       findsOneWidget,
     );
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
+
+    final salesPlot = find.byKey(
+      const ValueKey('merchant-chart-plot-Confirmed sales'),
+    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, -420));
+    await tester.pumpAndSettle();
+    final salesPlotRect = tester.getRect(salesPlot);
+    await tester.tapAt(
+      Offset(
+        salesPlotRect.left + salesPlotRect.width * .95,
+        salesPlotRect.center.dy,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final selectedSalesPoint = find.byKey(
+      const ValueKey('merchant-analytics-selected-point'),
+    );
+    expect(selectedSalesPoint, findsOneWidget);
+    expect(
+      find.descendant(
+        of: selectedSalesPoint,
+        matching: find.text('PHP 500.00'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: selectedSalesPoint,
+        matching: find.textContaining(date),
+      ),
+      findsOneWidget,
+    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, 420));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('Monthly'));
     await tester.tap(find.text('Monthly'));
@@ -133,44 +197,87 @@ void main() {
     await tester.ensureVisible(find.text('Sales report · Annual'));
     expect(find.text('Sales report · Annual'), findsOneWidget);
 
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1800));
+    await tester.drag(find.byType(ListView).first, const Offset(0, 1800));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('merchant-analytics-view-Customer count')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('merchant-analytics-view-Customer count')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Players by Annual'), findsOneWidget);
+    expect(find.text('Customers by Annual'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('merchant-analytics-player-chart')),
+        of: find.byKey(const ValueKey('merchant-analytics-customer-chart')),
         matching: find.byType(CustomPaint),
       ),
       findsOneWidget,
     );
     expect(
-      find.text('Each point shows booked players for one annual'),
+      find.text('Each line shows unique customers per venue for each annual'),
       findsOneWidget,
     );
     expect(find.text('Players'), findsOneWidget);
     expect(find.text('Customers'), findsOneWidget);
-    expect(find.text('18 players across 3 customers'), findsOneWidget);
+    expect(find.text('3 unique customers across venues'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-legend-Sample Court')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-legend-Draft Venue')),
+      findsOneWidget,
+    );
+    expect(find.text('Sample Court'), findsWidgets);
+    expect(find.text('Draft Venue'), findsWidgets);
+    final customerPlot = find.byKey(
+      const ValueKey('merchant-chart-plot-Customers'),
+    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    final customerPlotRect = tester.getRect(customerPlot);
+    await tester.tapAt(
+      Offset(customerPlotRect.right - 2, customerPlotRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+    final selectedCustomerPoint = find.byKey(
+      const ValueKey('merchant-analytics-selected-point'),
+    );
+    expect(selectedCustomerPoint, findsOneWidget);
+    expect(
+      find.descendant(
+        of: selectedCustomerPoint,
+        matching: find.text('3 customers'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: selectedCustomerPoint,
+        matching: find.text('0 customers'),
+      ),
+      findsWidgets,
+    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, 260));
+    await tester.pumpAndSettle();
 
     for (final period in ['Daily', 'Weekly', 'Monthly', 'Annual']) {
       await tester.ensureVisible(find.text(period));
       await tester.tap(find.text(period));
       await tester.pumpAndSettle();
-      expect(find.text('Players by $period'), findsOneWidget);
+      expect(find.text('Customers by $period'), findsOneWidget);
       expect(
         find.text(
-          'Each point shows booked players for one ${period.toLowerCase()}',
+          'Each line shows unique customers per venue for each ${period.toLowerCase()}',
         ),
         findsOneWidget,
       );
       expect(
         find.text(
           period == 'Daily'
-              ? '10 players across 2 customers'
-              : '18 players across 3 customers',
+              ? '2 unique customers across venues'
+              : '3 unique customers across venues',
         ),
         findsOneWidget,
       );
@@ -182,17 +289,21 @@ void main() {
     await tester.ensureVisible(fullViewButton);
     await tester.tap(fullViewButton);
     await tester.pumpAndSettle();
-    expect(find.text('Players by Annual'), findsOneWidget);
+    expect(find.text('Customers by Annual'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('merchant-analytics-chart-full')),
       findsOneWidget,
     );
-    expect(find.text('18 players across 3 customers'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-legend-Sample Court')),
+      findsOneWidget,
+    );
+    expect(find.text('3 unique customers across venues'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('merchant-analytics-chart-close')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Players by Annual'), findsOneWidget);
+    expect(find.text('Customers by Annual'), findsOneWidget);
 
     await tester.drag(find.byType(Scrollable).first, const Offset(0, 1800));
     await tester.pumpAndSettle();
@@ -203,14 +314,27 @@ void main() {
     await tester.tap(venuePerformanceView);
     await tester.pumpAndSettle();
     expect(find.text('Bookings by venue'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('merchant-venue-comparison-metric')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Sales').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Sales by venue'), findsOneWidget);
+    expect(find.text('PHP 800.00'), findsOneWidget);
+    await tester.tap(find.text('Players').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Players by venue'), findsOneWidget);
+    expect(find.text('18'), findsWidgets);
+    expect(find.text('Draft Venue'), findsWidgets);
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('merchant-analytics-panel-venue-performance')),
       160,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.ensureVisible(find.text('Sample Court'));
+    await tester.ensureVisible(find.text('Sample Court').first);
     await tester.pumpAndSettle();
-    expect(find.text('Sample Court'), findsOneWidget);
+    expect(find.text('Sample Court'), findsWidgets);
     expect(find.textContaining('18 players'), findsOneWidget);
     expect(find.textContaining('4.8'), findsOneWidget);
 
@@ -228,5 +352,13 @@ void main() {
           .data,
       '10',
     );
+    await tester.tap(find.byKey(const ValueKey('merchant-profile-settings')));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit profile'), findsOneWidget);
+    expect(find.text('Log out'), findsOneWidget);
+    expect(find.text('Activity log'), findsOneWidget);
+    await tester.tap(find.text('Activity log'));
+    await tester.pumpAndSettle();
+    expect(find.text('Activity log'), findsOneWidget);
   });
 }

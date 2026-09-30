@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'app_design_system.dart';
 import 'filter_panel_style.dart';
 
-const _venuesMuted = Color(0xFF68748A);
-const _venuesOrange = Color(0xFFFF8200);
+const _venuesMuted = AppColors.muted;
+const _venuesOrange = AppColors.orange;
 
 class AllVenuesPage extends StatefulWidget {
   const AllVenuesPage({
@@ -12,11 +13,27 @@ class AllVenuesPage extends StatefulWidget {
     required this.title,
     required this.posts,
     required this.cardBuilder,
+    this.initialUserPosition,
+    this.categoryFilterLabel = 'Sport type',
+    this.categoryAllLabel = 'All sports',
+    this.facilityFilterLabel = 'Court type',
+    this.popularHeading = 'Courts with the most hearts',
+    this.ratedHeading = 'Courts with the highest ratings',
+    this.searchHint = 'Search venues, sports, or areas...',
+    this.collectionDescription = 'Browse every venue in this collection.',
   });
 
   final String title;
   final List<Map<String, dynamic>> posts;
   final Widget Function(Map<String, dynamic> post) cardBuilder;
+  final Position? initialUserPosition;
+  final String categoryFilterLabel;
+  final String categoryAllLabel;
+  final String facilityFilterLabel;
+  final String popularHeading;
+  final String ratedHeading;
+  final String searchHint;
+  final String collectionDescription;
 
   @override
   State<AllVenuesPage> createState() => _AllVenuesPageState();
@@ -25,7 +42,7 @@ class AllVenuesPage extends StatefulWidget {
 class _AllVenuesPageState extends State<AllVenuesPage> {
   final _searchController = TextEditingController();
   String _area = 'All areas';
-  String _sport = 'All sports';
+  late String _sport;
   String _courtType = 'All';
   String _availability = 'Any';
   String _priceSort = 'Recommended';
@@ -34,6 +51,13 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
   bool _locationLoading = false;
   final Set<String> _amenities = <String>{};
   var _headerVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _sport = widget.categoryAllLabel;
+    _userPosition = widget.initialUserPosition;
+  }
 
   @override
   void dispose() {
@@ -62,7 +86,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
         post['body'],
       ].map((value) => '$value').join(' ').toLowerCase();
       return (_area == 'All areas' || address.contains(_area.toLowerCase())) &&
-          (_sport == 'All sports' || category == _sport.toLowerCase()) &&
+          (_sport == widget.categoryAllLabel ||
+              category == _sport.toLowerCase()) &&
           (_courtType == 'All' || facility == _courtType.toLowerCase()) &&
           (_availability == 'Any' ||
               hours.contains('open 24 hours') ||
@@ -133,7 +158,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
   void _resetFilters(StateSetter setSheetState) {
     setState(() {
       _area = 'All areas';
-      _sport = 'All sports';
+      _sport = widget.categoryAllLabel;
       _courtType = 'All';
       _availability = 'Any';
       _priceSort = 'Recommended';
@@ -146,7 +171,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
 
   int get _activeFilterCount =>
       (_area == 'All areas' ? 0 : 1) +
-      (_sport == 'All sports' ? 0 : 1) +
+      (_sport == widget.categoryAllLabel ? 0 : 1) +
       (_courtType == 'All' ? 0 : 1) +
       (_availability == 'Any' ? 0 : 1) +
       (_priceSort == 'Recommended' ? 0 : 1) +
@@ -202,14 +227,14 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                       child: ListView(
                         padding: filterPanelContentPadding,
                         children: [
-                          _filterLabel('Sport type'),
+                          _filterLabel(widget.categoryFilterLabel),
                           Wrap(
                             spacing: 8,
                             runSpacing: 4,
                             children: [
                               for (final value in _options(
                                 (post) => '${post['category'] ?? ''}',
-                                'All sports',
+                                widget.categoryAllLabel,
                               ))
                                 ChoiceChip(
                                   key: ValueKey(
@@ -271,7 +296,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                             },
                           ),
                           const SizedBox(height: filterPanelSectionSpacing),
-                          _filterLabel('Court type'),
+                          _filterLabel(widget.facilityFilterLabel),
                           Wrap(
                             spacing: 8,
                             runSpacing: 4,
@@ -565,8 +590,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                               fit: BoxFit.scaleDown,
                               child: Text(
                                 widget.title == 'Most popular'
-                                    ? 'Courts with the most hearts'
-                                    : 'Courts with the highest ratings',
+                                    ? widget.popularHeading
+                                    : widget.ratedHeading,
                                 key: const ValueKey('all-venues-header-title'),
                                 maxLines: 1,
                                 softWrap: false,
@@ -579,8 +604,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                             ),
                           ),
                           const SizedBox(height: 3),
-                          const Text(
-                            'Browse every venue in this collection.',
+                          Text(
+                            widget.collectionDescription,
                             style: TextStyle(
                               color: _venuesMuted,
                               fontSize: 13,
@@ -600,7 +625,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  hintText: 'Search venues, sports, or areas...',
+                  hintText: widget.searchHint,
                   hintStyle: const TextStyle(fontSize: 14),
                   prefixIcon: const Icon(Icons.search, color: _venuesOrange),
                   suffixIcon: _searchController.text.isEmpty

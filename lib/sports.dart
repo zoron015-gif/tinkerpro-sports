@@ -10,9 +10,11 @@ import 'auth_api.dart';
 import 'app_session.dart';
 import 'booking_pricing.dart';
 import 'saved_items.dart';
+import 'sports_slot_configurations.dart';
 import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'reviews.dart';
+import 'app_design_system.dart';
 
 typedef SportsVenue = ({
   int id,
@@ -50,95 +52,23 @@ typedef SportsVenue = ({
   String merchantAvatarUrl,
 });
 
-const _sportsInk = Color(0xFF101B33);
-const _sportsOrange = Color(0xFFFF8200);
-const _sportsMuted = Color(0xFF68748A);
-
-List<Map<String, dynamic>> normalizeSportsSlotConfigurations({
-  required dynamic raw,
-  required String legacySportTypes,
-  required double legacyPrice,
-  required int totalSlots,
-  required int includedPlayers,
-  required double additionalPlayerFee,
-}) {
-  if (raw is String) {
-    try {
-      raw = jsonDecode(raw);
-    } on FormatException {
-      raw = null;
-    }
-  }
-
-  final configurations = <Map<String, dynamic>>[];
-  if (raw is List) {
-    for (final item in raw.whereType<Map>()) {
-      final sportNames = '${item['sportType'] ?? item['sport_type'] ?? ''}'
-          .split(',')
-          .map((name) => name.trim())
-          .where((name) => name.isNotEmpty);
-      for (final sportName in sportNames) {
-        configurations.add({
-          'sportType': sportName,
-          'pricePerHour':
-              double.tryParse(
-                '${item['pricePerHour'] ?? item['price_per_hour'] ?? 0}',
-              ) ??
-              0,
-          'fullStudio':
-              item['fullStudio'] == true ||
-              item['fullStudio'] == 1 ||
-              '${item['fullStudio']}'.toLowerCase() == 'true',
-          'includedPlayers':
-              int.tryParse(
-                '${item['includedPlayers'] ?? item['included_players'] ?? 0}',
-              ) ??
-              0,
-          'additionalPlayerFee':
-              double.tryParse(
-                '${item['additionalPlayerFee'] ?? item['additional_player_fee'] ?? 0}',
-              ) ??
-              0,
-          'slotCount':
-              int.tryParse(
-                '${item['slotCount'] ?? item['slot_count'] ?? totalSlots}',
-              ) ??
-              totalSlots,
-        });
-      }
-    }
-  }
-
-  if (configurations.isEmpty) {
-    final legacyNames = legacySportTypes
-        .split(',')
-        .map((name) => name.trim())
-        .where((name) => name.isNotEmpty);
-    for (final sportName in legacyNames.isEmpty
-        ? const ['Sports']
-        : legacyNames) {
-      configurations.add({
-        'sportType': sportName,
-        'pricePerHour': legacyPrice,
-        'fullStudio': true,
-        'includedPlayers': includedPlayers,
-        'additionalPlayerFee': additionalPlayerFee,
-        'slotCount': 1,
-      });
-    }
-  }
-  return configurations;
-}
+const _sportsInk = AppColors.ink;
+const _sportsOrange = AppColors.orange;
+const _sportsMuted = AppColors.muted;
 
 class SportsVenueDetailPage extends StatefulWidget {
   const SportsVenueDetailPage({
     super.key,
     required this.venue,
     required this.onReserve,
+    this.savedItemType = 'sports',
+    this.amenitiesHeading = 'COURT AMENITIES',
   });
 
   final SportsVenue venue;
   final VoidCallback onReserve;
+  final String savedItemType;
+  final String amenitiesHeading;
 
   @override
   State<SportsVenueDetailPage> createState() => _SportsVenueDetailPageState();
@@ -193,10 +123,10 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
   }
 
   String _keyForVenue(SportsVenue venue) => venue.id > 0
-      ? 'sports-${venue.id}'
+      ? '${widget.savedItemType}-${venue.id}'
       : (venue.name.trim().isEmpty
-            ? 'sports-venue'
-            : 'sports-${venue.name.trim()}');
+            ? '${widget.savedItemType}-venue'
+            : '${widget.savedItemType}-${venue.name.trim()}');
 
   List<String> _usableImages(SportsVenue venue) {
     return venue.images.map((image) => image.trim()).where((image) {
@@ -220,7 +150,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
   Future<void> _loadSavedState() async {
     try {
       final saved = await SavedItemStore.list();
-      final counts = await SavedItemStore.counts('sports');
+      final counts = await SavedItemStore.counts(widget.savedItemType);
       if (!mounted) return;
       setState(() {
         _savedKeys
@@ -246,7 +176,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
   Future<void> _toggleSaved() async {
     try {
       if (_savedKeys.contains(_saveKey)) {
-        await SavedItemStore.remove('sports', _saveKey);
+        await SavedItemStore.remove(widget.savedItemType, _saveKey);
         if (!mounted) return;
         setState(() {
           _savedKeys.remove(_saveKey);
@@ -257,7 +187,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
         });
       } else {
         await SavedItemStore.save(
-          type: 'sports',
+          type: widget.savedItemType,
           key: _saveKey,
           title: widget.venue.name,
           subtitle: '${widget.venue.sport}\n${widget.venue.address}',
@@ -573,9 +503,9 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         ),
                       if (widget.venue.tags.isNotEmpty) ...[
                         const SizedBox(height: 2),
-                        const Text(
-                          'COURT AMENITIES',
-                          style: TextStyle(
+                        Text(
+                          widget.amenitiesHeading,
+                          style: const TextStyle(
                             color: Color(0xFF8A97AA),
                             fontSize: 11,
                             letterSpacing: .8,
@@ -1172,7 +1102,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         int.tryParse('${b['slotCount'] ?? b['slot_count'] ?? 1}') ?? 1;
     final sportsSlots = normalizeSportsSlotConfigurations(
       raw: b['sportsSlots'] ?? b['sports_slots_json'],
-      legacySportTypes: '${b['category'] ?? 'Sports'}',
+      legacySportTypes: '${b['sport'] ?? b['category'] ?? 'Sports'}',
       legacyPrice: price,
       totalSlots: totalSlots,
       includedPlayers: includedPlayers,
@@ -1199,7 +1129,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       final rateUnit = sport['fullStudio'] == true
           ? 'whole studio'
           : 'per slot';
-      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / $rateUnit';
+      final included = (sport['includedPlayers'] as num).toInt();
+      final extraFee = (sport['additionalPlayerFee'] as num).toDouble();
+      final playerFee = included > 0 && extraFee > 0
+          ? ' · $included included · PHP ${extraFee.toStringAsFixed(2)} / extra player'
+          : '';
+      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / '
+          '$rateUnit$playerFee';
     }).toList();
     final maxPrice = [
       price,
@@ -1409,35 +1345,30 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       backgroundColor: const Color(0xFFF8F9FF),
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) {
-          availabilityTimer ??= Timer.periodic(
-            const Duration(seconds: 30),
-            (_) {
-              if (context.mounted) {
-                setModalState(() => availabilityNow = DateTime.now());
-              }
-            },
-          );
+          availabilityTimer ??= Timer.periodic(const Duration(seconds: 30), (
+            _,
+          ) {
+            if (context.mounted) {
+              setModalState(() => availabilityNow = DateTime.now());
+            }
+          });
           final selectedSport = venue.sportsSlots.firstWhere(
             (sport) => sport['sportType'] == selectedSportType,
             orElse: () => venue.sportsSlots.first,
           );
           final rate = (selectedSport['pricePerHour'] as num).toDouble();
-          final selectedSportIsFullStudio =
-              selectedSport['fullStudio'] == true;
-          final selectedSportSlotCount =
-              selectedSportIsFullStudio
+          final selectedIncludedPlayers =
+              (selectedSport['includedPlayers'] as num).toInt();
+          final selectedAdditionalPlayerFee =
+              (selectedSport['additionalPlayerFee'] as num).toDouble();
+          final selectedSportIsFullStudio = selectedSport['fullStudio'] == true;
+          final selectedSportSlotCount = selectedSportIsFullStudio
               ? 1
               : (selectedSport['slotCount'] as num).toInt();
-          final sportIncludedPlayers =
-              (selectedSport['includedPlayers'] as num?)?.toInt() ??
-              venue.includedPlayers;
-          final sportAdditionalPlayerFee =
-              (selectedSport['additionalPlayerFee'] as num?)?.toDouble() ??
-              venue.additionalPlayerFee;
           final extraPlayerCharge = calculateExtraPlayerCharge(
             players: players,
-            includedPlayers: sportIncludedPlayers,
-            feePerExtraPlayer: sportAdditionalPlayerFee,
+            includedPlayers: selectedIncludedPlayers,
+            feePerExtraPlayer: selectedAdditionalPlayerFee,
           );
           final total = rate * hours + extraPlayerCharge;
           final cashOnArrival = total / 2;
@@ -1537,9 +1468,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                         borderRadius: BorderRadius.circular(99),
                                       ),
                                       child: Text(
-                                        selectedSportType.toUpperCase(),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                        venue.sport.isEmpty
+                                            ? 'VENUE'
+                                            : venue.sport.toUpperCase(),
                                         style: const TextStyle(
                                           color: _sportsOrange,
                                           fontSize: 10,
@@ -1601,7 +1532,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: selectedSportType,
-                      isExpanded: true,
                       decoration: _bookingInputDecoration(
                         prefixIcon: const Icon(Icons.sports_tennis_rounded),
                         labelText: 'Sport type',
@@ -1611,10 +1541,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           DropdownMenuItem(
                             value: '${sport['sportType']}',
                             child: Text(
-                              '${sport['sportType']} · PHP ${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr · '
-                              '${sport['fullStudio'] == true ? 'Whole studio' : '${sport['slotCount']} slots'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              '${sport['sportType']} · PHP '
+                              '${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr',
                             ),
                           ),
                       ],
@@ -1626,28 +1554,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         });
                       },
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 4),
-                      child: Text(
-                        selectedSportIsFullStudio
-                            ? 'Rate: PHP ${rate.toStringAsFixed(2)} / hour · Whole studio'
-                            : 'Rate: PHP ${rate.toStringAsFixed(2)} / slot / hour · '
-                                  '$selectedSportSlotCount slots',
-                        style: const TextStyle(
-                          color: _sportsMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        for (var slot = 1;
-                            slot <= selectedSportSlotCount;
-                            slot++)
+                        for (
+                          var slot = 1;
+                          slot <= selectedSportSlotCount;
+                          slot++
+                        )
                           Builder(
                             builder: (context) {
                               final blocked = _bookingSlotOverlaps(
@@ -1697,10 +1613,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           ? 'This sport uses the whole studio; its bookings block every small slot.'
                           : 'PHP ${rate.toStringAsFixed(2)} per slot per hour. '
                                 'Different slots can be booked at the same time.',
-                      style: const TextStyle(
-                        color: _sportsMuted,
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: _sportsMuted, fontSize: 12),
                     ),
                     const SizedBox(height: 18),
                     const Text(
@@ -1909,14 +1822,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         }
                       },
                     ),
-                    if (sportAdditionalPlayerFee > 0 &&
-                        sportIncludedPlayers > 0)
+                    if (selectedAdditionalPlayerFee > 0 &&
+                        selectedIncludedPlayers > 0)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          '$sportIncludedPlayers players included; '
+                          '$selectedIncludedPlayers players included; '
                           'each additional player costs PHP '
-                          '${sportAdditionalPlayerFee.toStringAsFixed(2)}.',
+                          '${selectedAdditionalPlayerFee.toStringAsFixed(2)}.',
                           style: TextStyle(
                             color: Colors.orange.shade900,
                             fontSize: 12,
@@ -1987,8 +1900,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     if (extraPlayerCharge > 0)
                       _bookingAmountRow(
-                        'Extra players (${players - sportIncludedPlayers} × '
-                            'PHP ${sportAdditionalPlayerFee.toStringAsFixed(2)})',
+                        'Extra players (${players - selectedIncludedPlayers} × '
+                            'PHP ${selectedAdditionalPlayerFee.toStringAsFixed(2)})',
                         extraPlayerCharge,
                         '',
                       ),
@@ -2142,9 +2055,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   bool _bookingSlotOverlaps(
     TimeOfDay selectedTime,
     int durationHours,
-    List<Map<String, dynamic>> bookings,
-    {required int slotNumber, required bool fullStudio}
-  ) {
+    List<Map<String, dynamic>> bookings, {
+    required int slotNumber,
+    required bool fullStudio,
+  }) {
     final selectedStart = selectedTime.hour * 60 + selectedTime.minute;
     final selectedEnd = selectedStart + durationHours * 60;
     for (final booking in bookings) {
@@ -2209,13 +2123,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       minute,
     );
     final durationMinutes = (duration * 60).round();
-    final endDateTime = startDateTime.add(
-      Duration(minutes: durationMinutes),
-    );
+    final endDateTime = startDateTime.add(Duration(minutes: durationMinutes));
     final remaining = endDateTime.difference(now);
     final activeCountdown =
         !now.isBefore(startDateTime) && remaining.inSeconds > 0;
-    final slot = booking['occupiesFullStudio'] == true ||
+    final slot =
+        booking['occupiesFullStudio'] == true ||
             booking['occupiesFullStudio'] == 1 ||
             booking['occupies_full_studio'] == 1
         ? 'Whole studio'
@@ -2266,8 +2179,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ? await _chooseOnlineProvider()
           : null;
       if (payment == 'online' && onlineProvider == null) return;
-      if (payment == 'online' &&
-          !await _api.payMongoPaymentsEnabled(token)) {
+      if (payment == 'online' && !await _api.payMongoPaymentsEnabled(token)) {
         if (!mounted || !modalContext.mounted) return;
         final useCashOnArrival = await showDialog<bool>(
           context: modalContext,
@@ -2304,10 +2216,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         slotNumber: slotNumber,
         fullStudio:
             venue.sportsSlots.firstWhere(
-                  (sport) => sport['sportType'] == sportType,
-                  orElse: () => venue.sportsSlots.first,
-                )['fullStudio'] ==
-                true,
+              (sport) => sport['sportType'] == sportType,
+              orElse: () => venue.sportsSlots.first,
+            )['fullStudio'] ==
+            true,
         payment: payment,
         onlineProvider: onlineProvider,
         total: total,

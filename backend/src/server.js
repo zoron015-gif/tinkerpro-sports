@@ -7,10 +7,15 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
 const { sendPasswordResetCode, sendVerificationCode } = require('./mailer');
+const { createRateLimiter } = require('./rate_limit');
+const {
+  fitnessDetailsFromBody,
+  saveEventDetails,
+  saveFitnessDetails,
+} = require('./business_details');
 const {
   createBookingToken,
   createVerificationCode,
-  eventDetailsFromBody,
   hashBookingToken,
   hashVerificationCode,
   isValidRole,
@@ -39,6 +44,31 @@ app.use(express.json({
     }
   },
 }));
+
+const authRateLimitWindowMs = 15 * 60 * 1000;
+const authIpRateLimit = createRateLimiter({
+  windowMs: authRateLimitWindowMs,
+  maxRequests: 100,
+  keyGenerator: (req) => req.ip,
+});
+const accountEmailRateLimit = createRateLimiter({
+  windowMs: authRateLimitWindowMs,
+  maxRequests: 10,
+  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
+  message: 'Too many account requests. Please try again later.',
+});
+const verificationEmailRateLimit = createRateLimiter({
+  windowMs: authRateLimitWindowMs,
+  maxRequests: 8,
+  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
+  message: 'Too many verification attempts. Please try again later.',
+});
+const passwordRecoveryEmailRateLimit = createRateLimiter({
+  windowMs: authRateLimitWindowMs,
+  maxRequests: 8,
+  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
+  message: 'Too many password recovery attempts. Please try again later.',
+});
 
 function hasValidPaymongoSignature(rawBody, signatureHeader, liveMode, secret) {
   if (!rawBody || !signatureHeader || !secret) return false;
@@ -75,39 +105,6 @@ function paymongoIsConfigured() {
     process.env.PAYMONGO_SUCCESS_URL,
     process.env.PAYMONGO_CANCEL_URL,
   ].every(isConfiguredPaymentValue);
-}
-
-async function saveEventDetails(businessId, body) {
-  if (body.businessType !== 'Event') {
-    await pool.execute(
-      'DELETE FROM event_business_details WHERE business_id = ?',
-      [businessId],
-    );
-    return;
-  }
-  const details = eventDetailsFromBody(body);
-  await pool.execute(
-    `INSERT INTO event_business_details
-       (business_id, event_types_json, attendance_min, attendance_max,
-        accessibility_needs, parking_needs, security_needs)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       event_types_json = VALUES(event_types_json),
-       attendance_min = VALUES(attendance_min),
-       attendance_max = VALUES(attendance_max),
-       accessibility_needs = VALUES(accessibility_needs),
-       parking_needs = VALUES(parking_needs),
-       security_needs = VALUES(security_needs)`,
-    [
-      businessId,
-      JSON.stringify(details.eventTypes),
-      details.attendanceMin,
-      details.attendanceMax,
-      JSON.stringify(details.accessibilityNeeds),
-      JSON.stringify(details.parkingNeeds),
-      JSON.stringify(details.securityNeeds),
-    ],
-  );
 }
 
 function createToken(user) {
@@ -280,7 +277,11 @@ app.delete('/api/messages/blocks/:userId', requireAuth, async (req, res, next) =
   }
 });
 
-app.post('/api/auth/register', async (req, res, next) => {
+app.post(
+  '/api/auth/register',
+  authIpRateLimit,
+  accountEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const password = req.body.password;
   const role = req.body.role || 'customer';
@@ -390,9 +391,14 @@ app.post('/api/auth/register', async (req, res, next) => {
   } finally {
     connection?.release();
   }
-});
+  },
+);
 
-app.post('/api/auth/verify-email', async (req, res, next) => {
+app.post(
+  '/api/auth/verify-email',
+  authIpRateLimit,
+  verificationEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
 
@@ -438,9 +444,14 @@ app.post('/api/auth/verify-email', async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
-});
+  },
+);
 
-app.post('/api/auth/resend-verification', async (req, res, next) => {
+app.post(
+  '/api/auth/resend-verification',
+  authIpRateLimit,
+  verificationEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   if (!email) {
     return res.status(400).json({ error: 'Email is required.' });
@@ -484,9 +495,14 @@ app.post('/api/auth/resend-verification', async (req, res, next) => {
   } finally {
     connection?.release();
   }
-});
+  },
+);
 
-app.post('/api/auth/forgot-password', async (req, res, next) => {
+app.post(
+  '/api/auth/forgot-password',
+  authIpRateLimit,
+  passwordRecoveryEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   if (!email || !email.includes('@')) {
     return res.status(400).json({ error: 'A valid email is required.' });
@@ -500,7 +516,9 @@ app.post('/api/auth/forgot-password', async (req, res, next) => {
       [email, 'deleted'],
     );
     if (users.length === 0) {
-      return res.status(404).json({ error: 'No account was found for this email.' });
+      return res.json({
+        message: 'If an account exists for this email, a password reset code was sent.',
+      });
     }
 
     const code = createVerificationCode();
@@ -519,16 +537,23 @@ app.post('/api/auth/forgot-password', async (req, res, next) => {
     );
     await sendPasswordResetCode(email, code);
     await connection.commit();
-    return res.json({ message: 'A password reset code was sent to your email.' });
+    return res.json({
+      message: 'If an account exists for this email, a password reset code was sent.',
+    });
   } catch (error) {
     if (connection) await connection.rollback();
     return next(error);
   } finally {
     connection?.release();
   }
-});
+  },
+);
 
-app.post('/api/auth/reset-password', async (req, res, next) => {
+app.post(
+  '/api/auth/reset-password',
+  authIpRateLimit,
+  passwordRecoveryEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
   const password = req.body.password;
@@ -580,9 +605,14 @@ app.post('/api/auth/reset-password', async (req, res, next) => {
   } finally {
     connection?.release();
   }
-});
+  },
+);
 
-app.post('/api/auth/verify-password-reset-code', async (req, res, next) => {
+app.post(
+  '/api/auth/verify-password-reset-code',
+  authIpRateLimit,
+  passwordRecoveryEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
   if (!email || !/^\d{6}$/.test(code)) {
@@ -610,9 +640,14 @@ app.post('/api/auth/verify-password-reset-code', async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
-});
+  },
+);
 
-app.post('/api/auth/login', async (req, res, next) => {
+app.post(
+  '/api/auth/login',
+  authIpRateLimit,
+  accountEmailRateLimit,
+  async (req, res, next) => {
   const email = normalizeEmail(req.body.email);
   const password = req.body.password;
 
@@ -1224,6 +1259,8 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
               e.attendance_max AS attendanceMax,
               e.accessibility_needs AS accessibilityNeeds,
               e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              f.fitness_categories_json AS fitnessCategories,
+              f.fitness_coaches_json AS fitnessCoaches,
               COALESCE((SELECT AVG(r.rating) FROM venue_reviews r
                         WHERE r.business_id = b.id), 0) AS averageRating,
               (SELECT COUNT(*) FROM venue_reviews r
@@ -1245,6 +1282,7 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
        FROM merchant_businesses b
        JOIN users u ON u.id = b.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = b.id
+       LEFT JOIN fitness_business_details f ON f.business_id = b.id
        WHERE b.merchant_id = ? AND u.role = 'merchant'
        ORDER BY b.created_at DESC`,
       [req.auth.sub],
@@ -1255,6 +1293,8 @@ app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         'accessibilityNeeds',
         'parkingNeeds',
         'securityNeeds',
+        'fitnessCategories',
+        'fitnessCoaches',
       ]) {
         business[field] = parseJsonArray(business[field], field);
       }
@@ -1303,6 +1343,8 @@ app.get('/api/businesses', async (req, res, next) => {
               e.attendance_max AS attendanceMax,
               e.accessibility_needs AS accessibilityNeeds,
               e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              f.fitness_categories_json AS fitnessCategories,
+              f.fitness_coaches_json AS fitnessCoaches,
               COALESCE((SELECT AVG(r.rating) FROM venue_reviews r
                         WHERE r.business_id = b.id), 0) AS averageRating,
               (SELECT COUNT(*) FROM venue_reviews r
@@ -1315,6 +1357,7 @@ app.get('/api/businesses', async (req, res, next) => {
        FROM merchant_businesses b
        JOIN users u ON u.id = b.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = b.id
+       LEFT JOIN fitness_business_details f ON f.business_id = b.id
        WHERE b.enabled = 1 AND u.status = 'active'
          AND EXISTS (
            SELECT 1 FROM merchant_news n
@@ -1333,6 +1376,8 @@ app.get('/api/businesses', async (req, res, next) => {
         'accessibilityNeeds',
         'parkingNeeds',
         'securityNeeds',
+        'fitnessCategories',
+        'fitnessCoaches',
       ]) {
         business[field] = parseJsonArray(business[field], field);
       }
@@ -1426,6 +1471,7 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
   const ratePeriods = Array.isArray(req.body.ratePeriods)
     ? req.body.ratePeriods.slice(0, 20)
     : [];
+  const fitnessDetails = fitnessDetailsFromBody(req.body);
   const tags = Array.isArray(req.body.tags)
     ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
     : [];
@@ -1450,7 +1496,8 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
     (additionalPlayerFee === 0 ||
       (businessType === 'Sports' && includedPlayers > 0)) &&
     (businessType !== 'Sports' || req.body.sportsSlots === undefined ||
-      sportsSlots !== null);
+      sportsSlots !== null) &&
+    fitnessDetails.valid;
   if (!valid) {
     return res.status(400).json({ error: 'Please check the business details.' });
   }
@@ -1484,7 +1531,8 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Business not found.' });
     }
-    await saveEventDetails(id, req.body);
+    await saveEventDetails(pool, id, req.body);
+    await saveFitnessDetails(pool, id, req.body, fitnessDetails);
     return res.json({ message: 'Business updated.' });
   } catch (error) {
     return next(error);
@@ -1528,6 +1576,7 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
           pricePerHour: Number(item.pricePerHour),
         }))
     : [];
+  const fitnessDetails = fitnessDetailsFromBody(req.body);
   const amenities = Array.isArray(req.body.tags)
     ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
     : [];
@@ -1580,6 +1629,9 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
       sportsSlots === null) {
     validationErrors.push('sport slot and pricing settings');
   }
+  if (!fitnessDetails.valid) {
+    validationErrors.push('fitness category pricing and coach settings');
+  }
   if (validationErrors.length > 0) {
     return res.status(400).json({
       error: `Please check: ${validationErrors.join(', ')}.`,
@@ -1629,7 +1681,8 @@ app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
         coordinates.longitude,
       ],
     );
-    await saveEventDetails(result.insertId, req.body);
+    await saveEventDetails(pool, result.insertId, req.body);
+    await saveFitnessDetails(pool, result.insertId, req.body, fitnessDetails);
     return res.status(201).json({ message: 'Business added.' });
   } catch (error) {
     return next(error);
@@ -1752,7 +1805,11 @@ app.delete('/api/saved-items/:itemType/:itemKey', requireAuth, async (req, res, 
 });
 
 // Google OAuth: verify ID token from client and create or find user
-app.post('/api/auth/oauth/google', async (req, res, next) => {
+app.post(
+  '/api/auth/oauth/google',
+  authIpRateLimit,
+  accountEmailRateLimit,
+  async (req, res, next) => {
   const idToken = req.body.idToken || req.body.id_token;
   const role = typeof req.body.role === 'string'
     ? req.body.role.trim().toLowerCase()
@@ -1922,33 +1979,29 @@ function normalizeSportsSlots(value, totalSlots) {
     const sportType = typeof item.sportType === 'string'
       ? item.sportType.trim().slice(0, 100) : '';
     const pricePerHour = Number(item.pricePerHour);
-    const includedPlayers = item.includedPlayers == null ||
-        item.includedPlayers === ''
-      ? 0 : Number(item.includedPlayers);
-    const additionalPlayerFee = item.additionalPlayerFee == null ||
-        item.additionalPlayerFee === ''
-      ? 0 : Number(item.additionalPlayerFee);
     const fullStudio = item.fullStudio === true;
     const slotCount = Number(item.slotCount);
+    const includedPlayers = Number(item.includedPlayers ?? 0);
+    const additionalPlayerFee = Number(item.additionalPlayerFee ?? 0);
     const key = sportType.toLowerCase();
     if (!sportType || names.has(key) || !Number.isFinite(pricePerHour) ||
         pricePerHour <= 0 || !Number.isInteger(slotCount) ||
-        !Number.isInteger(includedPlayers) || includedPlayers < 0 ||
-        includedPlayers > 30 || !Number.isFinite(additionalPlayerFee) ||
-        additionalPlayerFee < 0 || additionalPlayerFee > 99999999.99 ||
-        (additionalPlayerFee > 0 && includedPlayers < 1) ||
         slotCount < 1 || slotCount > totalSlots ||
-        (fullStudio && slotCount !== totalSlots)) {
+        (fullStudio && slotCount !== totalSlots) ||
+        !Number.isInteger(includedPlayers) || includedPlayers < 0 ||
+        includedPlayers > 1000 || !Number.isFinite(additionalPlayerFee) ||
+        additionalPlayerFee < 0 || additionalPlayerFee > 99999999.99 ||
+        (additionalPlayerFee > 0 && includedPlayers < 1)) {
       return null;
     }
     names.add(key);
     normalized.push({
       sportType,
       pricePerHour,
-      includedPlayers,
-      additionalPlayerFee,
       fullStudio,
       slotCount,
+      includedPlayers,
+      additionalPlayerFee,
     });
   }
   return normalized;
@@ -2141,6 +2194,11 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.booking_date AS bookingDate, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_category AS fitnessCategory,
+              b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_plan_price AS fitnessPlanPrice,
+              b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
               b.total_amount AS totalAmount, b.payment_method AS paymentMethod,
               b.payment_status AS paymentStatus, b.status,
@@ -2218,6 +2276,11 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       approvalStatus: 'pending',
       venueName: booking.venueName,
       sportType: booking.sportType,
+      fitnessPlanType: booking.fitnessPlanType,
+      fitnessCategory: booking.fitnessCategory,
+      fitnessCoachName: booking.fitnessCoachName,
+      fitnessPlanPrice: booking.fitnessPlanPrice,
+      fitnessCoachPrice: booking.fitnessCoachPrice,
       slotNumber: booking.slotNumber,
       fullStudio: Number(booking.occupiesFullStudio) === 1,
       bookingDate: booking.bookingDate,
@@ -2279,6 +2342,10 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     ? req.body.paymentMethod.trim().slice(0, 50) : '';
   const sportType = typeof req.body.sportType === 'string'
     ? req.body.sportType.trim().slice(0, 100) : '';
+  const fitnessPlanType = typeof req.body.fitnessPlanType === 'string'
+    ? req.body.fitnessPlanType.trim().toLowerCase() : '';
+  const fitnessCoachName = typeof req.body.fitnessCoachName === 'string'
+    ? req.body.fitnessCoachName.trim().slice(0, 100) : '';
   const requestedSlot = Number(req.body.slotNumber);
   const allowedPaymentMethods = new Set(['online', 'cash_on_arrival']);
   if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
@@ -2295,7 +2362,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     connection = await pool.getConnection();
     await connection.beginTransaction();
     const [venues] = await connection.execute(
-      `SELECT b.id, b.merchant_id, b.name, b.category, b.price_per_hour,
+      `SELECT b.id, b.merchant_id, b.name, b.category, b.business_type AS businessType,
+              b.price_per_hour,
               b.slot_count AS slotCount, b.sports_slots_json AS sportsSlots,
               b.included_players, b.additional_player_fee, b.enabled,
               u.status AS merchant_status
@@ -2308,19 +2376,100 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       await connection.rollback();
       return res.status(404).json({ error: 'The venue is unavailable.' });
     }
-    const sportsSlots = configuredSportsSlots(venue);
-    const selectedSportType = sportType || venue.category || '';
-    const sportConfig = sportsSlots.find(
-      (sport) =>
-        sport.sportType.toLowerCase() === selectedSportType.toLowerCase(),
-    );
-    const fullStudio = sportConfig?.fullStudio === true;
-    const slotNumber = fullStudio ? null : requestedSlot;
-    if (!sportConfig || (!fullStudio &&
-        (!Number.isInteger(slotNumber) || slotNumber < 1 ||
-         slotNumber > Number(sportConfig.slotCount)))) {
-      await connection.rollback();
-      return res.status(400).json({ error: 'Choose a valid sport and available slot.' });
+    const isFitness = venue.businessType === 'Fitness & Wellness';
+    let sportConfig = null;
+    let fitnessCategory = null;
+    let fitnessCoach = null;
+    let fitnessPlanPrice = 0;
+    let fitnessCoachPrice = 0;
+    let selectedSportType = sportType || venue.category || '';
+    let fullStudio = true;
+    let slotNumber = null;
+    if (isFitness) {
+      if (durationHours !== 1 || players !== 1) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: 'Fitness first visits must reserve one hour for one attendee.',
+        });
+      }
+      if (!['session', 'monthly', 'yearly'].includes(fitnessPlanType)) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'Choose a valid Fitness plan.' });
+      }
+      const [fitnessRows] = await connection.execute(
+        `SELECT fitness_categories_json AS fitnessCategories,
+                fitness_coaches_json AS fitnessCoaches
+         FROM fitness_business_details WHERE business_id = ?`,
+        [venueId],
+      );
+      const fitnessDetails = fitnessRows[0] || {};
+      const fitnessCategories = parseJsonArray(
+        fitnessDetails.fitnessCategories,
+        'fitnessCategories',
+      );
+      const fitnessCoaches = parseJsonArray(
+        fitnessDetails.fitnessCoaches,
+        'fitnessCoaches',
+      );
+      fitnessCategory = fitnessCategories.find(
+        (item) =>
+          typeof item.category === 'string' &&
+          item.category.toLowerCase() === sportType.toLowerCase(),
+      );
+      if (!fitnessCategory) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'Choose a Fitness category offered by this venue.' });
+      }
+      const priceKey = `${fitnessPlanType}Price`;
+      fitnessPlanPrice = Number(fitnessCategory[priceKey]);
+      if (!Number.isFinite(fitnessPlanPrice) || fitnessPlanPrice <= 0) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'The selected Fitness plan is not available.' });
+      }
+      if (fitnessPlanType === 'yearly') {
+        if (fitnessCategory.yearlyDiscountType === 'freeMonths') {
+          fitnessPlanPrice = Math.max(
+            0,
+            fitnessPlanPrice -
+              Number(fitnessCategory.monthlyPrice) *
+                Number(fitnessCategory.yearlyDiscountValue),
+          );
+        } else if (fitnessCategory.yearlyDiscountType === 'percentage') {
+          fitnessPlanPrice *=
+            1 - Number(fitnessCategory.yearlyDiscountValue) / 100;
+        }
+      }
+      if (fitnessCoachName) {
+        fitnessCoach = fitnessCoaches.find(
+          (item) =>
+            typeof item.name === 'string' &&
+            item.name.toLowerCase() === fitnessCoachName.toLowerCase(),
+        );
+        if (!fitnessCoach) {
+          await connection.rollback();
+          return res.status(400).json({ error: 'Choose a coach offered by this venue.' });
+        }
+        fitnessCoachPrice =
+          Number(fitnessCoach.monthlyPrice) *
+          (fitnessPlanType === 'yearly' ? 12 : 1);
+      }
+      fitnessPlanPrice = Number(fitnessPlanPrice.toFixed(2));
+      fitnessCoachPrice = Number(fitnessCoachPrice.toFixed(2));
+      selectedSportType = fitnessCategory.category;
+    } else {
+      const sportsSlots = configuredSportsSlots(venue);
+      sportConfig = sportsSlots.find(
+        (sport) =>
+          sport.sportType.toLowerCase() === selectedSportType.toLowerCase(),
+      );
+      fullStudio = sportConfig?.fullStudio === true;
+      slotNumber = fullStudio ? null : requestedSlot;
+      if (!sportConfig || (!fullStudio &&
+          (!Number.isInteger(slotNumber) || slotNumber < 1 ||
+           slotNumber > Number(sportConfig.slotCount)))) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'Choose a valid sport and available slot.' });
+      }
     }
     const [overlaps] = await connection.execute(
       `SELECT slot_number AS slotNumber,
@@ -2339,34 +2488,52 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     );
     if (hasConflict) {
       await connection.rollback();
-      return res.status(409).json({ error: 'That sport slot is already booked for the selected time.' });
+      return res.status(409).json({
+        error: isFitness
+          ? 'That Fitness session time is already booked.'
+          : 'That sport slot is already booked for the selected time.',
+      });
     }
-    const pricePerHour = Number(sportConfig.pricePerHour);
-    const includedPlayers = Number(
-      sportConfig.includedPlayers ?? venue.included_players,
-    );
-    const additionalPlayerFee = Number(
-      sportConfig.additionalPlayerFee ?? venue.additional_player_fee,
-    );
+    const pricePerHour = isFitness
+      ? fitnessPlanPrice
+      : Number(sportConfig.pricePerHour);
+    const includedPlayers = isFitness
+      ? 0
+      : Number(sportConfig.includedPlayers ?? venue.included_players);
+    const additionalPlayerFee = isFitness
+      ? 0
+      : Number(sportConfig.additionalPlayerFee ?? venue.additional_player_fee);
     const extraPlayers = Math.max(0, players - includedPlayers);
     const extraPlayerCharge = Number(
       (extraPlayers * additionalPlayerFee).toFixed(2),
     );
     const total = Number(
-      (pricePerHour * durationHours + extraPlayerCharge).toFixed(2),
+      (isFitness
+        ? fitnessPlanPrice + fitnessCoachPrice
+        : pricePerHour * durationHours + extraPlayerCharge
+      ).toFixed(2),
     );
-    const downpayment = Number((total * 0.50).toFixed(2));
+    const downpayment = Number(
+      (isFitness ? total : total * 0.50).toFixed(2),
+    );
     const bookingToken = createBookingToken();
     const [result] = await connection.execute(
       `INSERT INTO bookings
        (customer_id, venue_id, booking_date, start_time, duration_hours, players,
         payment_method, sport_type, slot_number, occupies_full_studio,
         price_per_hour, total_amount, downpayment_amount,
-        extra_player_charge, booking_token_hash, payment_status, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        extra_player_charge, fitness_plan_type, fitness_category,
+        fitness_coach_name, fitness_plan_price, fitness_coach_price,
+        booking_token_hash, payment_status, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
-       paymentMethod, sportConfig.sportType, slotNumber, fullStudio ? 1 : 0,
+       paymentMethod, selectedSportType, slotNumber, fullStudio ? 1 : 0,
        pricePerHour, total, downpayment, extraPlayerCharge,
+       isFitness ? fitnessPlanType : null,
+       isFitness ? selectedSportType : null,
+       isFitness ? fitnessCoach?.name ?? null : null,
+       isFitness ? fitnessPlanPrice : null,
+       isFitness ? fitnessCoachPrice : null,
        hashBookingToken(bookingToken),
        paymentMethod === 'online' ? 'unpaid' : 'not_required'],
     );
@@ -2391,9 +2558,19 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           bookingId: result.insertId,
           status: 'pending',
           extraPlayerCharge,
-          sportType: sportConfig.sportType,
+          sportType: selectedSportType,
           slotNumber,
           fullStudio,
+          includedPlayers,
+          additionalPlayerFee,
+          ...(isFitness
+            ? {
+                fitnessPlanType,
+                fitnessPlanPrice,
+                fitnessCoachName: fitnessCoach?.name ?? null,
+                fitnessCoachPrice,
+              }
+            : {}),
           bookingToken,
         }),
       ],
@@ -2407,22 +2584,36 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       {
         venueId,
         venueName: venue.name,
-        sportType: sportConfig.sportType,
+        sportType: selectedSportType,
         details: {
           bookingId: result.insertId,
           bookingDate,
           startTime,
           durationHours,
           players,
+          ...(isFitness
+            ? {
+                fitnessPlanType,
+                fitnessPlanPrice,
+                fitnessCoachName: fitnessCoach?.name ?? null,
+                fitnessCoachPrice,
+              }
+            : {}),
         },
       },
     );
     await connection.commit();
     return res.status(201).json({
       booking: { id: result.insertId, venueId, date: bookingDate, startTime,
-        durationHours, players, sportType: sportConfig.sportType,
+        durationHours, players, sportType: selectedSportType,
         slotNumber, fullStudio, paymentMethod, pricePerHour, total, downpayment,
-        extraPlayers, extraPlayerCharge, status: 'pending', bookingToken },
+        extraPlayers, extraPlayerCharge, includedPlayers,
+        additionalPlayerFee, fitnessPlanType: isFitness ? fitnessPlanType : null,
+        fitnessCategory: isFitness ? selectedSportType : null,
+        fitnessCoachName: isFitness ? fitnessCoach?.name ?? null : null,
+        fitnessPlanPrice: isFitness ? fitnessPlanPrice : null,
+        fitnessCoachPrice: isFitness ? fitnessCoachPrice : null,
+        status: 'pending', bookingToken },
     });
   } catch (error) {
     if (connection) await connection.rollback();
@@ -2434,6 +2625,27 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
 
 app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
   try {
+    const businessType = req.query.businessType;
+    let businessTypeFilter = '';
+    const params = [req.auth.sub];
+    if (businessType !== undefined) {
+      if (typeof businessType !== 'string') {
+        return res.status(400).json({ error: 'Invalid business type filter.' });
+      }
+      const normalizedBusinessType = businessType.trim().toLowerCase();
+      const businessTypeAliases = {
+        sports: 'sports',
+        fitness: 'fitness & wellness',
+        'fitness & wellness': 'fitness & wellness',
+        event: 'event',
+      };
+      const businessTypeValue = businessTypeAliases[normalizedBusinessType];
+      if (!businessTypeValue) {
+        return res.status(400).json({ error: 'Invalid business type filter.' });
+      }
+      businessTypeFilter = ' AND LOWER(v.business_type) = ?';
+      params.push(businessTypeValue);
+    }
     const [bookings] = await pool.execute(
       `SELECT b.id, b.venue_id AS venueId, v.name AS venueName, v.address,
               CONCAT_WS(' ', u.first_name, u.last_name) AS ownerName,
@@ -2443,6 +2655,10 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               e.attendance_max AS attendanceMax,
               e.accessibility_needs AS accessibilityNeeds,
               e.parking_needs AS parkingNeeds, e.security_needs AS securityNeeds,
+              f.class_capacity AS classCapacity,
+              f.session_duration_minutes AS sessionDurationMinutes,
+              f.instructor_name AS instructorName,
+              f.class_schedule AS classSchedule,
               v.details, v.visit_url AS visitUrl,
               v.price_per_hour AS venuePricePerHour, v.event_fee AS eventFee,
               v.amenities_json AS amenities,
@@ -2450,6 +2666,11 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_category AS fitnessCategory,
+              b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_plan_price AS fitnessPlanPrice,
+              b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
               b.price_per_hour AS pricePerHour, b.total_amount AS total,
               b.extra_player_charge AS extraPlayerCharge,
@@ -2462,9 +2683,11 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
        JOIN merchant_businesses v ON v.id = b.venue_id
        JOIN users u ON u.id = v.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = v.id
+       LEFT JOIN fitness_business_details f ON f.business_id = v.id
        LEFT JOIN venue_reviews r ON r.booking_id = b.id AND r.customer_id = b.customer_id
-       WHERE b.customer_id = ? ORDER BY b.booking_date DESC, b.start_time DESC`,
-      [req.auth.sub],
+       WHERE b.customer_id = ?${businessTypeFilter}
+       ORDER BY b.booking_date DESC, b.start_time DESC`,
+      params,
     );
     for (const booking of bookings) {
       for (const field of [
@@ -2509,6 +2732,11 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               v.business_type AS businessType, b.booking_date AS date,
               b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_category AS fitnessCategory,
+              b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_plan_price AS fitnessPlanPrice,
+              b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
               b.payment_method AS paymentMethod, b.price_per_hour AS pricePerHour,
               b.extra_player_charge AS extraPlayerCharge,
@@ -2561,6 +2789,11 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
               b.payment_reference AS paymentReference,
               v.name AS venueName,
               COALESCE(b.sport_type, v.category) AS sportType,
+              b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_category AS fitnessCategory,
+              b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_plan_price AS fitnessPlanPrice,
+              b.fitness_coach_price AS fitnessCoachPrice,
               b.slot_number AS slotNumber,
               b.occupies_full_studio AS occupiesFullStudio
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
@@ -2598,6 +2831,11 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
           ticketCode,
           venueName: booking.venueName,
           sportType: booking.sportType,
+          fitnessPlanType: booking.fitnessPlanType,
+          fitnessCategory: booking.fitnessCategory,
+          fitnessCoachName: booking.fitnessCoachName,
+          fitnessPlanPrice: booking.fitnessPlanPrice,
+          fitnessCoachPrice: booking.fitnessCoachPrice,
           slotNumber: booking.slotNumber,
           fullStudio: Number(booking.occupiesFullStudio) === 1,
           bookingDate: booking.bookingDate,
@@ -2673,7 +2911,8 @@ app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchan
       `SELECT b.customer_id AS customerId, b.venue_id AS venueId,
               b.booking_date AS bookingDate, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players,
-              v.name AS venueName, v.category AS sportType
+              v.name AS venueName,
+              COALESCE(b.sport_type, v.category) AS sportType
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        WHERE b.id = ? AND v.merchant_id = ? LIMIT 1`,
       [req.params.id, req.auth.sub],
@@ -3012,7 +3251,8 @@ async function submitCustomerReview(req, res, next) {
   try {
     const [bookings] = await pool.execute(
       `SELECT b.id, b.venue_id AS venueId, v.name AS venueName,
-              v.category AS sportType, b.booking_date AS bookingDate,
+              COALESCE(b.sport_type, v.category) AS sportType,
+              b.booking_date AS bookingDate,
               b.start_time AS startTime
        FROM bookings b
        JOIN merchant_businesses v ON v.id = b.venue_id
@@ -3297,6 +3537,8 @@ async function ensureMerchantBusinessesSchema() {
       session_duration_minutes INT UNSIGNED NULL,
       instructor_name VARCHAR(255) NULL,
       class_schedule TEXT NULL,
+      fitness_categories_json JSON NULL,
+      fitness_coaches_json JSON NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (business_id),
@@ -3305,6 +3547,12 @@ async function ensureMerchantBusinessesSchema() {
         ON UPDATE CASCADE ON DELETE CASCADE
     ) ENGINE=InnoDB
   `);
+  for (const [name, definition] of [
+    ['fitness_categories_json', 'JSON NULL'],
+    ['fitness_coaches_json', 'JSON NULL'],
+  ]) {
+    await ensureTableColumn('fitness_business_details', name, definition);
+  }
   for (const [name, definition] of [
     ['event_types_json', 'JSON NULL'],
     ['attendance_min', 'INT UNSIGNED NULL'],
@@ -3403,6 +3651,11 @@ async function ensureBookingsSchema() {
       total_amount DECIMAL(10, 2) NOT NULL,
       downpayment_amount DECIMAL(10, 2) NOT NULL,
       extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      fitness_plan_type ENUM('session', 'monthly', 'yearly') NULL,
+      fitness_category VARCHAR(100) NULL,
+      fitness_coach_name VARCHAR(100) NULL,
+      fitness_plan_price DECIMAL(10, 2) NULL,
+      fitness_coach_price DECIMAL(10, 2) NULL,
       booking_token_hash CHAR(64) NULL,
       ticket_token_hash CHAR(64) NULL,
       payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
@@ -3426,6 +3679,11 @@ async function ensureBookingsSchema() {
     ['booking_token_hash', 'CHAR(64) NULL'],
     ['ticket_token_hash', 'CHAR(64) NULL'],
     ['extra_player_charge', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
+    ['fitness_plan_type', "ENUM('session', 'monthly', 'yearly') NULL"],
+    ['fitness_category', 'VARCHAR(100) NULL'],
+    ['fitness_coach_name', 'VARCHAR(100) NULL'],
+    ['fitness_plan_price', 'DECIMAL(10, 2) NULL'],
+    ['fitness_coach_price', 'DECIMAL(10, 2) NULL'],
     ['sport_type', 'VARCHAR(100) NULL'],
     ['slot_number', 'INT UNSIGNED NULL'],
     ['occupies_full_studio', 'TINYINT(1) NOT NULL DEFAULT 1'],

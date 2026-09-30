@@ -61,4 +61,38 @@ void main() {
     expect(find.text('TP-ACCESS-123'), findsOneWidget);
     expect(find.text('TICKET CODE'), findsOneWidget);
   });
+
+  testWidgets('Fitness ticket displays the selected term and coach', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking_ticket',
+            'bookingId': 502,
+            'status': 'approved',
+            'ticketCode': 'TP-FITNESS-502',
+            'venueName': 'Yoga Studio',
+            'sportType': 'Yoga',
+            'fitnessPlanType': 'yearly',
+            'fitnessCategory': 'Yoga',
+            'fitnessCoachName': 'Alex Coach',
+            'fitnessPlanPrice': 10800,
+            'fitnessCoachPrice': 3600,
+            'bookingDate': '2026-10-01',
+            'startTime': '09:00:00',
+            'durationHours': 1,
+            'players': 1,
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('TINKERPRO  ·  FITNESS PASS'), findsOneWidget);
+    expect(find.text('Yoga · Yearly plan'), findsOneWidget);
+    expect(find.textContaining('Alex Coach'), findsOneWidget);
+    expect(find.text('Plan total: PHP 10800.00'), findsOneWidget);
+    expect(find.text('Whole studio'), findsNothing);
+  });
 }

@@ -96,6 +96,11 @@ class Booking {
     this.total = 0,
     this.downpayment = 0,
     this.extraPlayerCharge = 0,
+    this.fitnessPlanType = '',
+    this.fitnessCategory = '',
+    this.fitnessCoachName = '',
+    this.fitnessPlanPrice = 0,
+    this.fitnessCoachPrice = 0,
     this.status = 'pending',
     this.createdAt = '',
     this.reviewId,
@@ -116,6 +121,11 @@ class Booking {
   final double total;
   final double downpayment;
   final double extraPlayerCharge;
+  final String fitnessPlanType;
+  final String fitnessCategory;
+  final String fitnessCoachName;
+  final double fitnessPlanPrice;
+  final double fitnessCoachPrice;
   final String status;
   final String createdAt;
   final int? reviewId;
@@ -137,6 +147,11 @@ class Booking {
     total: _doubleValue(json['total']),
     downpayment: _doubleValue(json['downpayment']),
     extraPlayerCharge: _doubleValue(json['extraPlayerCharge']),
+    fitnessPlanType: _text(json['fitnessPlanType']),
+    fitnessCategory: _text(json['fitnessCategory']),
+    fitnessCoachName: _text(json['fitnessCoachName']),
+    fitnessPlanPrice: _doubleValue(json['fitnessPlanPrice']),
+    fitnessCoachPrice: _doubleValue(json['fitnessCoachPrice']),
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
     createdAt: _text(json['createdAt']),
     reviewId: _intValue(json['reviewId']),
@@ -180,6 +195,11 @@ class Booking {
     'total' => total,
     'downpayment' => downpayment,
     'extraPlayerCharge' => extraPlayerCharge,
+    'fitnessPlanType' => fitnessPlanType,
+    'fitnessCategory' => fitnessCategory,
+    'fitnessCoachName' => fitnessCoachName,
+    'fitnessPlanPrice' => fitnessPlanPrice,
+    'fitnessCoachPrice' => fitnessCoachPrice,
     'status' => status,
     'createdAt' => createdAt,
     'reviewId' => reviewId,

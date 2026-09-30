@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'activity_log_page.dart';
 import 'app_bottom_navigation.dart';
+import 'auth_api.dart';
+import 'app_design_system.dart';
 
-const _profileInk = Color(0xFF101B33);
-const _profileMuted = Color(0xFF68748A);
-const _profileLine = Color(0xFFE2E7EF);
+const _profileInk = AppColors.ink;
+const _profileMuted = AppColors.muted;
+const _profileLine = AppColors.border;
+
+enum _MerchantProfileSetting { editProfile, activityLog, logOut }
 
 class MerchantProfileDashboardPage extends StatefulWidget {
   const MerchantProfileDashboardPage({
@@ -15,6 +20,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
     this.bookings = const [],
     required this.onLogout,
     required this.onEditProfile,
+    this.api,
     this.onNavigate,
   });
 
@@ -24,6 +30,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
   final List<Map<String, dynamic>> bookings;
   final Future<void> Function(BuildContext context) onLogout;
   final Future<Map<String, dynamic>?> Function() onEditProfile;
+  final AuthApi? api;
   final ValueChanged<int>? onNavigate;
 
   @override
@@ -104,22 +111,10 @@ class _MerchantProfileDashboardPageState
         scrolledUnderElevation: 0,
         actions: [
           IconButton(
-            tooltip: 'Edit profile',
-            onPressed: () async {
-              final updated = await widget.onEditProfile();
-              if (!mounted || updated == null) return;
-              setState(() {
-                _owner = Map<String, dynamic>.from(updated['owner'] as Map);
-                _profileImage =
-                    updated['profileImage'] as ImageProvider<Object>?;
-              });
-            },
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: 'Log out',
-            onPressed: () => widget.onLogout(context),
-            icon: const Icon(Icons.logout_rounded),
+            key: const ValueKey('merchant-profile-settings'),
+            tooltip: 'Settings',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined),
           ),
         ],
       ),
@@ -146,6 +141,150 @@ class _MerchantProfileDashboardPageState
         },
       ),
     );
+  }
+
+  Future<void> _openSettings() async {
+    final setting = await showGeneralDialog<_MerchantProfileSetting>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close settings',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) => Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: Colors.white,
+          elevation: 12,
+          child: SizedBox(
+            width: MediaQuery.sizeOf(dialogContext).width * .82,
+            height: double.infinity,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.settings_outlined,
+                          color: Color(0xFFFF8200),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Settings',
+                            style: TextStyle(
+                              color: _profileInk,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close settings',
+                          onPressed: () => Navigator.pop(dialogContext),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: _profileLine),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    key: const ValueKey('merchant-settings-edit-profile'),
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Edit profile'),
+                    onTap: () => Navigator.pop(
+                      dialogContext,
+                      _MerchantProfileSetting.editProfile,
+                    ),
+                  ),
+                  ListTile(
+                    key: const ValueKey('merchant-settings-activity-log'),
+                    leading: const Icon(Icons.history_rounded),
+                    title: const Text('Activity log'),
+                    subtitle: const Text('Review activity on your account'),
+                    onTap: () => Navigator.pop(
+                      dialogContext,
+                      _MerchantProfileSetting.activityLog,
+                    ),
+                  ),
+                  const Spacer(),
+                  const Divider(height: 1, color: _profileLine),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'ACCOUNT',
+                        style: TextStyle(
+                          color: _profileMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    key: const ValueKey('merchant-settings-logout'),
+                    leading: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.red,
+                    ),
+                    title: const Text(
+                      'Log out',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () => Navigator.pop(
+                      dialogContext,
+                      _MerchantProfileSetting.logOut,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
+    );
+    if (!mounted || setting == null) return;
+    await _handleSetting(setting);
+  }
+
+  Future<void> _handleSetting(_MerchantProfileSetting setting) async {
+    switch (setting) {
+      case _MerchantProfileSetting.editProfile:
+        final updated = await widget.onEditProfile();
+        if (!mounted || updated == null) return;
+        setState(() {
+          _owner = Map<String, dynamic>.from(updated['owner'] as Map);
+          _profileImage = updated['profileImage'] as ImageProvider<Object>?;
+        });
+        return;
+      case _MerchantProfileSetting.activityLog:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ActivityLogPage(api: widget.api),
+          ),
+        );
+        return;
+      case _MerchantProfileSetting.logOut:
+        await widget.onLogout(context);
+        return;
+    }
   }
 
   Widget _profileCard(String name, String email, String phone) => Container(

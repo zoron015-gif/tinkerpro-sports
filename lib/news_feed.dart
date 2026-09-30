@@ -10,7 +10,6 @@ import 'auth_api.dart';
 import 'app_session.dart';
 import 'sports.dart';
 import 'event_dashboard.dart';
-import 'fitness_dashboard.dart';
 import 'saved_items.dart';
 import 'saved_icons.dart';
 import 'messages_dashboard.dart';
@@ -18,16 +17,20 @@ import 'customer_bookings_page.dart';
 import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'reviews.dart';
+import 'fitness_booking_page.dart';
 import 'all_venues_page.dart';
 import 'merchant_business_status.dart';
 import 'app_card_styles.dart';
 import 'app_bottom_navigation.dart';
 import 'filter_panel_style.dart';
+import 'sports_slot_configurations.dart';
+import 'app_design_system.dart';
 
-const _newsInk = Color(0xFF101B33);
-const _newsMuted = Color(0xFF68748A);
-const _newsOrange = Color(0xFFFF8200);
-const _newsPage = Color(0xFFF7F9FC);
+const _newsInk = AppColors.ink;
+const _newsMuted = AppColors.muted;
+const _newsOrange = AppColors.orange;
+const _newsPage = AppColors.page;
+const _newsCardImageHeight = 160.0;
 
 class _NewsImageCarousel extends StatefulWidget {
   const _NewsImageCarousel({required this.images, required this.imageProvider});
@@ -61,7 +64,7 @@ class _NewsImageCarouselState extends State<_NewsImageCarousel> {
   Widget build(BuildContext context) {
     final multiple = widget.images.length > 1;
     return SizedBox(
-      height: 190,
+      height: _newsCardImageHeight,
       width: double.infinity,
       child: Stack(
         children: [
@@ -130,12 +133,32 @@ class NewsFeedPage extends StatefulWidget {
     this.savedOnly = false,
     this.api,
     this.initialUserPosition,
+    this.businessType = 'Sports',
+    this.pageTitle = 'Sports Courts',
+    this.savedItemType = 'sports',
+    this.categoryNoun = 'sports',
+    this.venueNoun = 'courts',
+    this.searchHint = 'Search venues, categories, or news...',
+    this.highestRatedSectionTitle = 'Highest rate',
+    this.allVenuesHeading = 'All listed courts',
+    this.categoryFilterLabel = 'Sport type',
+    this.facilityFilterLabel = 'Court type',
   });
 
   final Future<void> Function(BuildContext context)? onLogout;
   final bool savedOnly;
   final AuthApi? api;
   final Position? initialUserPosition;
+  final String businessType;
+  final String pageTitle;
+  final String savedItemType;
+  final String categoryNoun;
+  final String venueNoun;
+  final String searchHint;
+  final String highestRatedSectionTitle;
+  final String allVenuesHeading;
+  final String categoryFilterLabel;
+  final String facilityFilterLabel;
 
   @override
   State<NewsFeedPage> createState() => _NewsFeedPageState();
@@ -156,18 +179,25 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   Position? _userPosition;
   var _locationLoading = false;
   String _feedArea = 'All areas';
-  String _feedSport = 'All sports';
+  late String _feedSport;
   String _feedCourtType = 'All';
   String _feedAvailability = 'Any';
   String _feedPriceSort = 'Recommended';
   double _feedMaxPrice = 700;
   final Set<String> _feedAmenities = <String>{};
 
+  String get _categoryAllLabel => widget.businessType.toLowerCase() == 'sports'
+      ? 'All sports'
+      : 'All types';
+
+  String get _facilityAllLabel => 'All';
+
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? AuthApi();
     _userPosition = widget.initialUserPosition;
+    _feedSport = _categoryAllLabel;
     _businesses = _api.customerBusinesses();
     _posts = _loadFeed();
     _loadSavedKeys();
@@ -200,18 +230,25 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         .map((business) => int.tryParse('${business['id'] ?? ''}'))
         .whereType<int>()
         .toSet();
-    final posts = feedPosts.map((post) {
-      final businessId = int.tryParse('${post['businessId'] ?? ''}');
-      final enabled =
-          businessId != null &&
-          enabledBusinessIds.contains(businessId) &&
-          !_isMerchantDisabled(post);
-      return {...post, 'enabled': enabled, 'businessEnabled': enabled};
-    }).toList();
+    final posts = feedPosts
+        .map((post) {
+          final businessId = int.tryParse('${post['businessId'] ?? ''}');
+          final enabled =
+              businessId != null &&
+              enabledBusinessIds.contains(businessId) &&
+              !_isMerchantDisabled(post);
+          return {...post, 'enabled': enabled, 'businessEnabled': enabled};
+        })
+        .where((post) => _matchesBusinessType(post['businessType']))
+        .toList();
     if (!widget.savedOnly) return posts;
     final saved = await SavedItemStore.list();
     final savedKeys = saved
-        .where((item) => '${item['itemType'] ?? ''}'.toLowerCase() == 'sports')
+        .where(
+          (item) =>
+              '${item['itemType'] ?? ''}'.toLowerCase() ==
+              widget.savedItemType.toLowerCase(),
+        )
         .map((item) => '${item['itemKey'] ?? ''}')
         .toSet();
     return posts
@@ -221,6 +258,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               savedKeys.contains('${post['businessName'] ?? ''}'),
         )
         .toList();
+  }
+
+  bool _matchesBusinessType(Object? value) {
+    final type = '$value'.trim().toLowerCase();
+    if (widget.businessType.toLowerCase() == 'sports') {
+      return type == 'sports';
+    }
+    if (widget.businessType.toLowerCase() == 'fitness') {
+      return type == 'fitness' ||
+          type == 'wellness' ||
+          type.contains('fitness') ||
+          type.contains('wellness');
+    }
+    return type == widget.businessType.trim().toLowerCase();
   }
 
   Future<void> _reload() async {
@@ -256,7 +307,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             saved
                 .where(
                   (item) =>
-                      '${item['itemType'] ?? ''}'.toLowerCase() == 'sports',
+                      '${item['itemType'] ?? ''}'.toLowerCase() ==
+                      widget.savedItemType.toLowerCase(),
                 )
                 .map((item) => '${item['itemKey'] ?? ''}'),
           );
@@ -285,7 +337,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (_) => ReserveDashboardPage(
-                initialSelection: 'Sports',
+                initialSelection: widget.businessType.toLowerCase() == 'fitness'
+                    ? 'Fitness & Wellness'
+                    : widget.businessType,
                 onLogout: widget.onLogout,
               ),
             ),
@@ -299,7 +353,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ),
       ),
       title: Text(
-        widget.savedOnly ? 'Saved venues' : 'Sports Courts',
+        widget.savedOnly ? 'Saved venues' : widget.pageTitle,
         style: const TextStyle(color: _newsInk, fontWeight: FontWeight.w900),
       ),
       actions: [
@@ -352,7 +406,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                       : 'No saved venues match your filters or search.'
                                 : snapshot.data?.isEmpty == true
                                 ? 'No venue news has been posted yet.'
-                                : 'No courts match your search.',
+                                : 'No ${widget.venueNoun} match your search.',
                           );
                         }
                         return widget.savedOnly
@@ -401,7 +455,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               final sports = _feedOptions(
                 posts,
                 (post) => '${post['category'] ?? ''}',
-                'All sports',
+                _categoryAllLabel,
               );
               return Align(
                 alignment: Alignment.centerRight,
@@ -433,8 +487,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                     onPressed: () {
                                       setState(() {
                                         _feedArea = 'All areas';
-                                        _feedSport = 'All sports';
-                                        _feedCourtType = 'All';
+                                        _feedSport = _categoryAllLabel;
+                                        _feedCourtType = _facilityAllLabel;
                                         _feedAvailability = 'Any';
                                         _feedPriceSort = 'Recommended';
                                         _feedMaxPrice = 700;
@@ -461,7 +515,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               child: ListView(
                                 padding: filterPanelContentPadding,
                                 children: [
-                                  _filterLabel('Sport type'),
+                                  _filterLabel(widget.categoryFilterLabel),
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 8,
@@ -537,12 +591,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   const SizedBox(
                                     height: filterPanelSectionSpacing,
                                   ),
-                                  _filterLabel('Court type'),
+                                  _filterLabel(widget.facilityFilterLabel),
                                   Wrap(
                                     spacing: 8,
                                     children: [
                                       for (final value in [
-                                        'All',
+                                        _facilityAllLabel,
                                         ..._feedOptions(
                                           posts,
                                           (post) =>
@@ -708,8 +762,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   int get _activeFeedFilterCount =>
       (_feedArea == 'All areas' ? 0 : 1) +
-      (_feedSport == 'All sports' ? 0 : 1) +
-      (_feedCourtType == 'All' ? 0 : 1) +
+      (_feedSport == _categoryAllLabel ? 0 : 1) +
+      (_feedCourtType == _facilityAllLabel ? 0 : 1) +
       (_feedAvailability == 'Any' ? 0 : 1) +
       (_feedPriceSort == 'Recommended' ? 0 : 1) +
       (_feedMaxPrice >= 700 ? 0 : 1) +
@@ -805,7 +859,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Widget _courtMapHeaderControl() => IconButton(
     key: const ValueKey('news-feed-toggle-court-map'),
-    tooltip: _courtMapExpanded ? 'Hide court map' : 'Show courts on map',
+    tooltip: _courtMapExpanded
+        ? 'Hide ${widget.venueNoun == 'courts' ? 'court' : 'venue'} map'
+        : 'Show ${widget.venueNoun} on map',
     onPressed: () => setState(() => _courtMapExpanded = !_courtMapExpanded),
     icon: AnimatedRotation(
       turns: _courtMapExpanded ? .5 : 0,
@@ -830,7 +886,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Text(
-              'Could not load court locations: ${snapshot.error}',
+              'Could not load ${widget.venueNoun == 'courts' ? 'court' : 'venue'} locations: ${snapshot.error}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: _newsMuted, fontSize: 12),
             ),
@@ -840,11 +896,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
       final courts = (snapshot.data ?? const <Map<String, dynamic>>[])
           .where(
-            (business) =>
-                '${business['businessType'] ?? business['business_type'] ?? ''}'
-                    .trim()
-                    .toLowerCase() ==
-                'sports',
+            (business) => _matchesBusinessType(
+              business['businessType'] ?? business['business_type'],
+            ),
           )
           .toList();
       final pinnedCourts = <({Map<String, dynamic> business, LatLng point})>[];
@@ -869,7 +923,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
       final uniquePoints = pinnedCourts.map((court) => court.point).toSet();
       final center = uniquePoints.isEmpty
-          ? const LatLng(10.3157, 123.8854)
+          ? _userPosition == null
+                ? const LatLng(10.3157, 123.8854)
+                : LatLng(_userPosition!.latitude, _userPosition!.longitude)
           : LatLng(
               uniquePoints
                       .map((point) => point.latitude)
@@ -945,7 +1001,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   vertical: 9,
                 ),
                 child: Text(
-                  '${pinnedCourts.length} courts on map'
+                  '${pinnedCourts.length} ${widget.venueNoun} on map'
                   '${courtsWithoutPin.isEmpty ? '' : ' · ${courtsWithoutPin.length} need pins'}',
                   style: const TextStyle(
                     color: _newsInk,
@@ -1000,7 +1056,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         _showLocationMessage(
-          'Location services are off. Turn them on to find nearby courts.',
+          'Location services are off. Turn them on to find nearby ${widget.venueNoun}.',
           actionLabel: 'Location settings',
           onAction: Geolocator.openLocationSettings,
         );
@@ -1013,13 +1069,13 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
       if (permission == LocationPermission.denied) {
         _showLocationMessage(
-          'Location permission was denied. Allow location access to sort courts by distance.',
+          'Location permission was denied. Allow location access to sort ${widget.venueNoun} by distance.',
         );
         return;
       }
       if (permission == LocationPermission.deniedForever) {
         _showLocationMessage(
-          'Location permission is blocked. Enable it in app settings to find nearby courts.',
+          'Location permission is blocked. Enable it in app settings to find nearby ${widget.venueNoun}.',
           actionLabel: 'App settings',
           onAction: Geolocator.openAppSettings,
         );
@@ -1035,7 +1091,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       if (!mounted) return;
       setState(() => _userPosition = position);
       refreshSheet();
-      _showLocationMessage('Courts are now ordered nearest to your location.');
+      _showLocationMessage(
+        '${widget.venueNoun[0].toUpperCase()}${widget.venueNoun.substring(1)} are now ordered nearest to your location.',
+      );
     } on Exception catch (error) {
       _showLocationMessage('Could not get your location: $error');
     } finally {
@@ -1078,7 +1136,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       controller: _searchController,
       onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
-        hintText: 'Search venues, categories, or news...',
+        hintText: widget.searchHint,
         hintStyle: const TextStyle(fontSize: 13),
         prefixIcon: const Icon(Icons.search, size: 17),
         prefixIconConstraints: const BoxConstraints(
@@ -1150,17 +1208,23 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         _horizontalVenues(featured, identifier: 'most-popular'),
         const SizedBox(height: 22),
         _sectionHeader(
-          'Highest rate',
+          widget.highestRatedSectionTitle,
           'Highest average review rating',
           highestRated,
         ),
-        _horizontalVenues(rated, identifier: 'highest-rate'),
+        _horizontalVenues(
+          rated,
+          identifier: widget.highestRatedSectionTitle.toLowerCase().replaceAll(
+            ' ',
+            '-',
+          ),
+        ),
         const SizedBox(height: 24),
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'All listed courts',
+                widget.allVenuesHeading,
                 style: TextStyle(
                   color: _newsInk,
                   fontSize: 20,
@@ -1239,6 +1303,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           title: title,
           posts: sectionPosts,
           cardBuilder: _postCard,
+          initialUserPosition: _userPosition,
+          categoryFilterLabel: widget.categoryFilterLabel,
+          categoryAllLabel: _categoryAllLabel,
+          facilityFilterLabel: widget.facilityFilterLabel,
+          popularHeading: widget.businessType == 'Sports'
+              ? 'Courts with the most hearts'
+              : '${widget.pageTitle} venues with the most hearts',
+          ratedHeading: widget.businessType == 'Sports'
+              ? 'Courts with the highest ratings'
+              : '${widget.pageTitle} venues with the highest ratings',
+          searchHint: widget.businessType.toLowerCase() == 'sports'
+              ? 'Search venues, sports, or areas...'
+              : 'Search venues, ${widget.categoryNoun}, or areas...',
+          collectionDescription: widget.businessType == 'Sports'
+              ? 'Browse every venue in this collection.'
+              : 'Browse all ${widget.venueNoun} in this collection.',
         ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
             SlideTransition(
@@ -1675,7 +1755,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final matchesArea =
           _feedArea == 'All areas' || address.contains(_feedArea.toLowerCase());
       final matchesSport =
-          _feedSport == 'All sports' || category == _feedSport.toLowerCase();
+          _feedSport == _categoryAllLabel ||
+          category == _feedSport.toLowerCase();
       final facility = '${post['facilityType'] ?? ''}';
       final hours = '${post['hours'] ?? post['opening_hours'] ?? ''}';
       final availability = '${post['availability'] ?? ''}';
@@ -1687,7 +1768,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final rawAmenities = '${post['tags'] ?? post['amenities'] ?? ''}'
           .toLowerCase();
       final matchesCourt =
-          _feedCourtType == 'All' ||
+          _feedCourtType == _facilityAllLabel ||
           facility.toLowerCase() == _feedCourtType.toLowerCase();
       final matchesAvailability =
           _feedAvailability == 'Any' ||
@@ -1763,6 +1844,16 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               onLogout: widget.onLogout,
               api: _api,
               initialUserPosition: _userPosition,
+              businessType: widget.businessType,
+              pageTitle: widget.pageTitle,
+              savedItemType: widget.savedItemType,
+              categoryNoun: widget.categoryNoun,
+              venueNoun: widget.venueNoun,
+              searchHint: widget.searchHint,
+              highestRatedSectionTitle: widget.highestRatedSectionTitle,
+              allVenuesHeading: widget.allVenuesHeading,
+              categoryFilterLabel: widget.categoryFilterLabel,
+              facilityFilterLabel: widget.facilityFilterLabel,
             ),
           ),
         );
@@ -1777,6 +1868,16 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             savedOnly: true,
             api: _api,
             initialUserPosition: _userPosition,
+            businessType: widget.businessType,
+            pageTitle: widget.pageTitle,
+            savedItemType: widget.savedItemType,
+            categoryNoun: widget.categoryNoun,
+            venueNoun: widget.venueNoun,
+            searchHint: widget.searchHint,
+            highestRatedSectionTitle: widget.highestRatedSectionTitle,
+            allVenuesHeading: widget.allVenuesHeading,
+            categoryFilterLabel: widget.categoryFilterLabel,
+            facilityFilterLabel: widget.facilityFilterLabel,
           ),
         ),
       );
@@ -1786,6 +1887,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => MessagesDashboardPage(
             initialUserPosition: _userPosition,
             api: _api,
+            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
           ),
         ),
       );
@@ -1795,6 +1897,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => CustomerBookingsPage(
             onLogout: widget.onLogout,
             initialUserPosition: _userPosition,
+            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
           ),
         ),
       );
@@ -1804,6 +1907,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => ProfileDashboardPage(
             onLogout: widget.onLogout,
             initialUserPosition: _userPosition,
+            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
           ),
         ),
       );
@@ -1887,14 +1991,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         children: [
           Stack(
             children: [
-              images.isNotEmpty
-                  ? _NewsImageCarousel(
-                      images: images,
-                      imageProvider: _imageProvider,
-                    )
-                  : image != null && image.isNotEmpty
-                  ? _image(image)
-                  : _imageFallback(),
+              SizedBox(
+                key: ValueKey('news-feed-image-${_venueIdentifier(post)}'),
+                width: double.infinity,
+                height: _newsCardImageHeight,
+                child: images.isNotEmpty
+                    ? _NewsImageCarousel(
+                        images: images,
+                        imageProvider: _imageProvider,
+                      )
+                    : image != null && image.isNotEmpty
+                    ? _image(image)
+                    : _imageFallback(),
+              ),
               if (type.isNotEmpty)
                 Positioned(
                   top: 14,
@@ -1948,7 +2057,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             ],
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2056,9 +2165,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ],
                   ),
                 ],
-                const SizedBox(height: 9),
+                const SizedBox(height: 7),
                 _priceTag(priceLabel),
-                const SizedBox(height: 9),
+                const SizedBox(height: 7),
                 Text(
                   '${post['title'] ?? ''}',
                   style: TextStyle(
@@ -2067,10 +2176,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   body,
-                  maxLines: 4,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: _newsMuted,
@@ -2078,7 +2187,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 if (unavailable) ...[
                   Container(
                     width: double.infinity,
@@ -2300,6 +2409,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => MessagesDashboardPage(
             owner: owner,
             businessTitle: '${post['businessName'] ?? 'Venue'}',
+            initialUserPosition: _userPosition,
+            api: _api,
+            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
           ),
         ),
       );
@@ -2332,10 +2444,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     });
     try {
       if (currentlySaved) {
-        await SavedItemStore.remove('sports', key);
+        await SavedItemStore.remove(widget.savedItemType, key);
       } else {
         await SavedItemStore.save(
-          type: 'sports',
+          type: widget.savedItemType,
           key: key,
           title: businessName,
           subtitle: '${post['address'] ?? ''}',
@@ -2396,7 +2508,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Widget _imageFallback() => const SizedBox(
-    height: 190,
+    height: _newsCardImageHeight,
     width: double.infinity,
     child: ColoredBox(
       color: Color(0xFFFFE8D2),
@@ -2409,7 +2521,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     if (provider == null) return _imageFallback();
     return Image(
       image: provider,
-      height: 190,
+      height: _newsCardImageHeight,
       width: double.infinity,
       fit: BoxFit.cover,
       errorBuilder: (_, _, _) => _imageFallback(),
@@ -2461,13 +2573,25 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         }
         return;
       }
-      final type = '${post['businessType'] ?? post['type'] ?? ''}';
-      final venue = _toSportsVenue({
-        ...post,
-        'includedPlayers': publishedBusiness['includedPlayers'],
-        'additionalPlayerFee': publishedBusiness['additionalPlayerFee'],
-        'business': publishedBusiness,
-      });
+      final type =
+          '${publishedBusiness['businessType'] ?? post['businessType'] ?? post['type'] ?? ''}';
+      final venue = _toSportsVenue(
+        {
+          ...post,
+          ...publishedBusiness,
+          'businessName': publishedBusiness['name'] ?? post['businessName'],
+          'includedPlayers': publishedBusiness['includedPlayers'],
+          'additionalPlayerFee': publishedBusiness['additionalPlayerFee'],
+          'averageRating': post['averageRating'],
+          'reviewCount': post['reviewCount'],
+          'ratingUserCount': post['ratingUserCount'],
+          'heartCount': post['heartCount'],
+          'business': publishedBusiness,
+        },
+        fitness:
+            type.toLowerCase().contains('fitness') ||
+            type.toLowerCase().contains('wellness'),
+      );
       if (!mounted) return;
 
       if (type.toLowerCase().contains('event')) {
@@ -2481,7 +2605,24 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           type.toLowerCase().contains('wellness')) {
         await Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => FitnessDashboardPage(onLogout: null),
+            builder: (_) => SportsVenueDetailPage(
+              venue: venue,
+              savedItemType: 'fitness',
+              amenitiesHeading: 'FITNESS AMENITIES',
+              onReserve: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  showDragHandle: true,
+                  backgroundColor: const Color(0xFFF8F9FF),
+                  builder: (_) => FitnessBookingPage(
+                    business: publishedBusiness,
+                    api: _api,
+                    onLogout: widget.onLogout,
+                  ),
+                );
+              },
+            ),
           ),
         );
         return;
@@ -2513,7 +2654,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   // Retained for compatibility with older venue-post payloads.
   // ignore: unused_element
-  SportsVenue _toSportsVenue(Map<String, dynamic> post) {
+  SportsVenue _toSportsVenue(
+    Map<String, dynamic> post, {
+    bool fitness = false,
+  }) {
     final business = post['business'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(post['business'] as Map)
         : post['business'] is Map
@@ -2562,18 +2706,71 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       post['availabilityStatus'],
       business['availabilityStatus'],
     ]);
-    final priceRaw = _firstNonEmpty([
-      post['pricePerHour'],
-      business['pricePerHour'],
-      post['price_per_hour'],
-      business['price_per_hour'],
-      post['price'],
-      business['price'],
-      post['hourlyRate'],
-      business['hourlyRate'],
-    ]);
+    final fitnessCategories = _stringMapList(
+      business['fitnessCategories'] ?? business['fitness_categories_json'],
+    );
+    final fitnessCoaches = _stringMapList(
+      business['fitnessCoaches'] ?? business['fitness_coaches_json'],
+    );
+    final fitnessRates = <String>[];
+    var fitnessHeadlinePrice = 0.0;
+    var fitnessHeadlineLabel = '';
+    if (fitness) {
+      for (final item in fitnessCategories) {
+        final categoryName = _stringValue([item['category']]);
+        if (categoryName.isEmpty) continue;
+        for (final (plan, label, unit) in const [
+          ('session', 'Session', 'session'),
+          ('monthly', 'Monthly', 'month'),
+          ('yearly', 'Yearly', 'year'),
+        ]) {
+          var amount = _number(item['${plan}Price']);
+          if (plan == 'yearly') {
+            final discountType = item['yearlyDiscountType'];
+            final discountValue = _number(item['yearlyDiscountValue']);
+            if (discountType == 'freeMonths') {
+              amount = (amount - _number(item['monthlyPrice']) * discountValue)
+                  .clamp(0, double.infinity);
+            } else if (discountType == 'percentage') {
+              amount *= (1 - discountValue / 100).clamp(0, 1);
+            }
+          }
+          if (amount <= 0) continue;
+          fitnessRates.add(
+            '$categoryName · $label|PHP ${amount.toStringAsFixed(2)} / $unit',
+          );
+          if (fitnessHeadlinePrice == 0) {
+            fitnessHeadlinePrice = amount;
+            fitnessHeadlineLabel = unit;
+          }
+        }
+      }
+      for (final coach in fitnessCoaches) {
+        final coachName = _stringValue([coach['name']]);
+        final price = _number(coach['monthlyPrice']);
+        if (coachName.isNotEmpty && price > 0) {
+          fitnessRates.add(
+            'Coach $coachName|PHP ${price.toStringAsFixed(2)} / month',
+          );
+        }
+      }
+    }
+    final priceRaw = fitness && fitnessHeadlinePrice > 0
+        ? fitnessHeadlinePrice
+        : _firstNonEmpty([
+            post['pricePerHour'],
+            business['pricePerHour'],
+            post['price_per_hour'],
+            business['price_per_hour'],
+            post['price'],
+            business['price'],
+            post['hourlyRate'],
+            business['hourlyRate'],
+          ]);
     final priceText = priceRaw == null || '$priceRaw'.trim().isEmpty
         ? ''
+        : fitness && fitnessHeadlinePrice > 0
+        ? 'PHP ${fitnessHeadlinePrice.toStringAsFixed(2)} / $fitnessHeadlineLabel'
         : (priceRaw is num
               ? 'PHP ${priceRaw.toStringAsFixed(0)} / hour'
               : priceRaw.toString().startsWith('PHP')
@@ -2619,34 +2816,40 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ? priceRaw.toDouble()
         : double.tryParse('$priceRaw') ?? 0;
     final totalSlots =
-        int.tryParse(
-          '${post['slotCount'] ?? business['slotCount'] ?? post['slot_count'] ?? business['slot_count'] ?? 1}',
-        ) ??
-        1;
+        int.tryParse('${post['slotCount'] ?? business['slotCount'] ?? 1}') ?? 1;
+    final rawSportsSlots =
+        post['sportsSlots'] ??
+        business['sportsSlots'] ??
+        post['sports_slots_json'] ??
+        business['sports_slots_json'];
     final sportsSlots = normalizeSportsSlotConfigurations(
-      raw:
-          post['sportsSlots'] ??
-          business['sportsSlots'] ??
-          post['sports_slots_json'] ??
-          business['sports_slots_json'],
+      raw: rawSportsSlots,
       legacySportTypes: category,
       legacyPrice: parsedPrice,
       totalSlots: totalSlots,
-      includedPlayers:
-          int.tryParse(
-            '${post['includedPlayers'] ?? business['includedPlayers'] ?? post['included_players'] ?? business['included_players'] ?? 0}',
-          ) ??
-          0,
-      additionalPlayerFee:
-          double.tryParse(
-            '${post['additionalPlayerFee'] ?? business['additionalPlayerFee'] ?? post['additional_player_fee'] ?? business['additional_player_fee'] ?? 0}',
-          ) ??
-          0,
+      includedPlayers: _number(
+        post['includedPlayers'] ??
+            business['includedPlayers'] ??
+            post['included_players'] ??
+            business['included_players'],
+      ).toInt(),
+      additionalPlayerFee: _number(
+        post['additionalPlayerFee'] ??
+            business['additionalPlayerFee'] ??
+            post['additional_player_fee'] ??
+            business['additional_player_fee'],
+      ),
     );
     final sportRateLabels = sportsSlots.map((sport) {
       final rate = (sport['pricePerHour'] as num).toDouble();
+      final included = (sport['includedPlayers'] as num).toInt();
+      final extraFee = (sport['additionalPlayerFee'] as num).toDouble();
+      final playerFee = included > 0 && extraFee > 0
+          ? ' · $included included · PHP ${extraFee.toStringAsFixed(2)} / extra player'
+          : '';
       return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / '
-          '${sport['fullStudio'] == true ? 'whole studio' : 'per slot'}';
+          '${sport['fullStudio'] == true ? 'whole studio' : 'per slot'}'
+          '$playerFee';
     }).toList();
     final maxSportPrice = sportsSlots
         .map((sport) => (sport['pricePerHour'] as num).toDouble())
@@ -2659,11 +2862,18 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return (
       id: venueId,
       name: businessName,
-      sport: sportsSlots.map((item) => item['sportType']).join(', '),
+      sport: fitness
+          ? fitnessCategories
+                .map((item) => _stringValue([item['category']]))
+                .where((item) => item.isNotEmpty)
+                .join(', ')
+          : sportsSlots.map((item) => item['sportType']).join(', '),
       address: address,
       ownerName: ownerName,
       type: type,
-      courts: '',
+      courts: fitness
+          ? _stringValue([business['facilityType'], business['facility_type']])
+          : '',
       hours: hours,
       availability: availability,
       details: _stringValue([
@@ -2675,12 +2885,16 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       images: images,
       priceDay: priceText,
       priceNight: priceText,
-      priceLines: sportRateLabels.isNotEmpty
+      priceLines: fitness && fitnessRates.isNotEmpty
+          ? fitnessRates
+          : sportRateLabels.isNotEmpty
           ? sportRateLabels
           : priceText.isEmpty
           ? const <String>[]
           : <String>[priceText],
-      maxPrice: maxSportPrice,
+      maxPrice: fitness && fitnessHeadlinePrice > 0
+          ? fitnessHeadlinePrice
+          : maxSportPrice,
       averageRating: _number(post['averageRating']),
       reviewCount: _number(post['reviewCount']).toInt(),
       ratingUserCount: _number(post['ratingUserCount']).toInt(),
@@ -2697,7 +2911,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       totalSlots: totalSlots,
       sportsSlots: sportsSlots,
       tags: tags,
-      rateLabels: sportRateLabels.isNotEmpty ? sportRateLabels : rateLabels,
+      rateLabels: fitness && fitnessRates.isNotEmpty
+          ? fitnessRates
+          : sportRateLabels.isNotEmpty
+          ? sportRateLabels
+          : rateLabels,
       latitude: 0,
       longitude: 0,
       distanceLabel: _distanceLabel(post) ?? '',
@@ -2747,6 +2965,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
     }
     return '';
+  }
+
+  List<Map<String, dynamic>> _stringMapList(Object? value) {
+    dynamic decoded = value;
+    if (decoded is String && decoded.trim().isNotEmpty) {
+      try {
+        decoded = jsonDecode(decoded);
+      } on FormatException {
+        return const [];
+      }
+    }
+    if (decoded is! List) return const [];
+    return decoded
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   dynamic _firstNonEmpty(List<dynamic> values) {

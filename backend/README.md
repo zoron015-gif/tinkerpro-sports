@@ -35,7 +35,14 @@ reviews, using MySQL.
    issues the separate entry ticket and access code.
 5. Install dependencies and start the API:
 
-   ```sh
+   ```
+
+Account registration and sign-in requests are limited to 100 requests per
+client IP and 10 per normalized email every 15 minutes. Email verification and
+password recovery are limited to 8 requests per normalized email in the same
+window. Limited requests return HTTP 429 with `Retry-After` and `RateLimit-*`
+headers. These limits are held in each API process; deployments with multiple
+instances should also enforce equivalent limits at a shared API gateway.sh
    cd backend
    npm install
    npm run dev
@@ -80,15 +87,53 @@ Authenticated endpoints require `Authorization: Bearer <token>`.
 - Reviews: `POST /api/reviews` accepts one review for each customer's completed
   booking.
 
+## Database integration tests
+
+The default `npm test` suite uses isolated database fakes and does not require
+MySQL. To run the opt-in integration test, configure a MySQL account that can
+create and drop databases, then set `MYSQL_TEST_HOST`, `MYSQL_TEST_USER`, and
+`MYSQL_TEST_DATABASE` (a dedicated name ending in `_test`). Set
+`MYSQL_TEST_PASSWORD` and `MYSQL_TEST_PORT` if needed and run:
+
+```sh
+npm run test:integration
+```
+
+The test creates a uniquely named temporary database derived from the
+`MYSQL_TEST_DATABASE` prefix, applies `database/sports.sql`, starts the API
+against that database, verifies Fitness booking/pricing and conflict checks,
+approves a booking, and confirms the issued ticket is persisted in Messages.
+It drops only the temporary database it created.
+
 Registration creates a pending account and sends a six-digit verification code
 by Gmail SMTP. The code expires after 10 minutes.
 
 Sports venues can configure a shared `slotCount` and a `sportsSlots` list. Each
-sport entry contains `sportType`, `pricePerHour`, `includedPlayers`,
-`additionalPlayerFee`, `fullStudio`, and `slotCount`. A full-studio sport blocks
-every slot; a small-slot sport blocks only its selected `slotNumber`, while any
-overlapping full-studio booking blocks all small slots. Booking rates and
-sport-specific extra-player fees are taken from the saved sport configuration,
-not from the customer request. Overlapping bookings are checked under a venue
-row lock. Existing venues without a sports-slot configuration keep their
-single, full-studio booking behavior.
+sport entry contains `sportType`, `pricePerHour`, `fullStudio`, and `slotCount`.
+A full-studio sport blocks every slot; a small-slot sport blocks only its
+selected `slotNumber`, while any overlapping full-studio booking blocks all
+small slots. Optional `includedPlayers` and `additionalPlayerFee` values are
+configured independently for each sport. Booking prices and extra-player fees
+are taken from the saved sport configuration, not from the customer request,
+and overlapping bookings are checked under a venue row lock. Existing venues
+without a sports-slot configuration keep their single, full-studio behavior.
+
+Fitness & Wellness businesses can configure multiple `fitnessCategories`, each
+with separate `sessionPrice`, `monthlyPrice`, and `yearlyPrice` values plus an
+optional yearly discount (`freeMonths` or `percentage`). Optional
+`fitnessCoaches` store each coach's name, monthly price, and profile image URL.
+These settings are stored as JSON in `fitness_business_details`; startup adds
+the columns for existing databases, and merchant/public business responses
+return both lists for editing and display.
+
+Customers can book a configured Fitness category with a session, monthly, or
+yearly plan and choose a first-visit date/time. The first visit reserves a
+one-hour venue interval; overlapping pending or approved bookings are rejected.
+Plan prices and coach fees are recalculated from the saved merchant
+configuration when the booking is created. A yearly `freeMonths` offer
+subtracts the category's monthly price for each free month from its yearly
+price; a yearly percentage offer discounts the yearly price. A selected
+coach's monthly fee is charged once for session/monthly plans and 12 times for
+a yearly plan. The selected term is charged once at checkout (no automatic
+renewal), and Fitness bookings store their category, term, coach, and price
+breakdown on the booking record.

@@ -5,12 +5,13 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'auth_api.dart';
 import 'app_session.dart';
+import 'app_design_system.dart';
 
-const _navy = Color(0xFF192B50);
-const _ink = Color(0xFF101B33);
-const _orange = Color(0xFFFF8200);
-const _page = Color(0xFFF7F9FC);
-const _muted = Color(0xFF68748A);
+const _navy = AppColors.navy;
+const _ink = AppColors.ink;
+const _orange = AppColors.orange;
+const _page = AppColors.page;
+const _muted = AppColors.muted;
 const _googleServerClientId = String.fromEnvironment(
   'GOOGLE_SERVER_CLIENT_ID',
   defaultValue: '451592121635-f7hgfk7plbi3mngvor1eenrup21mlbg5.apps.googleusercontent.com',

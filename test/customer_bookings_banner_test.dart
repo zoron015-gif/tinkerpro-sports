@@ -37,6 +37,49 @@ void main() {
     );
   });
 
+  testWidgets('booking cards explain pending and confirmed states', (
+    tester,
+  ) async {
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {..._approvedBooking, 'id': 20, 'status': 'pending'},
+                {..._approvedBooking, 'id': 21, 'status': 'approved'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 500);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Awaiting approval'), findsOneWidget);
+    expect(
+      find.text(
+        'Waiting for the venue to approve your request. Not confirmed yet.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Approved (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirmed'), findsOneWidget);
+    expect(
+      find.text('Confirmed by the venue. Your booking is ready.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('refreshing from the banner dismisses it', (tester) async {
     var bookingRequests = 0;
     final api = AuthApi(

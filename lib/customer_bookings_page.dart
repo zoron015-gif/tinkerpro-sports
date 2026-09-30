@@ -18,11 +18,13 @@ class CustomerBookingsPage extends StatefulWidget {
     this.onLogout,
     this.api,
     this.initialUserPosition,
+    this.businessType,
   });
 
   final Future<void> Function(BuildContext context)? onLogout;
   final AuthApi? api;
   final Position? initialUserPosition;
+  final String? businessType;
 
   @override
   State<CustomerBookingsPage> createState() => _CustomerBookingsPageState();
@@ -321,40 +323,42 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         unreadMessageCount: _unreadMessageCount,
         unreadBookingCount: _unreadBookingCount,
         onDestinationSelected: (index) {
-            if (index == 3) return;
-            if (index == 0) {
-              _openExplore();
-              return;
-            }
-            if (index == 1) {
-              _replaceWith(
-                MaterialPageRoute(
-                  builder: (_) => SavedDashboardPage(
-                    onLogout: widget.onLogout,
-                    initialUserPosition: widget.initialUserPosition,
-                  ),
-                ),
-              );
-              return;
-            }
-            if (index == 2) {
-              _replaceWith(
-                MaterialPageRoute(
-                  builder: (_) => MessagesDashboardPage(
-                    initialUserPosition: widget.initialUserPosition,
-                  ),
-                ),
-              );
-              return;
-            }
+          if (index == 3) return;
+          if (index == 0) {
+            _openExplore();
+            return;
+          }
+          if (index == 1) {
             _replaceWith(
               MaterialPageRoute(
-                builder: (_) => ProfileDashboardPage(
+                builder: (_) => SavedDashboardPage(
                   onLogout: widget.onLogout,
                   initialUserPosition: widget.initialUserPosition,
                 ),
               ),
             );
+            return;
+          }
+          if (index == 2) {
+            _replaceWith(
+              MaterialPageRoute(
+                builder: (_) => MessagesDashboardPage(
+                  initialUserPosition: widget.initialUserPosition,
+                  businessType: widget.businessType,
+                ),
+              ),
+            );
+            return;
+          }
+          _replaceWith(
+            MaterialPageRoute(
+              builder: (_) => ProfileDashboardPage(
+                onLogout: widget.onLogout,
+                initialUserPosition: widget.initialUserPosition,
+                businessType: widget.businessType,
+              ),
+            ),
+          );
         },
       ),
     );
@@ -389,20 +393,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   Widget _bookingStatusBanner(List<Booking> approved, List<Booking> completed) {
     final booking = completed.isNotEmpty ? completed.first : approved.first;
     final status = _bookingStatus(booking);
-    final finished = {
-      'finished',
-      'done',
-      'completed',
-      'expired',
-      'cancelled',
-    }.contains(status);
+    final isCompleted = {'finished', 'done', 'completed'}.contains(status);
+    final isInactive = {'expired', 'cancelled'}.contains(status);
     return MaterialBanner(
-      backgroundColor: finished
+      backgroundColor: isCompleted
           ? const Color(0xFFE7F6EC)
+          : isInactive
+          ? const Color(0xFFFEE4E2)
           : const Color(0xFFFFF1E3),
       leading: Icon(
-        finished ? Icons.check_circle_rounded : Icons.event_available_rounded,
-        color: finished ? Colors.green.shade700 : const Color(0xFFFF8200),
+        isCompleted
+            ? Icons.check_circle_rounded
+            : isInactive
+            ? Icons.event_busy_rounded
+            : Icons.event_available_rounded,
+        color: isCompleted
+            ? Colors.green.shade700
+            : isInactive
+            ? const Color(0xFFB42318)
+            : const Color(0xFFFF8200),
       ),
       content: InkWell(
         key: const ValueKey('booking-status-banner-content'),
@@ -411,8 +420,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
-            finished
-                ? 'Booking at ${booking['venueName'] ?? 'your venue'} is $status.'
+            isCompleted || isInactive
+                ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
+                      '${_statusLabel(status).toLowerCase()}.'
                 : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
                       'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
             style: const TextStyle(
@@ -465,6 +475,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         builder: (_) => NewsFeedPage(
           onLogout: widget.onLogout,
           initialUserPosition: widget.initialUserPosition,
+          businessType: widget.businessType ?? 'Sports',
         ),
       ),
     );
@@ -541,7 +552,17 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     _statusPill(status),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
+                Text(
+                  _statusGuidance(status),
+                  key: ValueKey('booking-status-guidance-$status'),
+                  style: TextStyle(
+                    color: _statusColor(status),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 _venueDetail(Icons.location_on_outlined, booking['address']),
                 _venueDetail(Icons.access_time_rounded, booking['hours']),
@@ -578,22 +599,62 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
-  Widget _statusPill(String status) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFFE8D2),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      status.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        letterSpacing: .6,
-        color: Color(0xFFB85C00),
+  String _statusLabel(String status) => switch (status.toLowerCase()) {
+    'pending' => 'Awaiting approval',
+    'approved' => 'Confirmed',
+    'finished' || 'done' || 'completed' => 'Completed',
+    'expired' => 'Expired',
+    'cancelled' => 'Cancelled',
+    _ =>
+      status
+          .split(RegExp(r'[_\s]+'))
+          .where((part) => part.isNotEmpty)
+          .map(
+            (part) =>
+                '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+          )
+          .join(' '),
+  };
+
+  Color _statusColor(String status) => switch (status.toLowerCase()) {
+    'pending' => const Color(0xFFB85C00),
+    'approved' ||
+    'finished' ||
+    'done' ||
+    'completed' => const Color(0xFF18794E),
+    'expired' || 'cancelled' => const Color(0xFFB42318),
+    _ => const Color(0xFF475467),
+  };
+
+  String _statusGuidance(String status) => switch (status.toLowerCase()) {
+    'pending' =>
+      'Waiting for the venue to approve your request. Not confirmed yet.',
+    'approved' => 'Confirmed by the venue. Your booking is ready.',
+    'finished' || 'done' || 'completed' => 'This booking has been completed.',
+    'expired' => 'This request expired before it was confirmed.',
+    'cancelled' => 'This booking was cancelled and is no longer reserved.',
+    _ => 'Check the booking details or contact the venue for an update.',
+  };
+
+  Widget _statusPill(String status) {
+    final color = _statusColor(status);
+    return Container(
+      key: ValueKey('booking-status-pill-${status.toLowerCase()}'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(20),
       ),
-    ),
-  );
+      child: Text(
+        _statusLabel(status),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
 
   Widget _imageBadge(String text, Color background, Color foreground) =>
       DecoratedBox(
@@ -650,9 +711,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       builder: (_) => _BookingRatingDialog(booking: booking, api: _api),
     );
     if (!mounted || submitted != true) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Your rating was submitted.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Your rating was submitted.')));
     await _refresh();
   }
 
@@ -741,6 +802,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final status = '${booking['status'] ?? 'pending'}';
     final total = _amount(booking['total']);
     final downpayment = _amount(booking['downpayment']);
+    final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
 
     return Container(
       width: double.infinity,
@@ -768,23 +830,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFF20293A)),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                    color: Color(0xFF101B33),
-                  ),
-                ),
-              ),
+              _statusPill(status),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _statusGuidance(status),
+            style: TextStyle(
+              color: _statusColor(status),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -797,9 +854,28 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            '${booking['players']} players · ${booking['paymentMethod']}',
+            '${fitnessPlanType.isNotEmpty ? 'First visit' : '${booking['players']} players'} · '
+            '${booking['paymentMethod']}',
             style: const TextStyle(fontSize: 14, color: Color(0xFF4C5B72)),
           ),
+          if (fitnessPlanType.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${booking['fitnessCategory']} · '
+                      '${booking['fitnessPlanType']}'
+                  .toUpperCase(),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2A9D72),
+              ),
+            ),
+            Text(
+              'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
+              '${'${booking['fitnessCoachName'] ?? ''}'.isEmpty ? '' : '\nCoach: ${booking['fitnessCoachName']} · PHP ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}'}',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF4C5B72)),
+            ),
+          ],
           const SizedBox(height: 10),
           Text(
             'Total: PHP ${total.toStringAsFixed(2)}',
@@ -820,7 +896,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ),
           const SizedBox(height: 2),
           Text(
-            'Downpayment: PHP ${downpayment.toStringAsFixed(2)}',
+            '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Downpayment'}: PHP '
+            '${fitnessPlanType.isNotEmpty ? total.toStringAsFixed(2) : downpayment.toStringAsFixed(2)}',
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -847,19 +924,20 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           _venueDetail(
             Icons.sports_rounded,
             _labelValue(
-              'Sport',
+              fitnessPlanType.isNotEmpty ? 'Fitness category' : 'Sport',
               booking['sportType'] ?? booking['category'],
             ),
           ),
-          _venueDetail(
-            Icons.grid_view_rounded,
-            _labelValue(
-              'Booked area',
-              booking['occupiesFullStudio'] == true
-                  ? 'Whole studio'
-                  : 'Slot ${booking['slotNumber'] ?? '—'}',
+          if (fitnessPlanType.isEmpty)
+            _venueDetail(
+              Icons.grid_view_rounded,
+              _labelValue(
+                'Booked area',
+                booking['occupiesFullStudio'] == true
+                    ? 'Whole studio'
+                    : 'Slot ${booking['slotNumber'] ?? '—'}',
+              ),
             ),
-          ),
           _venueDetail(
             Icons.business_center_outlined,
             _labelValue('Type', booking['facilityType']),

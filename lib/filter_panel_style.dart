@@ -2,21 +2,34 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'app_design_system.dart';
+
 const filterPanelTransitionDuration = Duration(milliseconds: 300);
 const filterPanelMaxWidth = 440.0;
 const filterPanelWidthFactor = .9;
 const filterPanelSectionSpacing = 16.0;
 
-const filterPanelHeaderPadding = EdgeInsets.fromLTRB(20, 14, 12, 8);
-const filterPanelContentPadding = EdgeInsets.fromLTRB(20, 16, 20, 24);
-const filterPanelFooterPadding = EdgeInsets.fromLTRB(20, 8, 20, 14);
-const filterPanelTitleStyle = TextStyle(
-  color: Color(0xFF101B33),
-  fontSize: 20,
-  fontWeight: FontWeight.w900,
+const filterPanelHeaderPadding = EdgeInsets.fromLTRB(
+  AppSpacing.panelInset,
+  14,
+  AppSpacing.medium,
+  AppSpacing.small,
 );
+const filterPanelContentPadding = EdgeInsets.fromLTRB(
+  AppSpacing.panelInset,
+  AppSpacing.large,
+  AppSpacing.panelInset,
+  AppSpacing.xLarge,
+);
+const filterPanelFooterPadding = EdgeInsets.fromLTRB(
+  AppSpacing.panelInset,
+  AppSpacing.small,
+  AppSpacing.panelInset,
+  14,
+);
+const filterPanelTitleStyle = AppTypography.filterTitle;
 const filterPanelSectionLabelStyle = TextStyle(
-  color: Color(0xFF68748A),
+  color: AppColors.muted,
   fontSize: 12,
   fontWeight: FontWeight.w900,
   letterSpacing: 1,
@@ -26,11 +39,11 @@ const filterPanelButtonStyle = ButtonStyle(
   fixedSize: WidgetStatePropertyAll(Size(48, 48)),
   padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
   shape: WidgetStatePropertyAll(CircleBorder()),
-  backgroundColor: WidgetStatePropertyAll(Color(0xFFF7F9FC)),
-  foregroundColor: WidgetStatePropertyAll(Color(0xFF101B33)),
+  backgroundColor: WidgetStatePropertyAll(AppColors.page),
+  foregroundColor: WidgetStatePropertyAll(AppColors.ink),
 );
 const filterPanelApplyButtonStyle = ButtonStyle(
-  backgroundColor: WidgetStatePropertyAll(Color(0xFF101B33)),
+  backgroundColor: WidgetStatePropertyAll(AppColors.ink),
   minimumSize: WidgetStatePropertyAll(Size.fromHeight(50)),
   shape: WidgetStatePropertyAll(
     RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),

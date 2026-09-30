@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-const messageBackground = Color(0xFFF7F9FC);
-const messageNavy = Color(0xFF192B50);
-const messageMuted = Color(0xFF68748A);
-const messageOrange = Color(0xFFFF8200);
-const messageSoftOrange = Color(0xFFFFE8D2);
+import 'app_design_system.dart';
+
+const messageBackground = AppColors.page;
+const messageNavy = AppColors.navy;
+const messageMuted = AppColors.muted;
+const messageOrange = AppColors.orange;
+const messageSoftOrange = AppColors.softOrange;
 
 String safeString(Object? value, [String fallback = '']) {
   if (value == null) return fallback;
@@ -131,6 +133,14 @@ class MessagesBookingTicket extends StatelessWidget {
     final bookingId = safeString(data['bookingId'], '—');
     final venueName = safeString(data['venueName'], 'Sports venue');
     final sportType = safeString(data['sportType']);
+    final fitnessPlanType = safeString(data['fitnessPlanType']);
+    final fitnessCategory = safeString(data['fitnessCategory'], sportType);
+    final fitnessCoachName = safeString(data['fitnessCoachName']);
+    final fitnessPlanPrice = num.tryParse(safeString(data['fitnessPlanPrice']));
+    final fitnessCoachPrice = num.tryParse(
+      safeString(data['fitnessCoachPrice']),
+    );
+    final isFitnessBooking = fitnessPlanType.isNotEmpty;
     final fullStudio = data['fullStudio'] == true;
     final slotNumber = safeString(data['slotNumber']);
     final date = safeString(data['bookingDate'], 'Date to be confirmed');
@@ -170,10 +180,12 @@ class MessagesBookingTicket extends StatelessWidget {
                     size: 22,
                   ),
                   const SizedBox(width: 9),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'TINKERPRO  ·  COURT PASS',
-                      style: TextStyle(
+                      isFitnessBooking
+                          ? 'TINKERPRO  ·  FITNESS PASS'
+                          : 'TINKERPRO  ·  COURT PASS',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
@@ -224,7 +236,37 @@ class MessagesBookingTicket extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (sportType.isNotEmpty) ...[
+                  if (isFitnessBooking) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      '$fitnessCategory · '
+                      '${fitnessPlanType[0].toUpperCase()}'
+                      '${fitnessPlanType.substring(1)} plan',
+                      style: const TextStyle(
+                        color: messageMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (fitnessCoachName.isNotEmpty)
+                      Text(
+                        'Coach: $fitnessCoachName'
+                        '${fitnessCoachPrice == null ? '' : ' · PHP ${fitnessCoachPrice.toStringAsFixed(2)}'}',
+                        style: const TextStyle(
+                          color: messageMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    if (fitnessPlanPrice != null)
+                      Text(
+                        'Plan total: PHP ${fitnessPlanPrice.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: messageMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ] else if (sportType.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       sportType,
@@ -234,7 +276,8 @@ class MessagesBookingTicket extends StatelessWidget {
                       ),
                     ),
                   ],
-                  if (fullStudio || slotNumber.isNotEmpty) ...[
+                  if (!isFitnessBooking &&
+                      (fullStudio || slotNumber.isNotEmpty)) ...[
                     const SizedBox(height: 3),
                     Text(
                       fullStudio ? 'Whole studio' : 'Slot $slotNumber',

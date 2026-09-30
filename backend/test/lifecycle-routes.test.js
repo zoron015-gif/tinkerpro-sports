@@ -48,6 +48,9 @@ function makeConnection() {
       if (sql.includes('FROM merchant_businesses b JOIN users u')) {
         return response(db.venue ? [db.venue] : []);
       }
+      if (sql.includes('FROM fitness_business_details WHERE business_id = ?')) {
+        return response(db.fitnessDetails ? [db.fitnessDetails] : []);
+      }
       if (sql.includes('FROM bookings') && sql.includes('AND start_time <')) {
         return response(db.overlapRows ?? (
           db.overlap
@@ -98,10 +101,12 @@ function resetDatabase() {
     resetToken: null,
     availabilityRows: [],
     availabilityError: null,
+    customerBookings: [],
     venue: {
       id: 7,
       merchant_id: 88,
       name: 'Test Court',
+      businessType: 'Sports',
       category: 'Basketball',
       price_per_hour: 120,
       slot_count: 5,
@@ -115,16 +120,27 @@ function resetDatabase() {
         {
           sportType: 'Badminton',
           pricePerHour: 90,
-          includedPlayers: 2,
-          additionalPlayerFee: 20,
           fullStudio: false,
           slotCount: 4,
+          includedPlayers: 2,
+          additionalPlayerFee: 5,
         },
       ],
       included_players: 4,
       additional_player_fee: 15,
       enabled: 1,
       merchant_status: 'active',
+    },
+    fitnessDetails: {
+      fitnessCategories: [{
+        category: 'Yoga',
+        sessionPrice: 500,
+        monthlyPrice: 1200,
+        yearlyPrice: 12000,
+        yearlyDiscountType: 'freeMonths',
+        yearlyDiscountValue: 2,
+      }],
+      fitnessCoaches: [{ name: 'Alex Coach', monthlyPrice: 300 }],
     },
     overlap: false,
     overlapRows: null,
@@ -173,6 +189,12 @@ before(async () => {
         const role = String(params[0]) === '88' ? 'merchant' : 'customer';
         return response([{ role, status: db.accountStatus }]);
       }
+      if (sql.includes('SELECT id FROM users WHERE id = ? AND role = \'merchant\'')) {
+        return response([{ id: Number(params[0]) }]);
+      }
+      if (sql.includes('INSERT INTO merchant_businesses')) {
+        return [{ insertId: 702 }, []];
+      }
       if (sql.includes('SELECT id, name, category FROM merchant_businesses') && sql.includes('enabled = 1')) {
         return response([{
           id: Number(params[0]),
@@ -185,6 +207,12 @@ before(async () => {
       }
       if (sql.includes('FROM venue_reviews r INNER JOIN users u')) {
         return response(db.venueReviews);
+      }
+      if (
+        sql.includes('FROM bookings b') &&
+        sql.includes('LEFT JOIN fitness_business_details')
+      ) {
+        return response(db.customerBookings);
       }
       if (sql.includes('SELECT start_time AS startTime')) {
         if (db.availabilityError) throw db.availabilityError;
@@ -287,6 +315,165 @@ test('activity log reads are scoped to the authenticated user', async () => {
   assert.ok(activityQuery);
   assert.deepEqual(activityQuery.params, ['42']);
   assert.doesNotMatch(activityQuery.sql, /userId/i);
+});
+
+test('customer booking responses include fitness class details', async () => {
+  db.customerBookings = [{
+    id: 901,
+    businessType: 'Fitness & Wellness',
+    venueName: 'Studio Flow',
+    classCapacity: 18,
+    sessionDurationMinutes: 45,
+    instructorName: 'Alex',
+    classSchedule: 'Weekdays',
+    eventTypes: null,
+    accessibilityNeeds: null,
+    parkingNeeds: null,
+    securityNeeds: null,
+    ratePeriods: null,
+    amenities: null,
+    imageUrls: null,
+    imageUrl: null,
+  }];
+
+  const response = await request('/api/bookings?businessType=Fitness');
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.bookings[0].businessType, 'Fitness & Wellness');
+  assert.equal(body.bookings[0].classCapacity, 18);
+  assert.equal(body.bookings[0].sessionDurationMinutes, 45);
+  assert.equal(body.bookings[0].instructorName, 'Alex');
+  assert.equal(body.bookings[0].classSchedule, 'Weekdays');
+  const bookingQuery = db.calls.find(({ sql }) =>
+    sql.includes('FROM bookings b') &&
+    sql.includes('LEFT JOIN fitness_business_details'),
+  );
+  assert.ok(bookingQuery);
+  assert.match(bookingQuery.sql, /LOWER\(v\.business_type\) = \?/);
+  assert.deepEqual(bookingQuery.params, ['42', 'fitness & wellness']);
+});
+
+test('customer booking business type filter rejects unsupported values', async () => {
+  const response = await request('/api/bookings?businessType=unknown');
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Invalid business type filter.',
+  });
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('LEFT JOIN fitness_business_details')),
+    false,
+  );
+});
+
+test('fitness businesses persist category plans and optional coaches', async () => {
+  const response = await request('/api/merchant/businesses', {
+    role: 'merchant',
+    method: 'POST',
+    body: {
+      businessType: 'Fitness & Wellness',
+      name: 'Studio Flow',
+      category: 'Pilates',
+      address: 'Cebu City',
+      facilityType: 'Studio',
+      hours: '8:00 AM - 8:00 PM',
+      pricePerHour: 500,
+      latitude: 10.3,
+      longitude: 123.9,
+      fitnessCategories: [{
+        category: 'Pilates',
+        sessionPrice: 500,
+        monthlyPrice: 4000,
+        yearlyPrice: 40000,
+        yearlyDiscountType: 'freeMonths',
+        yearlyDiscountValue: 2,
+      }, {
+        category: 'Yoga',
+        sessionPrice: 450,
+        monthlyPrice: 3500,
+        yearlyPrice: 35000,
+        yearlyDiscountType: 'percentage',
+        yearlyDiscountValue: 10,
+      }],
+      fitnessCoaches: [{
+        name: 'Jamie Coach',
+        monthlyPrice: 6500,
+        profileImageUrl: null,
+      }, {
+        name: 'Alex Trainer',
+        monthlyPrice: 7200,
+        profileImageUrl: 'https://example.test/coach.png',
+      }],
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const saveQuery = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO fitness_business_details'),
+  );
+  assert.ok(saveQuery);
+  assert.deepEqual(JSON.parse(saveQuery.params[1]), [{
+    category: 'Pilates',
+    sessionPrice: 500,
+    monthlyPrice: 4000,
+    yearlyPrice: 40000,
+    yearlyDiscountType: 'freeMonths',
+    yearlyDiscountValue: 2,
+  }, {
+    category: 'Yoga',
+    sessionPrice: 450,
+    monthlyPrice: 3500,
+    yearlyPrice: 35000,
+    yearlyDiscountType: 'percentage',
+    yearlyDiscountValue: 10,
+  }]);
+  assert.deepEqual(JSON.parse(saveQuery.params[2]), [{
+    name: 'Jamie Coach',
+    monthlyPrice: 6500,
+    profileImageUrl: null,
+  }, {
+    name: 'Alex Trainer',
+    monthlyPrice: 7200,
+    profileImageUrl: 'https://example.test/coach.png',
+  }]);
+});
+
+test('fitness businesses reject invalid annual discounts and coach pricing', async () => {
+  const response = await request('/api/merchant/businesses', {
+    role: 'merchant',
+    method: 'POST',
+    body: {
+      businessType: 'Fitness & Wellness',
+      name: 'Studio Flow',
+      category: 'Pilates',
+      address: 'Cebu City',
+      facilityType: 'Studio',
+      hours: '8:00 AM - 8:00 PM',
+      pricePerHour: 500,
+      latitude: 10.3,
+      longitude: 123.9,
+      fitnessCategories: [{
+        category: 'Pilates',
+        sessionPrice: 500,
+        monthlyPrice: 4000,
+        yearlyPrice: 40000,
+        yearlyDiscountType: 'freeMonths',
+        yearlyDiscountValue: 12,
+      }],
+      fitnessCoaches: [{
+        name: 'Jamie Coach',
+        monthlyPrice: 0,
+      }],
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /fitness category pricing and coach settings/);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_businesses')),
+    false,
+  );
 });
 
 test('venue heart updates validate the venue and remain scoped to the user', async () => {
@@ -407,6 +594,93 @@ test('booking success calculates add-on charges and downpayment', async () => {
   });
 });
 
+test('Fitness bookings price the selected term, annual offer, and coach on the server', async () => {
+  db.venue.businessType = 'Fitness & Wellness';
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'online',
+      sportType: 'Yoga',
+      fitnessPlanType: 'yearly',
+      fitnessCoachName: 'Alex Coach',
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.fitnessCategory, 'Yoga');
+  assert.equal(booking.fitnessPlanType, 'yearly');
+  assert.equal(booking.fitnessPlanPrice, 9600);
+  assert.equal(booking.fitnessCoachPrice, 3600);
+  assert.equal(booking.total, 13200);
+  assert.equal(booking.downpayment, 13200);
+  const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
+  assert.ok(insert.sql.includes('fitness_plan_type'));
+  assert.equal(insert.params[14], 'yearly');
+  assert.equal(insert.params[15], 'Yoga');
+  assert.equal(insert.params[16], 'Alex Coach');
+});
+
+test('Fitness booking rejects a category or coach not configured by the venue', async () => {
+  db.venue.businessType = 'Fitness & Wellness';
+  const invalidCategory = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Unlisted class',
+      fitnessPlanType: 'monthly',
+    },
+  });
+  assert.equal(invalidCategory.status, 400);
+  assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+
+  const invalidCoach = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Yoga',
+      fitnessPlanType: 'monthly',
+      fitnessCoachName: 'Not our coach',
+    },
+  });
+  assert.equal(invalidCoach.status, 400);
+  assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+});
+
+test('Fitness first visits cannot be used to reserve extra hours or attendees', async () => {
+  db.venue.businessType = 'Fitness & Wellness';
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 3,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Yoga',
+      fitnessPlanType: 'session',
+    },
+  });
+  assert.equal(response.status, 400);
+  assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+});
+
 test('bookings on separate small slots can overlap and use the selected sport rate', async () => {
   db.overlapRows = [{ slotNumber: 1, occupiesFullStudio: 0 }];
   const response = await request('/api/bookings', {
@@ -416,7 +690,7 @@ test('bookings on separate small slots can overlap and use the selected sport ra
       date: '2026-10-01',
       startTime: '09:00',
       durationHours: 2,
-      players: 4,
+      players: 5,
       paymentMethod: 'cash_on_arrival',
       sportType: 'Badminton',
       slotNumber: 2,
@@ -428,8 +702,10 @@ test('bookings on separate small slots can overlap and use the selected sport ra
   assert.equal(booking.sportType, 'Badminton');
   assert.equal(booking.slotNumber, 2);
   assert.equal(booking.pricePerHour, 90);
-  assert.equal(booking.total, 220);
-  assert.equal(booking.extraPlayerCharge, 40);
+  assert.equal(booking.extraPlayerCharge, 15);
+  assert.equal(booking.includedPlayers, 2);
+  assert.equal(booking.additionalPlayerFee, 5);
+  assert.equal(booking.total, 195);
 });
 
 test('two overlapping bookings cannot use the same small slot', async () => {
@@ -579,7 +855,11 @@ test('password reset handles unknown accounts and accepts only a valid reset tok
     method: 'POST',
     body: { email: 'missing@example.test' },
   });
-  assert.equal(missing.status, 404);
+  assert.equal(missing.status, 200);
+  const missingBody = await missing.json();
+  assert.deepEqual(missingBody, {
+    message: 'If an account exists for this email, a password reset code was sent.',
+  });
 
   db.resetUser = { id: 71 };
   const requested = await request('/api/auth/forgot-password', {
@@ -587,6 +867,7 @@ test('password reset handles unknown accounts and accepts only a valid reset tok
     body: { email: 'person@example.test' },
   });
   assert.equal(requested.status, 200);
+  assert.deepEqual(await requested.json(), missingBody);
   assert.equal(sentResetCodes.length, 1);
 
   db.resetToken = {
@@ -625,6 +906,25 @@ test('password reset code verification requires a matching token', async () => {
   });
   assert.equal(valid.status, 200);
   assert.deepEqual(await valid.json(), { message: 'Verification code accepted.' });
+});
+
+test('password recovery throttles repeated attempts by email', async () => {
+  const email = `throttled.${Date.now()}@example.test`;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const response = await request('/api/auth/verify-password-reset-code', {
+      method: 'POST',
+      body: { email, code: '111111' },
+    });
+    assert.equal(response.status, 400);
+  }
+
+  const limited = await request('/api/auth/verify-password-reset-code', {
+    method: 'POST',
+    body: { email, code: '111111' },
+  });
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get('retry-after')) > 0);
+  assert.equal(limited.headers.get('ratelimit-remaining'), '0');
 });
 
 test('payment checkout validates method and reports missing configuration', async () => {

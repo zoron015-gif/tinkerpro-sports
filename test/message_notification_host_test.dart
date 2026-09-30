@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -34,22 +35,32 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: MessageNotificationHost(
+        builder: (context, child) => MessageNotificationHost(
           api: api,
           pollingInterval: const Duration(milliseconds: 100),
           onOpenConversation: (id) => openedConversationId = id,
-          child: const Scaffold(body: Text('Explore page')),
+          child: child ?? const SizedBox.shrink(),
         ),
+        home: const Scaffold(body: Text('Explore page')),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 20));
 
     conversations = [
-      _conversation(message: 'Ziggy sent a message', time: '2026-09-28T10:01:00Z'),
+      _conversation(
+        message: 'Ziggy sent a message',
+        time: '2026-09-28T10:01:00Z',
+      ),
     ];
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump();
+    final dismissButton = find.widgetWithIcon(IconButton, Icons.close_rounded);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(dismissButton));
+    await mouse.moveTo(tester.getCenter(dismissButton));
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
     await tester.tap(find.text('Ziggy sent a message'));
     await tester.pump();
 

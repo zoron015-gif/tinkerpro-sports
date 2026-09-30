@@ -42,25 +42,36 @@ void main() {
 
     pageKey.currentState!.openAddBusinessForm();
     await tester.pumpAndSettle();
-    expect(find.text('CHOOSE SPORT CATEGORIES'), findsOneWidget);
-    expect(find.text('No sports selected yet.'), findsOneWidget);
+    expect(find.text('STEP 1 OF 3  ·  Business basics'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, 'Example sports venue');
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('STEP 2 OF 3  ·  Booking details'), findsOneWidget);
+    expect(find.text('SPORTS, SLOTS & RATES'), findsOneWidget);
+    expect(
+      find.text(
+        'Choose at least one sport. Each selected sport needs its own rate and slot setup.',
+      ),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.widgetWithText(FilterChip, 'Basketball'));
+    await tester.ensureVisible(find.text('Basketball'));
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Basketball'));
     await tester.pumpAndSettle();
     expect(find.text('Chosen categories: Basketball'), findsOneWidget);
-    expect(find.text('Price per hour'), findsOneWidget);
-    expect(find.text('Whole court (1 slot)'), findsOneWidget);
+    expect(find.text('Price per hour (required)'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilterChip, 'Badminton'));
+    await tester.ensureVisible(find.text('Badminton'));
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Badminton'));
     await tester.pumpAndSettle();
     expect(
       find.text('Chosen categories: Basketball, Badminton'),
       findsOneWidget,
     );
-    expect(find.text('Price per hour'), findsNWidgets(2));
-    expect(find.text('Included players'), findsNWidgets(2));
-    expect(find.text('Fee per extra player'), findsNWidgets(2));
-    expect(find.text('Slots available for this sport'), findsOneWidget);
+    expect(find.text('Price per hour (required)'), findsNWidgets(2));
+    expect(find.text('Included players (optional)'), findsNWidgets(2));
+    expect(find.text('Fee / extra player (optional)'), findsNWidgets(2));
+    expect(find.text('Number of small slots'), findsOneWidget);
     expect(find.text('OPTIONAL EXTRA-PLAYER FEE'), findsNothing);
     expect(
       find.text('Legacy fallback rate (sports use the rates above)'),

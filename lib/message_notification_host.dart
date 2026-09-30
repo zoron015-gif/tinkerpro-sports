@@ -219,16 +219,19 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                               ],
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Dismiss message notification',
-                            onPressed: () {
-                              _dismissTimer?.cancel();
-                              setState(() => _notification = null);
-                            },
-                            icon: const Icon(
-                              Icons.close_rounded,
-                              color: Colors.white70,
-                              size: 20,
+                          Semantics(
+                            label: 'Dismiss message notification',
+                            button: true,
+                            child: IconButton(
+                              onPressed: () {
+                                _dismissTimer?.cancel();
+                                setState(() => _notification = null);
+                              },
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ],

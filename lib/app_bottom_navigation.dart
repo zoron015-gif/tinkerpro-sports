@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'app_design_system.dart';
 import 'saved_icons.dart';
 
-const _navigationNavy = Color(0xFF192B50);
-const _navigationOrange = Color(0xFFFF8200);
-const _navigationMuted = Color(0xFF68748A);
+const _navigationNavy = AppColors.navy;
+const _navigationOrange = AppColors.orange;
+const _navigationMuted = AppColors.muted;
 
 class AppBottomNavigation extends StatelessWidget {
   const AppBottomNavigation({
@@ -33,7 +34,7 @@ class AppBottomNavigation extends StatelessWidget {
         shadowColor: const Color(0x14000000),
         elevation: 2,
         height: 72,
-        indicatorColor: const Color(0xFFFFE8D2),
+        indicatorColor: AppColors.softOrange,
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(

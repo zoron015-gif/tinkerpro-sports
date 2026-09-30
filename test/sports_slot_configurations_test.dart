@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myapp/sports.dart';
+import 'package:myapp/sports_slot_configurations.dart';
 
 void main() {
   test('keeps each configured sport rate and slot setup independent', () {

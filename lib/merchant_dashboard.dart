@@ -11,16 +11,17 @@ import 'merchant_add_page.dart';
 import 'merchant_profile_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'app_card_styles.dart';
+import 'app_design_system.dart';
 
 part 'merchant_dashboard_analytics.dart';
 part 'merchant_dashboard_analytics_section.dart';
 
-const _merchantNavy = Color(0xFF192B50);
-const _merchantInk = Color(0xFF101B33);
-const _merchantOrange = Color(0xFFFF8200);
-const _merchantPage = Color(0xFFF7F9FC);
-const _merchantMuted = Color(0xFF68748A);
-const _merchantLine = Color(0xFFE2E7EF);
+const _merchantNavy = AppColors.navy;
+const _merchantInk = AppColors.ink;
+const _merchantOrange = AppColors.orange;
+const _merchantPage = AppColors.page;
+const _merchantMuted = AppColors.muted;
+const _merchantLine = AppColors.border;
 
 class MerchantDashboardPage extends StatefulWidget {
   const MerchantDashboardPage({super.key, this.onLogout, this.api});
@@ -67,6 +68,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   String _analyticsPeriod = 'Daily';
   String _analyticsView = 'Sales report';
+  String _venueComparisonMetric = 'Bookings';
   DateTimeRange? _analyticsDateRange;
 
   void _setAnalyticsState(VoidCallback callback) => setState(callback);
@@ -786,14 +788,18 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${booking['sportType'] ?? 'Sport'} · '
-              '${booking['occupiesFullStudio'] == true || booking['occupiesFullStudio'] == 1 ? 'Whole studio' : 'Slot ${booking['slotNumber'] ?? '—'}'} · '
+              '${_bookingServiceLabel(booking)} · '
               '${booking['date']} ${booking['startTime']} · '
-              '${booking['players']} players',
+              '${_bookingVisitLabel(booking)}',
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 12),
             Text('Total: PHP ${total.toStringAsFixed(2)}'),
+            if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty)
+              Text(
+                'Plan: PHP ${_bookingAmount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
+                '${'${booking['fitnessCoachName'] ?? ''}'.isEmpty ? '' : ' · Coach ${booking['fitnessCoachName']}: PHP ${_bookingAmount(booking['fitnessCoachPrice']).toStringAsFixed(2)}'}',
+              ),
             if (_bookingAmount(booking['extraPlayerCharge']) > 0)
               Text(
                 'Extra-player fee: PHP '
@@ -810,6 +816,28 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   double _bookingAmount(dynamic value) {
     return value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
   }
+
+  String _bookingServiceLabel(Map<String, dynamic> booking) {
+    final plan = '${booking['fitnessPlanType'] ?? ''}';
+    final category = '${booking['fitnessCategory'] ?? ''}';
+    final coach = '${booking['fitnessCoachName'] ?? ''}';
+    if (plan.isNotEmpty) {
+      final planLabel = '${plan[0].toUpperCase()}${plan.substring(1)} plan';
+      return '${category.isEmpty ? booking['sportType'] : category} · '
+          '$planLabel${coach.isEmpty ? '' : ' · Coach $coach'}';
+    }
+    final area =
+        booking['occupiesFullStudio'] == true ||
+            booking['occupiesFullStudio'] == 1
+        ? 'Whole studio'
+        : 'Slot ${booking['slotNumber'] ?? '—'}';
+    return '${booking['sportType'] ?? 'Sport'} · $area';
+  }
+
+  String _bookingVisitLabel(Map<String, dynamic> booking) =>
+      '${booking['fitnessPlanType'] ?? ''}'.isNotEmpty
+      ? 'First visit'
+      : '${booking['players']} players';
 
   Widget _merchantHome() => RefreshIndicator(
     onRefresh: () async {
@@ -922,10 +950,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 ),
                 subtitle: Text(
                   '${booking['venueName'] ?? 'Venue'} · '
-                  '${booking['sportType'] ?? 'Sport'} · '
-                  '${booking['occupiesFullStudio'] == true || booking['occupiesFullStudio'] == 1 ? 'Whole studio' : 'Slot ${booking['slotNumber'] ?? '—'}'} · '
+                  '${_bookingServiceLabel(booking)} · '
                   '${booking['date']} ${booking['startTime']} · '
-                  '${booking['players']} players · '
+                  '${_bookingVisitLabel(booking)} · '
                   'PHP ${booking['total']}',
                 ),
                 trailing: booking['status'] == 'pending'
@@ -1491,6 +1518,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           bookings: _bookings,
           onEditProfile: _openMerchantEditPanel,
           onLogout: widget.onLogout ?? (_) async {},
+          api: _api,
           onNavigate: _navigateFromMerchantProfile,
         ),
       ),

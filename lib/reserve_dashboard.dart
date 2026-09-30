@@ -7,16 +7,17 @@ import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'app_session.dart';
 import 'news_feed.dart';
+import 'app_design_system.dart';
 
 import 'dart:async';
 
-const _background = Color(0xFFF7F9FC);
-const _navy = Color(0xFF192B50);
+const _background = AppColors.page;
+const _navy = AppColors.navy;
 const _surface = Colors.white;
-const _surfaceLight = Color(0xFFEFF2F7);
-const _text = Color(0xFF101B33);
-const _muted = Color(0xFF68748A);
-const _mint = Color(0xFFFF8200);
+const _surfaceLight = AppColors.softSurface;
+const _text = AppColors.ink;
+const _muted = AppColors.muted;
+const _mint = AppColors.orange;
 const _gold = Color(0xFFFFA63D);
 
 class ReserveDashboardPage extends StatefulWidget {
@@ -241,7 +242,13 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('Continue to $_selected'),
+                      Flexible(
+                        child: Text(
+                          'Continue to $_selected',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       const Icon(Icons.arrow_forward_rounded, size: 20),
                     ],
