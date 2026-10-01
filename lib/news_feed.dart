@@ -197,7 +197,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     _api = widget.api ?? AuthApi();
     _userPosition = widget.initialUserPosition;
     _feedSport = _categoryAllLabel;
-    _businesses = _api.customerBusinesses();
+    _businesses = _api.customerBusinesses(
+      includeDisabledEvents: widget.businessType.trim().toLowerCase() == 'event',
+    );
     _posts = _loadFeed();
     _loadSavedKeys();
   }
@@ -350,7 +352,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Future<void> _reload() async {
-    _businesses = _api.customerBusinesses();
+    _businesses = _api.customerBusinesses(
+      includeDisabledEvents: widget.businessType.trim().toLowerCase() == 'event',
+    );
     final refreshed = _loadFeed();
     setState(() {
       _posts = refreshed;
@@ -1920,7 +1924,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           _feedAvailability == 'Any' ||
           hours.toLowerCase().contains('open 24 hours') ||
           availability.toLowerCase().contains('open 24 hours');
-      final matchesPrice = price <= _feedMaxPrice;
+      final matchesPrice = _feedMaxPrice >= 700 || price <= _feedMaxPrice;
       final matchesAmenities = _feedAmenities.every(
         (amenity) => rawAmenities.contains(amenity.toLowerCase()),
       );
@@ -2727,6 +2731,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           ...post,
           ...publishedBusiness,
           'businessName': publishedBusiness['name'] ?? post['businessName'],
+          'category': post['category'] ?? publishedBusiness['category'],
           'includedPlayers': publishedBusiness['includedPlayers'],
           'additionalPlayerFee': publishedBusiness['additionalPlayerFee'],
           'averageRating': post['averageRating'],
@@ -2738,61 +2743,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         fitness:
             type.toLowerCase().contains('fitness') ||
             type.toLowerCase().contains('wellness'),
+        event: type.toLowerCase().contains('event'),
       );
       if (!mounted) return;
 
       if (type.toLowerCase().contains('event')) {
-        await showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          backgroundColor: const Color(0xFFF8F9FF),
-          builder: (context) {
-            final name = '${post['businessName'] ?? 'Event venue'}';
-            final category =
-                '${post['category'] ?? publishedBusiness['category'] ?? 'Event'}';
-            final address =
-                '${post['address'] ?? publishedBusiness['address'] ?? 'Address unavailable'}';
-            final details =
-                '${post['details'] ?? publishedBusiness['details'] ?? ''}';
-            final fee =
-                post['eventFee'] ??
-                post['event_fee'] ??
-                publishedBusiness['eventFee'] ??
-                publishedBusiness['event_fee'];
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Event type: $category'),
-                    const SizedBox(height: 6),
-                    Text('Location: $address'),
-                    if (fee != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Price: PHP ${_number(fee).toStringAsFixed(0)} / event',
-                      ),
-                    ],
-                    if (details.trim().isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Text(details),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => SportsVenueDetailPage(
+              venue: venue,
+              savedItemType: 'event',
+              amenitiesHeading: 'EVENT AMENITIES',
+              isEvent: true,
+              primaryActionLabel: 'Event details',
+              onReserve: () => _showEventDetails(post, publishedBusiness),
+            ),
+          ),
         );
         return;
       }
@@ -2848,11 +2814,67 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     }
   }
 
+  Future<void> _showEventDetails(
+    Map<String, dynamic> post,
+    Map<String, dynamic> business,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: const Color(0xFFF8F9FF),
+      builder: (context) {
+        final name = '${post['businessName'] ?? business['name'] ?? 'Event venue'}';
+        final category =
+            '${post['category'] ?? business['category'] ?? 'Event'}';
+        final address =
+            '${post['address'] ?? business['address'] ?? 'Address unavailable'}';
+        final details = '${post['details'] ?? business['details'] ?? ''}';
+        final fee =
+            post['eventFee'] ??
+            post['event_fee'] ??
+            business['eventFee'] ??
+            business['event_fee'];
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Event type: $category'),
+                const SizedBox(height: 6),
+                Text('Location: $address'),
+                if (fee != null) ...[
+                  const SizedBox(height: 6),
+                  Text('Price: PHP ${_number(fee).toStringAsFixed(0)} / event'),
+                ],
+                if (details.trim().isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(details),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // Retained for compatibility with older venue-post payloads.
   // ignore: unused_element
   SportsVenue _toSportsVenue(
     Map<String, dynamic> post, {
     bool fitness = false,
+    bool event = false,
   }) {
     final business = post['business'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(post['business'] as Map)
@@ -2865,6 +2887,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       business['businessName'],
     ]);
     final category = _stringValue([post['category'], business['category']]);
+    final eventTypes = _stringListValue([
+      post['eventTypes'],
+      post['event_types_json'],
+      business['eventTypes'],
+      business['event_types_json'],
+    ]);
     final type = _stringValue([
       post['businessType'],
       business['businessType'],
@@ -2954,6 +2982,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final priceRaw = fitness && fitnessHeadlinePrice > 0
         ? fitnessHeadlinePrice
         : _firstNonEmpty([
+            if (event) ...[
+              post['eventFee'],
+              business['eventFee'],
+              post['event_fee'],
+              business['event_fee'],
+            ],
             post['pricePerHour'],
             business['pricePerHour'],
             post['price_per_hour'],
@@ -2967,6 +3001,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ? ''
         : fitness && fitnessHeadlinePrice > 0
         ? 'PHP ${fitnessHeadlinePrice.toStringAsFixed(2)} / $fitnessHeadlineLabel'
+        : event
+        ? 'PHP ${_number(priceRaw).toStringAsFixed(2)} / event'
         : (priceRaw is num
               ? 'PHP ${priceRaw.toStringAsFixed(0)} / hour'
               : priceRaw.toString().startsWith('PHP')
@@ -3058,7 +3094,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return (
       id: venueId,
       name: businessName,
-      sport: fitness
+      sport: event
+          ? (eventTypes.isEmpty ? category : eventTypes.join(', '))
+          : fitness
           ? fitnessCategories
                 .map((item) => _stringValue([item['category']]))
                 .where((item) => item.isNotEmpty)
@@ -3066,7 +3104,13 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           : sportsSlots.map((item) => item['sportType']).join(', '),
       address: address,
       ownerName: ownerName,
-      type: type,
+      type: event
+          ? _stringValue([
+              post['facilityType'],
+              business['facilityType'],
+              business['facility_type'],
+            ])
+          : type,
       courts: fitness
           ? _stringValue([business['facilityType'], business['facility_type']])
           : '',
@@ -3109,6 +3153,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       tags: tags,
       rateLabels: fitness && fitnessRates.isNotEmpty
           ? fitnessRates
+          : event && priceText.isNotEmpty
+          ? [priceText]
           : sportRateLabels.isNotEmpty
           ? sportRateLabels
           : rateLabels,

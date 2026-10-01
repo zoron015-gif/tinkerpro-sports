@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -60,12 +61,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   String? _businessImage;
   bool _loading = true;
   bool _saving = false;
-  bool _profileSaved = false;
   List<Map<String, dynamic>> _businesses = [];
   List<Map<String, dynamic>> _bookings = [];
   int _merchantTab = 0;
   int _payoutTab = 0;
   String _payoutBookingType = 'All';
+  Timer? _payoutRefreshTimer;
 
   String _analyticsPeriod = 'Daily';
   String _analyticsView = 'Sales report';
@@ -114,11 +115,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ],
   };
 
-  List<String> get _availableCategories => [
-    ...(_categoriesByBusinessType[_businessTypeValue] ?? const []),
-    ..._customCategories,
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -128,6 +124,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   @override
   void dispose() {
+    _payoutRefreshTimer?.cancel();
     for (final controller in [
       _firstName,
       _lastName,
@@ -164,9 +161,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         _phone.text = profile['phone'] as String? ?? '';
         _businessName.text = profile['businessName'] as String? ?? '';
         _businessTypeValue = profile['businessType'] as String?;
-        // Merchant accounts go directly to the dashboard. Profile details are
-        // displayed from the account record instead of blocking first login.
-        _profileSaved = true;
         _businessType.text = _businessTypeValue ?? '';
         _registrationNumber.text =
             profile['registrationNumber'] as String? ?? '';
@@ -233,7 +227,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         await session.markMerchantProfileCompleted(accountEmail);
       }
       await _loadBusinesses();
-      if (mounted) setState(() => _profileSaved = true);
       _showMessage('Merchant profile saved and ready for customer listings.');
       return true;
     } on Exception catch (error) {
@@ -456,17 +449,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     return Scaffold(
       backgroundColor: _merchantPage,
       appBar: AppBar(
-        title: _profileSaved && _merchantTab == 1
+        toolbarHeight: 56,
+        titleSpacing: 16,
+        leadingWidth: 56,
+        titleTextStyle: AppTypography.pageTitle,
+        title: _merchantTab == 1
             ? Row(
                 children: [
                   const Expanded(
-                    child: Text(
-                      'Add business',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+                    child: Text('Add business', style: AppTypography.pageTitle),
                   ),
                   FilledButton.icon(
                     onPressed: () =>
@@ -486,98 +477,22 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   ),
                 ],
               )
-            : Text(
-                _merchantTab == 0 ? 'Merchant Dashboard' : 'Merchant',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
+            : Text(switch (_merchantTab) {
+                0 => 'Merchant Dashboard',
+                1 => 'Add business',
+                3 => 'Payouts',
+                _ => 'Merchant Dashboard',
+              }),
         backgroundColor: _merchantPage,
         surfaceTintColor: Colors.transparent,
         foregroundColor: _merchantInk,
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      bottomNavigationBar: _profileSaved ? _merchantBottomNavigation() : null,
+      bottomNavigationBar: _merchantBottomNavigation(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _profileSaved
-          ? _merchantContent()
-          : RefreshIndicator(
-              onRefresh: _loadProfile,
-              child: Form(
-                key: _formKey,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                  children: [
-                    _section(
-                      title: 'Business & facility information',
-                      child: Column(
-                        children: [
-                          _field(
-                            _businessName,
-                            'Business / facility name (Optional)',
-                            'Skip if you do not have one yet',
-                            required: false,
-                          ),
-                          const SizedBox(height: 10),
-                          _businessTypeSelector(),
-                          const SizedBox(height: 10),
-                          _field(
-                            _registrationNumber,
-                            'Business registration / permit number (Optional)',
-                            'Optional',
-                            required: false,
-                          ),
-                          const SizedBox(height: 10),
-                          _categorySelector(),
-                          const SizedBox(height: 10),
-                          _facilitySelector(),
-                          const SizedBox(height: 10),
-                          _field(
-                            _address,
-                            'Full location and physical address (Optional)',
-                            'Skip if you do not have an address yet',
-                            required: false,
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 10),
-                          _field(
-                            _contactEmail,
-                            'Official business email (Optional)',
-                            'Skip if you do not have a business email yet',
-                            required: false,
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 10),
-                          _businessImagePicker(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _saving ? null : _saveProfile,
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.verified_rounded),
-                      label: Text(
-                        _saving ? 'Saving...' : 'Save merchant profile',
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _merchantOrange,
-                        minimumSize: const Size.fromHeight(50),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          : _merchantContent(),
     );
   }
 
@@ -604,36 +519,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     onRefresh: _loadBookings,
     child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
-        const Text(
-          'Payouts',
-          style: TextStyle(
-            color: Color(0xFF192B50),
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 8),
         Text(
           'Manage booking requests and track your earnings.',
           style: TextStyle(color: Colors.grey.shade700),
         ),
         const SizedBox(height: 20),
         _payoutTypeFilter(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         SegmentedButton<int>(
+          key: const ValueKey('merchant-payout-tabs'),
+          style: _analyticsFilterStyle,
+          showSelectedIcon: false,
           segments: const [
-            ButtonSegment(
-              value: 0,
-              icon: Icon(Icons.receipt_long_outlined),
-              label: Text('Booking requests'),
-            ),
-            ButtonSegment(
-              value: 1,
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              label: Text('Payout track'),
-            ),
+            ButtonSegment(value: 0, label: Text('Booking requests')),
+            ButtonSegment(value: 1, label: Text('Active bookings')),
+            ButtonSegment(value: 2, label: Text('Payout track')),
           ],
           selected: {_payoutTab},
           onSelectionChanged: (selection) {
@@ -643,6 +545,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         const SizedBox(height: 20),
         if (_payoutTab == 0)
           _bookingRequestsContent()
+        else if (_payoutTab == 1)
+          _activeBookingsContent()
         else
           _payoutTrackContent(),
       ],
@@ -650,40 +554,57 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   );
 
   Widget _bookingRequestsContent() {
-    final requests = _filteredPayoutBookings
-        .where(
-          (booking) =>
-              _isPendingBooking(booking) || _isApprovedBooking(booking),
-        )
-        .toList();
+    final requests = _filteredPayoutBookings.where(_isPendingBooking).toList();
     final hasRequests = requests.isNotEmpty;
     return hasRequests
         ? _pendingBookingsCard(requests)
         : _emptyPayoutCard(
             Icons.inbox_outlined,
             'No booking requests',
-            'New customer booking requests will appear here.',
+            'New customer requests will appear here. Approved bookings move to Active bookings.',
           );
   }
 
   Widget _payoutTrackContent() {
-    final tracked = _filteredPayoutBookings
-        .where(
-          (booking) =>
-              _isApprovedBooking(booking) || _isFinishedBooking(booking),
-        )
-        .toList();
+    final tracked = _filteredPayoutBookings.where(_isFinishedBooking).toList();
     if (tracked.isEmpty) {
       return _emptyPayoutCard(
         Icons.payments_outlined,
-        'No payout activity',
-        'Approved and finished bookings will appear here.',
+        'No completed bookings',
+        'Bookings will appear here automatically after their scheduled end.',
       );
     }
 
     return Column(
       children: [
         for (final booking in tracked) ...[
+          _payoutBookingCard(booking),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+
+  Widget _activeBookingsContent() {
+    final active = _filteredPayoutBookings.where(_isApprovedBooking).toList();
+    if (active.isEmpty) {
+      return _emptyPayoutCard(
+        Icons.event_available_outlined,
+        'No active bookings',
+        'Approved bookings will appear here until their scheduled end time.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Approved bookings finish automatically at their scheduled end.',
+            style: TextStyle(color: _merchantMuted, fontSize: 13),
+          ),
+        ),
+        for (final booking in active) ...[
           _payoutBookingCard(booking),
           const SizedBox(height: 12),
         ],
@@ -700,19 +621,44 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   Widget _payoutTypeFilter() {
     return DropdownButtonFormField<String>(
+      key: const ValueKey('merchant-payout-type-filter'),
       initialValue: _payoutBookingType,
+      isExpanded: true,
+      style: const TextStyle(
+        color: _merchantInk,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+      iconSize: 18,
       decoration: const InputDecoration(
-        labelText: 'Booking type',
-        prefixIcon: Icon(Icons.filter_list_rounded),
-        border: OutlineInputBorder(),
+        hintText: 'All booking types',
+        prefixIcon: Icon(Icons.filter_list_rounded, size: 18),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        constraints: BoxConstraints(minHeight: 40, maxHeight: 40),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: _merchantLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: _merchantLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: _merchantOrange, width: 1.5),
+        ),
       ),
       items: const [
-        DropdownMenuItem(value: 'All', child: Text('All booking types')),
-        DropdownMenuItem(value: 'Sports', child: Text('Sports')),
-        DropdownMenuItem(value: 'Event', child: Text('Event')),
+        DropdownMenuItem(
+          value: 'All',
+          child: Text('All booking types', maxLines: 1),
+        ),
+        DropdownMenuItem(value: 'Sports', child: Text('Sports', maxLines: 1)),
+        DropdownMenuItem(value: 'Event', child: Text('Event', maxLines: 1)),
         DropdownMenuItem(
           value: 'Fitness & Wellness',
-          child: Text('Fitness & Wellness'),
+          child: Text('Fitness & Wellness', maxLines: 1),
         ),
       ],
       onChanged: (value) {
@@ -790,7 +736,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   ),
                 ),
                 Chip(
-                  label: Text(finished ? 'Finished' : 'Approved'),
+                  label: Text(finished ? 'Finished' : 'Active'),
                   backgroundColor: finished
                       ? const Color(0xFFE4F5E9)
                       : const Color(0xFFFFE8D2),
@@ -973,12 +919,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         ),
                         child: const Text('Approve'),
                       )
-                    : OutlinedButton(
-                        onPressed: () => _finishMerchantBooking(
-                          (booking['id'] as num).toInt(),
-                        ),
-                        child: const Text('Finish'),
-                      ),
+                    : const Chip(label: Text('Active')),
               ),
           ],
         ),
@@ -1514,6 +1455,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     selectedIndex: _merchantTab,
     onDestinationSelected: (index) {
       setState(() => _merchantTab = index);
+      if (index == 3) {
+        _payoutRefreshTimer ??= Timer.periodic(
+          const Duration(seconds: 5),
+          (_) => _loadBookings(),
+        );
+      } else {
+        _payoutRefreshTimer?.cancel();
+        _payoutRefreshTimer = null;
+      }
       if (index == 2) _openMerchantMessages();
       if (index == 4) _openMerchantProfile();
     },
@@ -1598,18 +1548,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       _showMessage('Booking approved. The customer will be notified.');
     } on Exception catch (error) {
       _showMessage('Could not approve booking: $error');
-    }
-  }
-
-  Future<void> _finishMerchantBooking(int bookingId) async {
-    try {
-      final token = (await AppSession.load()).apiToken;
-      if (token == null || token.isEmpty) return;
-      await _api.finishBooking(token: token, bookingId: bookingId);
-      await _loadBookings();
-      _showMessage('Booking finished. The customer will be notified.');
-    } on Exception catch (error) {
-      _showMessage('Could not finish booking: $error');
     }
   }
 
@@ -1842,46 +1780,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     }
   }
 
-  Widget _businessImagePicker() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text(
-        'Business image',
-        style: TextStyle(color: _merchantInk, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 8),
-      InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: _pickBusinessImage,
-        child: Container(
-          height: 150,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: _merchantPage,
-            border: Border.all(color: _merchantLine),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: _businessImage == null
-              ? const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add_a_photo_outlined, color: _merchantOrange),
-                    SizedBox(height: 6),
-                    Text('Add a photo of your business'),
-                  ],
-                )
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
-                  child: Image(
-                    image: _imageProvider(_businessImage!)!,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-        ),
-      ),
-    ],
-  );
-
   Future<String?> _pickProfileImage() async {
     try {
       final image = await _imagePicker.pickImage(
@@ -1899,18 +1797,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       _showMessage('Could not select avatar: $error');
       return null;
     }
-  }
-
-  Future<void> _pickBusinessImage() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1400,
-      maxHeight: 900,
-      imageQuality: 75,
-    );
-    if (image == null) return;
-    final bytes = await image.readAsBytes();
-    if (mounted) setState(() => _businessImage = _dataUri(bytes));
   }
 
   String _dataUri(List<int> bytes) =>
@@ -2085,30 +1971,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     );
   }
 
-  Widget _section({required String title, required Widget child}) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _merchantLine),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: _merchantInk,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 14),
-        child,
-      ],
-    ),
-  );
-
   Widget _field(
     TextEditingController controller,
     String label,
@@ -2137,143 +1999,4 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         : null,
   );
 
-  Widget _businessTypeSelector() => DropdownButtonFormField<String>(
-    initialValue: _businessTypeValue,
-    decoration: InputDecoration(
-      labelText: 'Business type',
-      filled: true,
-      fillColor: _merchantPage,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _merchantLine),
-      ),
-    ),
-    hint: const Text('Select a booking type'),
-    items: const [
-      DropdownMenuItem(value: 'Sports', child: Text('Sports')),
-      DropdownMenuItem(value: 'Event', child: Text('Event')),
-      DropdownMenuItem(
-        value: 'Fitness & Wellness',
-        child: Text('Fitness & Wellness'),
-      ),
-    ],
-    onChanged: (value) {
-      if (value != null) {
-        setState(() {
-          _businessTypeValue = value;
-          _businessType.text = value;
-          _selectedCategories.clear();
-          _customCategories.clear();
-        });
-      }
-    },
-  );
-
-  Widget _categorySelector() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text(
-        'Business categories',
-        style: TextStyle(color: _merchantInk, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 8),
-      if (_businessTypeValue == null)
-        const Text(
-          'Select a business type first.',
-          style: TextStyle(color: _merchantMuted, fontSize: 12),
-        ),
-      SizedBox(
-        width: double.infinity,
-        child: Wrap(
-          alignment: WrapAlignment.start,
-          runAlignment: WrapAlignment.start,
-          crossAxisAlignment: WrapCrossAlignment.start,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final category in _availableCategories)
-              FilterChip(
-                label: Text(category),
-                selected: _selectedCategories.contains(category),
-                selectedColor: const Color(0xFFFFE8D2),
-                checkmarkColor: _merchantOrange,
-                onSelected: (selected) => setState(
-                  () => selected
-                      ? _selectedCategories.add(category)
-                      : _selectedCategories.remove(category),
-                ),
-              ),
-            if (_businessTypeValue != null)
-              ActionChip(
-                avatar: const Icon(Icons.add_rounded, size: 17),
-                label: const Text('Add category'),
-                onPressed: _addCustomCategory,
-              ),
-          ],
-        ),
-      ),
-    ],
-  );
-
-  Future<void> _addCustomCategory() async {
-    final controller = TextEditingController();
-    final category = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add business category'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Category name',
-            hintText: 'Example: Table Tennis',
-          ),
-          onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || category == null || category.isEmpty) return;
-    if (_availableCategories.any(
-      (value) => value.toLowerCase() == category.toLowerCase(),
-    )) {
-      _showMessage('That category is already available.');
-      return;
-    }
-    setState(() {
-      _customCategories.add(category);
-      _selectedCategories.add(category);
-    });
-  }
-
-  Widget _facilitySelector() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text(
-        'Facility layout type',
-        style: TextStyle(color: _merchantInk, fontWeight: FontWeight.w700),
-      ),
-      const SizedBox(height: 8),
-      SegmentedButton<String>(
-        segments: const [
-          ButtonSegment(value: 'Indoor', label: Text('Indoor')),
-          ButtonSegment(value: 'Outdoor', label: Text('Outdoor')),
-          ButtonSegment(value: 'Covered', label: Text('Covered')),
-        ],
-        selected: {_facilityType},
-        onSelectionChanged: (selection) =>
-            setState(() => _facilityType = selection.first),
-      ),
-    ],
-  );
 }

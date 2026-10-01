@@ -580,15 +580,20 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     return Scaffold(
       backgroundColor: _messageBackground,
       appBar: AppBar(
+        toolbarHeight: _role == 'merchant' ? 56 : null,
+        titleSpacing: _role == 'merchant' ? 16 : null,
+        leadingWidth: _role == 'merchant' ? 56 : null,
         backgroundColor: _messageBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: const TextStyle(
-          color: _messageNavy,
-          fontSize: 23,
-          fontWeight: FontWeight.w800,
-        ),
+        titleTextStyle: _role == 'merchant'
+            ? AppTypography.pageTitle
+            : const TextStyle(
+                color: _messageNavy,
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+              ),
         iconTheme: const IconThemeData(color: _messageNavy),
         leading: _showChat
             ? IconButton(

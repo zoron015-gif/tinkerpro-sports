@@ -63,6 +63,12 @@ function makeConnection() {
             : []
         ));
       }
+      if (
+        sql.includes('SELECT b.id, b.customer_id AS customerId') &&
+        sql.includes('CURRENT_DATE >= DATE_ADD(b.booking_date')
+      ) {
+        return response(db.dueBookings);
+      }
       if (sql.includes('WHERE b.payment_checkout_session_id = ?')) {
         return response(
           db.webhookBooking?.paymentCheckoutSessionId === params[0]
@@ -109,6 +115,7 @@ function resetDatabase() {
     availabilityRows: [],
     availabilityError: null,
     customerBookings: [],
+    dueBookings: [],
     venue: {
       id: 7,
       merchant_id: 88,
@@ -209,6 +216,12 @@ before(async () => {
       }
       if (sql.includes('INSERT INTO merchant_businesses')) {
         return [{ insertId: 702 }, []];
+      }
+      if (
+        sql.includes('SELECT b.id, b.customer_id AS customerId') &&
+        sql.includes('CURRENT_DATE >= DATE_ADD(b.booking_date')
+      ) {
+        return response(db.dueBookings);
       }
       if (sql.includes('SELECT id, name, category FROM merchant_businesses') && sql.includes('enabled = 1')) {
         return response([{
@@ -571,13 +584,14 @@ test('customer feed includes merchant-configured event types', async () => {
   assert.match(feedQuery.sql, /event_types_json/);
 });
 
-test('customer businesses include enabled Event venues without published news', async () => {
+test('customer businesses include Event venues without published news, including disabled ones', async () => {
   db.customerBusinessRows = [{
     id: 92,
     businessType: 'Event',
     name: 'Garden Event Place',
     category: 'Garden',
     eventTypes: '["Wedding","Birthday"]',
+    enabled: 0,
     heartCount: 0,
   }];
 
@@ -586,11 +600,16 @@ test('customer businesses include enabled Event venues without published news', 
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.businesses[0].eventTypes, ['Wedding', 'Birthday']);
+  assert.equal(body.businesses[0].enabled, 0);
   const businessesQuery = db.calls.find(({ sql }) =>
     sql.includes('LEFT JOIN event_business_details e') &&
     sql.includes('ORDER BY b.created_at DESC'),
   );
   assert.ok(businessesQuery);
+  assert.match(
+    businessesQuery.sql,
+    /WHERE \(b\.enabled = 1 OR b\.business_type = 'Event'\)\s+AND u\.status = 'active'/,
+  );
   assert.match(businessesQuery.sql, /b\.business_type = 'Event'\s+OR EXISTS/);
   assert.match(businessesQuery.sql, /AS heartCount/);
 });
@@ -959,6 +978,39 @@ test('merchant approval rejects bookings outside the pending state', async () =>
 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: 'Pending booking not found.' });
+});
+
+test('merchant booking refresh automatically completes bookings at type-specific end dates', async () => {
+  db.dueBookings = [
+    {
+      id: 501,
+      customerId: 42,
+      merchantId: 88,
+      venueId: 7,
+      venueName: 'Test Court',
+      bookingDate: '2026-10-01',
+      startTime: '09:00:00',
+      durationHours: 2,
+      sportType: 'Basketball',
+    },
+  ];
+
+  const response = await request('/api/merchant/bookings', { role: 'merchant' });
+
+  assert.equal(response.status, 200);
+  const completionQuery = db.calls.find(({ sql }) =>
+    sql.includes("WHERE b.status = 'approved'") &&
+    sql.includes('CURRENT_DATE >= DATE_ADD(b.booking_date'),
+  );
+  assert.ok(completionQuery);
+  assert.match(completionQuery.sql, /INTERVAL 1 MONTH/);
+  assert.match(completionQuery.sql, /INTERVAL 1 YEAR/);
+  assert.match(completionQuery.sql, /ROUND\(b\.duration_hours \* 60\)/);
+  assert.match(completionQuery.sql, /f\.session_duration_minutes/);
+  assert.equal(
+    db.calls.filter(({ sql }) => sql.includes('INSERT INTO user_activity_logs')).length,
+    2,
+  );
 });
 
 test('merchant can finish approved bookings and gets not found for other states', async () => {

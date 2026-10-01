@@ -22,6 +22,41 @@ void main() {
         .subtract(const Duration(days: 40))
         .toIso8601String()
         .substring(0, 10);
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 10,
+        'customerId': 50,
+        'customerName': 'Customer One',
+        'venueName': 'Sample Court',
+        'date': date,
+        'players': 4,
+        'total': 500,
+        'downpayment': 250,
+        'status': 'approved',
+      },
+      {
+        'id': 11,
+        'customerId': 51,
+        'customerName': 'Customer Two',
+        'venueName': 'Sample Court',
+        'date': date,
+        'players': 6,
+        'total': 200,
+        'downpayment': 100,
+        'status': 'pending',
+      },
+      {
+        'id': 12,
+        'customerId': 52,
+        'customerName': 'Customer Three',
+        'venueName': 'Sample Court',
+        'date': previousMonthDate,
+        'players': 8,
+        'total': 300,
+        'downpayment': 150,
+        'status': 'approved',
+      },
+    ];
     final api = AuthApi(
       client: MockClient((request) async {
         switch (request.url.path) {
@@ -54,46 +89,7 @@ void main() {
               200,
             );
           case '/api/merchant/bookings':
-            return http.Response(
-              jsonEncode({
-                'bookings': [
-                  {
-                    'id': 10,
-                    'customerId': 50,
-                    'customerName': 'Customer One',
-                    'venueName': 'Sample Court',
-                    'date': date,
-                    'players': 4,
-                    'total': 500,
-                    'downpayment': 250,
-                    'status': 'approved',
-                  },
-                  {
-                    'id': 11,
-                    'customerId': 51,
-                    'customerName': 'Customer Two',
-                    'venueName': 'Sample Court',
-                    'date': date,
-                    'players': 6,
-                    'total': 200,
-                    'downpayment': 100,
-                    'status': 'pending',
-                  },
-                  {
-                    'id': 12,
-                    'customerId': 52,
-                    'customerName': 'Customer Three',
-                    'venueName': 'Sample Court',
-                    'date': previousMonthDate,
-                    'players': 8,
-                    'total': 300,
-                    'downpayment': 150,
-                    'status': 'approved',
-                  },
-                ],
-              }),
-              200,
-            );
+            return http.Response(jsonEncode({'bookings': bookings}), 200);
           case '/api/activity-logs':
             return http.Response(jsonEncode({'activities': []}), 200);
           default:
@@ -108,12 +104,22 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
     await tester.pumpAndSettle();
 
+    final dashboardAppBar = tester.widget<AppBar>(find.byType(AppBar).first);
+    expect(dashboardAppBar.toolbarHeight, 56);
+    expect(dashboardAppBar.titleSpacing, 16);
+    expect(dashboardAppBar.leadingWidth, 56);
+    expect(dashboardAppBar.titleTextStyle?.fontSize, 20);
+    expect(dashboardAppBar.titleTextStyle?.fontWeight, FontWeight.w800);
+
+    expect(find.text('Business & facility information'), findsNothing);
+    expect(find.text('Save merchant profile'), findsNothing);
     expect(find.text('Needs your attention'), findsOneWidget);
     expect(find.textContaining('1 booking awaiting approval'), findsOneWidget);
     expect(
       find.textContaining('2 approved bookings to complete'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('1 pending'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
     await tester.pumpAndSettle();
     expect(find.text('Customer Two'), findsOneWidget);
@@ -338,6 +344,49 @@ void main() {
     expect(find.textContaining('18 players'), findsOneWidget);
     expect(find.textContaining('4.8'), findsOneWidget);
 
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-payouts')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Booking requests'), findsWidgets);
+    expect(find.text('Active bookings'), findsOneWidget);
+    expect(find.text('Payout track'), findsOneWidget);
+    final payoutTypeFilter = find.byKey(
+      const ValueKey('merchant-payout-type-filter'),
+    );
+    final payoutTabsFinder = find.byKey(const ValueKey('merchant-payout-tabs'));
+    final payoutTabs = tester.widget<SegmentedButton<int>>(payoutTabsFinder);
+    expect(payoutTabs.segments.map((segment) => segment.value), [0, 1, 2]);
+    expect(
+      payoutTabs.style?.minimumSize?.resolve({}),
+      const Size.fromHeight(40),
+    );
+    expect(
+      payoutTabs.style?.textStyle?.resolve({})?.fontSize,
+      periodFilter.style?.textStyle?.resolve({})?.fontSize,
+    );
+    expect(
+      payoutTabs.style?.textStyle?.resolve({})?.fontWeight,
+      periodFilter.style?.textStyle?.resolve({})?.fontWeight,
+    );
+    expect(tester.getSize(payoutTypeFilter).height, 40);
+    expect(find.text('Customer Two'), findsOneWidget);
+    expect(find.text('Finish'), findsNothing);
+    await tester.tap(find.text('Active bookings'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Customer One'), findsOneWidget);
+    expect(
+      find.textContaining('finish automatically at their scheduled end.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Payout track'));
+    await tester.pumpAndSettle();
+    expect(find.text('No completed bookings'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),
+    );
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
     expect(find.text("Today's performance"), findsOneWidget);
@@ -360,5 +409,123 @@ void main() {
     await tester.tap(find.text('Activity log'));
     await tester.pumpAndSettle();
     expect(find.text('Activity log'), findsOneWidget);
+    final activityAppBar = tester.widget<AppBar>(find.byType(AppBar).first);
+    expect(activityAppBar.toolbarHeight, dashboardAppBar.toolbarHeight);
+    expect(activityAppBar.titleSpacing, dashboardAppBar.titleSpacing);
+    expect(activityAppBar.leadingWidth, dashboardAppBar.leadingWidth);
+    expect(
+      activityAppBar.titleTextStyle?.fontSize,
+      dashboardAppBar.titleTextStyle?.fontSize,
+    );
+    expect(
+      activityAppBar.titleTextStyle?.fontWeight,
+      dashboardAppBar.titleTextStyle?.fontWeight,
+    );
+  });
+
+  testWidgets('reviewed booking notification disappears after approval', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 11,
+        'customerId': 51,
+        'customerName': 'Customer Two',
+        'venueName': 'Sample Court',
+        'date': DateTime.now().toIso8601String().substring(0, 10),
+        'startTime': '07:00:00',
+        'durationHours': 1,
+        'players': 2,
+        'total': 200,
+        'downpayment': 100,
+        'status': 'pending',
+      },
+    ];
+    final api = AuthApi(
+      client: MockClient((request) async {
+        switch (request.url.path) {
+          case '/api/merchant/profile':
+            return http.Response(
+              jsonEncode({
+                'profile': {
+                  'firstName': 'Merchant',
+                  'lastName': 'Owner',
+                  'email': 'merchant@example.com',
+                  'businessType': 'Sports',
+                },
+              }),
+              200,
+            );
+          case '/api/merchant/businesses':
+            return http.Response(jsonEncode({'businesses': []}), 200);
+          case '/api/merchant/bookings':
+            return http.Response(jsonEncode({'bookings': bookings}), 200);
+          case '/api/merchant/bookings/11/approve':
+            bookings.single['status'] = 'approved';
+            return http.Response(
+              jsonEncode({'status': 'approved', 'ticketCode': 'test-ticket'}),
+              200,
+            );
+          case '/api/activity-logs':
+            return http.Response(jsonEncode({'activities': []}), 200);
+          default:
+            return http.Response('{}', 200);
+        }
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-action-center')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer Two'), findsOneWidget);
+    await tester.tap(find.text('Approve'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('merchant-action-center')), findsNothing);
+  });
+
+  testWidgets('merchant opens dashboard when profile request fails', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/merchant/profile') {
+          return http.Response(
+            jsonEncode({'error': 'Merchant profile service unavailable'}),
+            503,
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Merchant Dashboard'), findsOneWidget);
+    expect(find.text('Data analytics'), findsOneWidget);
+    expect(find.text('Business & facility information'), findsNothing);
+    expect(find.text('Save merchant profile'), findsNothing);
+    expect(find.text('Select a booking type'), findsNothing);
+    expect(find.text('Add'), findsOneWidget);
+    expect(
+      find.textContaining('Could not load merchant profile'),
+      findsOneWidget,
+    );
   });
 }

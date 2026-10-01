@@ -10,9 +10,10 @@ const _activityOrange = AppColors.orange;
 const _activityPage = AppColors.page;
 
 class ActivityLogPage extends StatefulWidget {
-  const ActivityLogPage({super.key, this.api});
+  const ActivityLogPage({super.key, this.api, this.isMerchant = false});
 
   final AuthApi? api;
+  final bool isMerchant;
 
   @override
   State<ActivityLogPage> createState() => _ActivityLogPageState();
@@ -73,12 +74,15 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: _activityPage,
     appBar: AppBar(
+      toolbarHeight: widget.isMerchant ? 56 : null,
+      titleSpacing: widget.isMerchant ? 16 : null,
+      leadingWidth: widget.isMerchant ? 56 : null,
+      titleTextStyle: widget.isMerchant
+          ? AppTypography.pageTitle
+          : const TextStyle(fontWeight: FontWeight.w900),
       backgroundColor: _activityPage,
       foregroundColor: _activityInk,
-      title: const Text(
-        'Activity log',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
+      title: const Text('Activity log'),
       actions: [
         IconButton(
           key: const ValueKey('activity-log-date-filter'),
@@ -222,10 +226,7 @@ List<_ActivityGroup> _groupVenueActivities(
     final venueName = activity['venueName']?.toString().trim();
     if (venueName == null || venueName.isEmpty) {
       final key = 'activity-${standaloneIndex++}';
-      groups[key] = _ActivityGroup(
-        key: key,
-        activities: [activity],
-      );
+      groups[key] = _ActivityGroup(key: key, activities: [activity]);
       continue;
     }
 

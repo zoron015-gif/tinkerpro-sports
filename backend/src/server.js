@@ -1360,7 +1360,8 @@ app.get('/api/businesses', async (req, res, next) => {
        JOIN users u ON u.id = b.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = b.id
        LEFT JOIN fitness_business_details f ON f.business_id = b.id
-       WHERE b.enabled = 1 AND u.status = 'active'
+       WHERE (b.enabled = 1 OR b.business_type = 'Event')
+         AND u.status = 'active'
          AND (
            b.business_type = 'Event'
            OR EXISTS (
@@ -2915,6 +2916,7 @@ app.delete(
 
 app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
+    await completeDueBookings();
     const [bookings] = await pool.execute(
       `SELECT b.id, b.customer_id AS customerId,
               CONCAT_WS(' ', u.first_name, u.last_name) AS customerName, u.email AS customerEmail,
@@ -3088,6 +3090,116 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
     connection?.release();
   }
 });
+
+const dueBookingPredicate = `(
+  (
+    LOWER(v.business_type) = 'fitness & wellness'
+    AND b.fitness_plan_type = 'monthly'
+    AND CURRENT_DATE >= DATE_ADD(b.booking_date, INTERVAL 1 MONTH)
+  )
+  OR (
+    LOWER(v.business_type) = 'fitness & wellness'
+    AND b.fitness_plan_type = 'yearly'
+    AND CURRENT_DATE >= DATE_ADD(b.booking_date, INTERVAL 1 YEAR)
+  )
+  OR (
+    (
+      LOWER(v.business_type) = 'fitness & wellness'
+      AND b.fitness_plan_type = 'session'
+    )
+    AND TIMESTAMP(b.booking_date, b.start_time)
+        + INTERVAL COALESCE(
+            f.session_duration_minutes,
+            ROUND(b.duration_hours * 60)
+          ) MINUTE <= CURRENT_TIMESTAMP
+  )
+  OR (
+    (
+      LOWER(v.business_type) <> 'fitness & wellness'
+      OR b.fitness_plan_type IS NULL
+    )
+    AND TIMESTAMP(b.booking_date, b.start_time)
+        + INTERVAL ROUND(b.duration_hours * 60) MINUTE <= CURRENT_TIMESTAMP
+  )
+)`;
+
+let dueBookingCompletionRunning = false;
+
+async function completeDueBookings() {
+  if (dueBookingCompletionRunning) return;
+  dueBookingCompletionRunning = true;
+  try {
+    const [dueBookings] = await pool.execute(
+      `SELECT b.id, b.customer_id AS customerId, v.merchant_id AS merchantId,
+              b.venue_id AS venueId, v.name AS venueName,
+              b.booking_date AS bookingDate, b.start_time AS startTime,
+              b.duration_hours AS durationHours,
+              COALESCE(b.sport_type, v.category) AS sportType
+       FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
+       LEFT JOIN fitness_business_details f ON f.business_id = v.id
+       WHERE b.status = 'approved' AND ${dueBookingPredicate}
+       ORDER BY b.id`,
+    );
+
+    for (const booking of dueBookings) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [result] = await connection.execute(
+          `UPDATE bookings b
+           JOIN merchant_businesses v ON v.id = b.venue_id
+           LEFT JOIN fitness_business_details f ON f.business_id = v.id
+           SET b.status = 'finished'
+           WHERE b.id = ? AND b.status = 'approved'
+             AND ${dueBookingPredicate}`,
+          [booking.id],
+        );
+        if (!result.affectedRows) {
+          await connection.rollback();
+          continue;
+        }
+        const description =
+          `Booking #${booking.id} for ${booking.venueName} was completed automatically at its scheduled end.`;
+        const activityDetails = {
+          venueId: booking.venueId,
+          venueName: booking.venueName,
+          sportType: booking.sportType,
+          details: {
+            bookingId: booking.id,
+            bookingDate: booking.bookingDate,
+            startTime: booking.startTime,
+            durationHours: booking.durationHours,
+          },
+        };
+        await recordUserActivity(
+          connection,
+          booking.merchantId,
+          'booking_finished',
+          'Booking completed automatically',
+          description,
+          activityDetails,
+        );
+        await recordUserActivity(
+          connection,
+          booking.customerId,
+          'booking_finished',
+          'Booking completed',
+          description,
+          activityDetails,
+        );
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    }
+  } finally {
+    dueBookingCompletionRunning = false;
+  }
+}
 
 app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
@@ -4068,6 +4180,15 @@ Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
   .then(() => {
     app.listen(port, () => {
       console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
+    });
+    const completionInterval = setInterval(() => {
+      completeDueBookings().catch((error) => {
+        console.error('Could not automatically finish due bookings.', error);
+      });
+    }, 10_000);
+    completionInterval.unref();
+    completeDueBookings().catch((error) => {
+      console.error('Could not automatically finish due bookings.', error);
     });
   })
   .catch((error) => {

@@ -62,9 +62,17 @@ class AuthApi {
     required String password,
   }) => _post('/api/auth/login', {'email': email, 'password': password});
 
-  Future<List<Map<String, dynamic>>> customerBusinesses() async {
+  Future<List<Map<String, dynamic>>> customerBusinesses({
+    bool includeDisabledEvents = false,
+  }) async {
     final response = await _request('GET', '/api/businesses');
     return asMapList(response['businesses']).where((business) {
+      final isEvent =
+          '${business['businessType'] ?? business['business_type'] ?? ''}'
+              .trim()
+              .toLowerCase() ==
+          'event';
+      if (includeDisabledEvents && isEvent) return true;
       final enabled = business['enabled'];
       return enabled != false &&
           enabled != 0 &&

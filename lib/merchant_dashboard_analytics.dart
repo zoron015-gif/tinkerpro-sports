@@ -221,6 +221,10 @@ class _AnalyticsFullChartPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: _merchantPage,
       appBar: AppBar(
+        toolbarHeight: 56,
+        titleSpacing: 16,
+        leadingWidth: 56,
+        titleTextStyle: AppTypography.pageTitle,
         title: Text(title),
         backgroundColor: _merchantPage,
         foregroundColor: _merchantInk,

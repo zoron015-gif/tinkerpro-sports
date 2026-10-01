@@ -134,6 +134,8 @@ void main() {
                   'category': 'Garden',
                   'eventTypes': ['Wedding', 'Birthday'],
                   'address': 'Cebu City',
+                  'facilityType': 'Garden venue',
+                  'details': 'Bring your own decorations.',
                   'eventFee': 1200,
                   'enabled': true,
                   'reviewCount': 3,
@@ -239,6 +241,27 @@ void main() {
     await tester.tap(reviewsButton);
     await tester.pumpAndSettle();
     expect(requests, contains('GET /api/news-feed/88/reviews'));
+    Navigator.of(tester.element(find.text('Cebu Event Hall reviews'))).pop();
+    await tester.pumpAndSettle();
+
+    final eventExploreButton = find.byKey(
+      const ValueKey('news-feed-explore-business-88'),
+    );
+    await tester.ensureVisible(eventExploreButton);
+    await tester.tap(eventExploreButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('sports-venue-content-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('PHP 1200.00 / event'), findsWidgets);
+    expect(find.text('Bring your own decorations.'), findsOneWidget);
+    expect(find.text('Event details'), findsOneWidget);
+    final eventTitle = tester.widget<Text>(
+      find.byKey(const ValueKey('sports-venue-title')),
+    );
+    expect(eventTitle.style?.fontSize, 24);
+    expect(eventTitle.style?.fontWeight, FontWeight.w800);
   });
 
   testWidgets('Event dashboard lists event businesses without news posts', (
@@ -263,6 +286,7 @@ void main() {
                   'eventTypes': ['Wedding', 'Birthday'],
                   'address': 'Cebu City',
                   'eventFee': 2500,
+                  'pricePerHour': 2500,
                   'enabled': true,
                   'averageRating': 0,
                   'reviewCount': 0,
@@ -275,6 +299,16 @@ void main() {
                   'businessType': 'Sports',
                   'category': 'Basketball',
                   'enabled': true,
+                },
+                {
+                  'id': 93,
+                  'name': 'Closed Event Garden',
+                  'businessType': 'Event',
+                  'category': 'Garden',
+                  'eventTypes': ['Wedding'],
+                  'address': 'Cebu City',
+                  'enabled': false,
+                  'eventFee': 900,
                 },
               ],
             }),
@@ -293,6 +327,8 @@ void main() {
 
     expect(find.text('Garden Event Place'), findsWidgets);
     expect(find.text('Wedding, Birthday'), findsWidgets);
+    expect(find.text('Closed Event Garden'), findsWidgets);
+    expect(find.text('UNAVAILABLE · Booking disabled'), findsWidgets);
     expect(find.text('Basketball Court'), findsNothing);
     expect(find.textContaining('Could not load the news feed'), findsNothing);
     expect(find.text('No event venues match your search.'), findsNothing);
@@ -536,6 +572,10 @@ void main() {
     SharedPreferences.setMockInitialValues({'session_api_token': 'test-token'});
     final venue = {
       ...venues.first,
+      'details': 'Bring your own equipments',
+      'ratePeriods': [
+        {'start': '3:53 PM', 'end': '5:53 AM', 'pricePerHour': 200},
+      ],
       'imageUrl': 'https://example.com/court.jpg',
       'latitude': 10.3157,
       'longitude': 123.8854,
@@ -645,6 +685,16 @@ void main() {
     );
     expect(find.text('17'), findsOneWidget);
     expect(tester.widget<Text>(find.text('17')).style?.fontSize, 16);
+    final ratesHeading = find.text('Rates');
+    final venueDescription = find.byKey(
+      const ValueKey('sports-venue-description'),
+    );
+    await tester.ensureVisible(venueDescription);
+    expect(
+      tester.getTopLeft(ratesHeading).dy,
+      lessThan(tester.getTopLeft(venueDescription).dy),
+    );
+    expect(find.text('Bring your own equipments'), findsOneWidget);
     final venueTitle = tester.getTopLeft(
       find.byKey(const ValueKey('sports-venue-title')),
     );

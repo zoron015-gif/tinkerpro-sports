@@ -153,8 +153,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   Widget get _merchantActionCenter {
     final pendingCount = _bookings.where(_isPendingBooking).length;
-    final approvedCount = _bookings.where(_isApprovedBooking).length;
-    final hasActions = pendingCount + approvedCount > 0;
+    if (pendingCount == 0) return const SizedBox.shrink();
 
     return Container(
       key: const ValueKey('merchant-action-center'),
@@ -188,74 +187,55 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   ),
                 ),
               ),
-              if (hasActions)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF1E3),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${pendingCount + approvedCount} actions',
-                    key: const ValueKey('merchant-action-count'),
-                    style: const TextStyle(
-                      color: Color(0xFFB85C00),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1E3),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$pendingCount pending',
+                  key: const ValueKey('merchant-action-count'),
+                  style: const TextStyle(
+                    color: Color(0xFFB85C00),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          if (hasActions) ...[
-            Text(
-              [
-                if (pendingCount > 0)
-                  '$pendingCount booking${pendingCount == 1 ? '' : 's'} awaiting approval',
-                if (approvedCount > 0)
-                  '$approvedCount approved booking${approvedCount == 1 ? '' : 's'} to complete',
-              ].join(' · '),
-              style: const TextStyle(
-                color: _merchantMuted,
-                fontSize: 13,
-                height: 1.35,
-              ),
+          Text(
+            '$pendingCount booking${pendingCount == 1 ? '' : 's'} awaiting approval',
+            style: const TextStyle(
+              color: _merchantMuted,
+              fontSize: 13,
+              height: 1.35,
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const ValueKey('merchant-review-bookings'),
-                onPressed: () {
-                  _setAnalyticsState(() {
-                    _merchantTab = 3;
-                    _payoutTab = 0;
-                  });
-                },
-                icon: const Icon(Icons.receipt_long_rounded, size: 18),
-                label: const Text('Review booking requests'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _merchantNavy,
-                  minimumSize: const Size.fromHeight(44),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('merchant-review-bookings'),
+              onPressed: () {
+                _setAnalyticsState(() {
+                  _merchantTab = 3;
+                  _payoutTab = 0;
+                });
+              },
+              icon: const Icon(Icons.receipt_long_rounded, size: 18),
+              label: const Text('Review booking requests'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _merchantNavy,
+                minimumSize: const Size.fromHeight(44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
-          ] else
-            const Text(
-              "You're all caught up. New booking actions will appear here.",
-              style: TextStyle(
-                color: _merchantMuted,
-                fontSize: 13,
-                height: 1.35,
-              ),
-            ),
+          ),
         ],
       ),
     );
@@ -453,9 +433,6 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   bool _isPendingBooking(Map<String, dynamic> booking) =>
       BookingStatusParser.isPending(booking['status']);
-
-  bool _isApprovedBooking(Map<String, dynamic> booking) =>
-      BookingStatusParser.isApproved(booking['status']);
 
   bool _isFinishedBooking(Map<String, dynamic> booking) =>
       BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||

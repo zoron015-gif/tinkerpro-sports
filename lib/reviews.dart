@@ -251,6 +251,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
             '${review['avatarUrl'] ?? review['avatar_url'] ?? ''}'.trim();
         final avatar = _reviewAvatar(avatarUrl);
         final rating = int.tryParse('${review['rating']}') ?? 0;
+        final normalizedRating = rating.clamp(0, 5);
         return ListTile(
           contentPadding: EdgeInsets.zero,
           leading: CircleAvatar(
@@ -268,9 +269,36 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                     ),
                   ),
           ),
-          title: Text(name.isEmpty ? 'Customer' : name),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name.isEmpty ? 'Customer' : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Semantics(
+                label: '$normalizedRating out of 5 stars',
+                child: Row(
+                  key: ValueKey('review-rating-stars-$index'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var star = 1; star <= 5; star++)
+                      Icon(
+                        star <= normalizedRating
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        color: Colors.amber,
+                        size: 16,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           subtitle: Text('${review['comment'] ?? ''}'),
-          trailing: Text('$rating/5'),
         );
       },
     );

@@ -66,6 +66,18 @@ void main() {
     expect(reviewerImage.image, isA<MemoryImage>());
     expect(find.text('Ziggy Player'), findsOneWidget);
     expect(find.text('Great court.'), findsOneWidget);
+    final reviewerRating = tester.widget<Row>(
+      find.byKey(const ValueKey('review-rating-stars-0')),
+    );
+    expect(reviewerRating.children, hasLength(5));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-rating-stars-0')),
+        matching: find.byIcon(Icons.star_rounded),
+      ),
+      findsNWidgets(5),
+    );
+    expect(find.text('5/5'), findsNothing);
 
     client.close();
   });
@@ -116,6 +128,25 @@ void main() {
 
     expect(find.text('M'), findsOneWidget);
     expect(find.text('Maya Player'), findsOneWidget);
+    final reviewerRating = tester.widget<Row>(
+      find.byKey(const ValueKey('review-rating-stars-0')),
+    );
+    expect(reviewerRating.children, hasLength(5));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-rating-stars-0')),
+        matching: find.byIcon(Icons.star_rounded),
+      ),
+      findsNWidgets(4),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-rating-stars-0')),
+        matching: find.byIcon(Icons.star_outline_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('4/5'), findsNothing);
 
     client.close();
   });

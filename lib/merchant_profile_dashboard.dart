@@ -102,10 +102,11 @@ class _MerchantProfileDashboardPageState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: const Text(
-          'Merchant Profile',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
+        toolbarHeight: 56,
+        titleSpacing: 16,
+        leadingWidth: 56,
+        titleTextStyle: AppTypography.pageTitle,
+        title: const Text('Merchant Profile'),
         backgroundColor: const Color(0xFFF7F9FC),
         surfaceTintColor: Colors.transparent,
         foregroundColor: _profileInk,
@@ -279,7 +280,7 @@ class _MerchantProfileDashboardPageState
       case _MerchantProfileSetting.activityLog:
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ActivityLogPage(api: widget.api),
+            builder: (_) => ActivityLogPage(api: widget.api, isMerchant: true),
           ),
         );
         return;

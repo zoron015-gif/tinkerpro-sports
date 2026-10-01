@@ -63,12 +63,16 @@ class SportsVenueDetailPage extends StatefulWidget {
     required this.onReserve,
     this.savedItemType = 'sports',
     this.amenitiesHeading = 'COURT AMENITIES',
+    this.isEvent = false,
+    this.primaryActionLabel = 'Reserve',
   });
 
   final SportsVenue venue;
   final VoidCallback onReserve;
   final String savedItemType;
   final String amenitiesHeading;
+  final bool isEvent;
+  final String primaryActionLabel;
 
   @override
   State<SportsVenueDetailPage> createState() => _SportsVenueDetailPageState();
@@ -459,8 +463,12 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         ),
                         const SizedBox(height: 8),
                         _detailRow(
-                          Icons.sports_volleyball_outlined,
-                          '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
+                          widget.isEvent
+                              ? Icons.celebration_outlined
+                              : Icons.sports_volleyball_outlined,
+                          widget.isEvent
+                              ? '${widget.venue.sport.isEmpty ? 'Event venue' : widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}'
+                              : '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
                         ),
                         _detailRow(
                           Icons.location_on_outlined,
@@ -483,11 +491,6 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           _detailRow(
                             Icons.check_circle_outlined,
                             widget.venue.availability,
-                          ),
-                        if (widget.venue.details.trim().isNotEmpty)
-                          _detailRow(
-                            Icons.notes_outlined,
-                            widget.venue.details,
                           ),
                         if (widget.venue.additionalPlayerFee > 0 &&
                             widget.venue.includedPlayers > 0)
@@ -690,6 +693,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                             _detailRow(Icons.payments_outlined, rate),
                           const SizedBox(height: 6),
                         ],
+                        if (widget.venue.details.trim().isNotEmpty)
+                          KeyedSubtree(
+                            key: const ValueKey('sports-venue-description'),
+                            child: _detailRow(
+                              Icons.notes_outlined,
+                              widget.venue.details,
+                            ),
+                          ),
                         const SizedBox(height: 14),
                         if (widget.venue.visitUrl.trim().isNotEmpty)
                           Align(
@@ -787,9 +798,12 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Text(
-                    'Reserve',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  child: Text(
+                    widget.primaryActionLabel,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
