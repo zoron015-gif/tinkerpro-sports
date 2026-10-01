@@ -218,6 +218,21 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS slot_number INT UNSIGNED NULL,
   ADD COLUMN IF NOT EXISTS occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1;
 
+CREATE TABLE IF NOT EXISTS fitness_booking_attendance (
+  booking_id BIGINT UNSIGNED NOT NULL,
+  customer_id BIGINT UNSIGNED NOT NULL,
+  attendance_date DATE NOT NULL,
+  status ENUM('present', 'absent') NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (booking_id, attendance_date),
+  KEY idx_fitness_attendance_customer (customer_id, booking_id),
+  CONSTRAINT fk_fitness_attendance_booking FOREIGN KEY (booking_id)
+    REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_fitness_attendance_customer FOREIGN KEY (customer_id)
+    REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS merchant_news (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   business_id BIGINT UNSIGNED NOT NULL,

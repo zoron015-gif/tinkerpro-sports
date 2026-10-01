@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'app_bottom_navigation.dart';
 import 'app_session.dart';
 import 'auth_api.dart';
+import 'core/booking_status.dart';
 import 'merchant_add_page.dart';
 import 'merchant_profile_dashboard.dart';
 import 'messages_dashboard.dart';
@@ -652,7 +653,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final requests = _filteredPayoutBookings
         .where(
           (booking) =>
-              booking['status'] == 'pending' || booking['status'] == 'approved',
+              _isPendingBooking(booking) || _isApprovedBooking(booking),
         )
         .toList();
     final hasRequests = requests.isNotEmpty;
@@ -669,8 +670,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final tracked = _filteredPayoutBookings
         .where(
           (booking) =>
-              booking['status'] == 'approved' ||
-              booking['status'] == 'finished',
+              _isApprovedBooking(booking) || _isFinishedBooking(booking),
         )
         .toList();
     if (tracked.isEmpty) {
@@ -753,11 +753,22 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     );
   }
 
+  bool _isPendingBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isPending(booking['status']);
+
+  bool _isApprovedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isApproved(booking['status']);
+
+  bool _isFinishedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||
+      BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
+      BookingStatusParser.parse(booking['status']) == BookingStatus.done;
+
   Widget _payoutBookingCard(Map<String, dynamic> booking) {
     final total = _bookingAmount(booking['total']);
     final downpayment = _bookingAmount(booking['downpayment']);
     final balance = total - downpayment;
-    final finished = booking['status'] == 'finished';
+    final finished = _isFinishedBooking(booking);
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -955,7 +966,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   '${_bookingVisitLabel(booking)} · '
                   'PHP ${booking['total']}',
                 ),
-                trailing: booking['status'] == 'pending'
+                trailing: _isPendingBooking(booking)
                     ? FilledButton(
                         onPressed: () => _approveMerchantBooking(
                           (booking['id'] as num).toInt(),

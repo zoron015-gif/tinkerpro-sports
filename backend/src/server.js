@@ -1351,6 +1351,8 @@ app.get('/api/businesses', async (req, res, next) => {
                WHERE r.business_id = b.id) AS reviewCount,
               (SELECT COUNT(DISTINCT r.customer_id) FROM venue_reviews r
                WHERE r.business_id = b.id) AS ratingUserCount,
+              (SELECT COUNT(*) FROM venue_hearts h
+               WHERE h.business_id = b.id) AS heartCount,
               b.amenities_json AS tags, b.details, b.image_url AS imageUrl,
               b.image_urls AS imageUrls,
               b.created_at AS createdAt
@@ -1359,7 +1361,9 @@ app.get('/api/businesses', async (req, res, next) => {
        LEFT JOIN event_business_details e ON e.business_id = b.id
        LEFT JOIN fitness_business_details f ON f.business_id = b.id
        WHERE b.enabled = 1 AND u.status = 'active'
-         AND EXISTS (
+         AND (
+           b.business_type = 'Event'
+           OR EXISTS (
            SELECT 1 FROM merchant_news n
            WHERE n.business_id = b.id
              AND n.status = 'published'
@@ -1367,6 +1371,7 @@ app.get('/api/businesses', async (req, res, next) => {
              AND NULLIF(TRIM(n.body), '') IS NOT NULL
              AND COALESCE(NULLIF(TRIM(n.image_url), ''),
                           NULLIF(TRIM(b.image_url), '')) IS NOT NULL
+           )
          )
        ORDER BY b.created_at DESC`,
     );
@@ -1961,6 +1966,62 @@ function requireRole(role) {
 
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function validCalendarDate(value) {
+  if (!validDate(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value;
+}
+
+function dateOnly(value) {
+  return value instanceof Date
+    ? value.toISOString().slice(0, 10)
+    : String(value).slice(0, 10);
+}
+
+function fitnessPlanEndDate(startDate, planType) {
+  const start = new Date(`${dateOnly(startDate)}T00:00:00.000Z`);
+  const months = planType === 'monthly' ? 1 : planType === 'yearly' ? 12 : 0;
+  if (months === 0) return start.toISOString().slice(0, 10);
+  const targetMonth = new Date(Date.UTC(
+    start.getUTCFullYear(),
+    start.getUTCMonth() + months,
+    1,
+  ));
+  const lastDay = new Date(Date.UTC(
+    targetMonth.getUTCFullYear(),
+    targetMonth.getUTCMonth() + 1,
+    0,
+  )).getUTCDate();
+  return new Date(Date.UTC(
+    targetMonth.getUTCFullYear(),
+    targetMonth.getUTCMonth(),
+    Math.min(start.getUTCDate(), lastDay),
+  )).toISOString().slice(0, 10);
+}
+
+function fitnessAvailabilityIncludesDate(availability, date) {
+  const normalized = String(availability ?? '').trim().toLowerCase();
+  if (!normalized || normalized === 'any') return true;
+  const availableDays = new Set(
+    normalized.split(/[,;]/).map((day) => day.trim()).filter(Boolean),
+  );
+  if (availableDays.size === 0) return true;
+  const weekdayNames = [
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ];
+  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  const name = weekdayNames[weekday];
+  const abbreviation = name.slice(0, 3);
+  return availableDays.has(name) || availableDays.has(abbreviation);
 }
 
 function validTime(value) {
@@ -2723,6 +2784,135 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
   } catch (error) { return next(error); }
 });
 
+async function customerFitnessBookingForAttendance(bookingId, customerId) {
+  const [bookings] = await pool.execute(
+    `SELECT b.id, b.booking_date AS bookingDate, v.availability,
+            b.fitness_plan_type AS fitnessPlanType,
+            v.business_type AS businessType
+     FROM bookings b
+     JOIN merchant_businesses v ON v.id = b.venue_id
+     WHERE b.id = ? AND b.customer_id = ?
+       AND b.status IN ('approved', 'finished')
+     LIMIT 1`,
+    [bookingId, customerId],
+  );
+  const booking = bookings[0];
+  if (!booking || String(booking.businessType).trim().toLowerCase() !== 'fitness & wellness') {
+    return null;
+  }
+  return {
+    ...booking,
+    startDate: dateOnly(booking.bookingDate),
+    endDate: fitnessPlanEndDate(
+      booking.bookingDate,
+      booking.fitnessPlanType,
+    ),
+  };
+}
+
+function validAttendanceDate(booking, date) {
+  return validCalendarDate(date) &&
+    date >= booking.startDate &&
+    date <= booking.endDate;
+}
+
+app.get(
+  '/api/bookings/:bookingId/attendance',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    try {
+      const bookingId = Number(req.params.bookingId);
+      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+        return res.status(400).json({ error: 'Invalid booking ID.' });
+      }
+      const booking = await customerFitnessBookingForAttendance(
+        bookingId,
+        req.auth.sub,
+      );
+      if (!booking) return res.status(404).json({ error: 'Fitness booking not found.' });
+      const [attendance] = await pool.execute(
+        `SELECT DATE_FORMAT(attendance_date, '%Y-%m-%d') AS date, status
+         FROM fitness_booking_attendance
+         WHERE booking_id = ? AND customer_id = ?
+         ORDER BY attendance_date`,
+        [bookingId, req.auth.sub],
+      );
+      return res.json({ attendance });
+    } catch (error) { return next(error); }
+  },
+);
+
+app.put(
+  '/api/bookings/:bookingId/attendance/:date',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    try {
+      const bookingId = Number(req.params.bookingId);
+      const { date, status } = req.params;
+      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+        return res.status(400).json({ error: 'Invalid booking ID.' });
+      }
+      if (!['present', 'absent'].includes(req.body?.status)) {
+        return res.status(400).json({ error: 'Attendance status must be present or absent.' });
+      }
+      const booking = await customerFitnessBookingForAttendance(
+        bookingId,
+        req.auth.sub,
+      );
+      if (!booking) return res.status(404).json({ error: 'Fitness booking not found.' });
+      if (!validAttendanceDate(booking, date)) {
+        return res.status(400).json({ error: 'Attendance date must be within the booking period.' });
+      }
+      if (!fitnessAvailabilityIncludesDate(booking.availability, date)) {
+        return res.status(400).json({ error: 'The fitness venue is closed on this day.' });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (req.body.status === 'present' && date > today) {
+        return res.status(400).json({ error: 'Future dates cannot be marked present.' });
+      }
+      await pool.execute(
+        `INSERT INTO fitness_booking_attendance
+           (booking_id, customer_id, attendance_date, status)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE status = VALUES(status)`,
+        [bookingId, req.auth.sub, date, req.body.status],
+      );
+      return res.json({ attendance: { date, status: req.body.status } });
+    } catch (error) { return next(error); }
+  },
+);
+
+app.delete(
+  '/api/bookings/:bookingId/attendance/:date',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    try {
+      const bookingId = Number(req.params.bookingId);
+      const { date } = req.params;
+      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+        return res.status(400).json({ error: 'Invalid booking ID.' });
+      }
+      const booking = await customerFitnessBookingForAttendance(
+        bookingId,
+        req.auth.sub,
+      );
+      if (!booking) return res.status(404).json({ error: 'Fitness booking not found.' });
+      if (!validAttendanceDate(booking, date)) {
+        return res.status(400).json({ error: 'Attendance date must be within the booking period.' });
+      }
+      await pool.execute(
+        `DELETE FROM fitness_booking_attendance
+         WHERE booking_id = ? AND customer_id = ? AND attendance_date = ?`,
+        [bookingId, req.auth.sub, date],
+      );
+      return res.json({ message: 'Attendance cleared.' });
+    } catch (error) { return next(error); }
+  },
+);
+
 app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
     const [bookings] = await pool.execute(
@@ -2992,6 +3182,7 @@ function newsPostResponse(row) {
     slotCount: Number(row.slot_count || 1),
     sportsSlots: parseArray(row.sports_slots_json),
     eventFee: row.event_fee ?? null,
+    eventTypes: parseArray(row.event_types_json),
     ratePeriods: parseArray(row.rate_periods),
     tags: parseArray(row.amenities_json),
     details: row.business_details || null,
@@ -3139,7 +3330,7 @@ async function customerNewsFeed(req, res, next) {
               b.slot_count, b.sports_slots_json,
               b.amenities_json, b.details AS business_details,
               b.image_url AS business_image_url, b.image_urls, b.enabled,
-              b.visit_url,
+              b.visit_url, e.event_types_json,
               u.first_name AS merchant_first_name, u.last_name AS merchant_last_name,
               u.email AS merchant_email, u.phone AS merchant_phone,
               u.avatar_url AS merchant_avatar_url,
@@ -3152,6 +3343,7 @@ async function customerNewsFeed(req, res, next) {
        FROM merchant_news n
        INNER JOIN merchant_businesses b ON b.id = n.business_id
        INNER JOIN users u ON u.id = b.merchant_id
+       LEFT JOIN event_business_details e ON e.business_id = b.id
        WHERE n.status = 'published'
          AND b.enabled = 1
          AND u.status = 'active'
@@ -3724,6 +3916,25 @@ async function ensureTableColumn(tableName, columnName, definition) {
   );
 }
 
+async function ensureFitnessBookingAttendanceSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS fitness_booking_attendance (
+      booking_id BIGINT UNSIGNED NOT NULL,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      attendance_date DATE NOT NULL,
+      status ENUM('present', 'absent') NOT NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (booking_id, attendance_date),
+      KEY idx_fitness_attendance_customer (customer_id, booking_id),
+      CONSTRAINT fk_fitness_attendance_booking FOREIGN KEY (booking_id)
+        REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_fitness_attendance_customer FOREIGN KEY (customer_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function ensureCustomerProfileSchema() {
   await pool.execute('ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL');
   await ensureTableColumn('users', 'address', 'VARCHAR(500) NULL');
@@ -3849,6 +4060,7 @@ async function ensureVenueHeartsSchema() {
 
 Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
   .then(() => ensureBookingsSchema())
+  .then(() => ensureFitnessBookingAttendanceSchema())
   .then(() => ensureCustomerProfileSchema())
   .then(() => ensureNewsAndReviewsSchema())
   .then(() => ensureUserActivitySchema())

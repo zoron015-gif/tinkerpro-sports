@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
+import 'core/api_response.dart';
 import 'models/booking.dart';
 
 const apiBaseUrl = String.fromEnvironment(
@@ -63,18 +64,14 @@ class AuthApi {
 
   Future<List<Map<String, dynamic>>> customerBusinesses() async {
     final response = await _request('GET', '/api/businesses');
-    return (response['businesses'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((business) => Map<String, dynamic>.from(business))
-        .where((business) {
-          final enabled = business['enabled'];
-          return enabled != false &&
-              enabled != 0 &&
-              enabled != '0' &&
-              enabled != 'false' &&
-              enabled != 'FALSE';
-        })
-        .toList();
+    return asMapList(response['businesses']).where((business) {
+      final enabled = business['enabled'];
+      return enabled != false &&
+          enabled != 0 &&
+          enabled != '0' &&
+          enabled != 'false' &&
+          enabled != 'FALSE';
+    }).toList();
   }
 
   Future<Map<String, dynamic>> merchantProfile(String token) =>
@@ -118,9 +115,7 @@ class AuthApi {
       '/api/merchant/businesses',
       headers: _authHeaders(token),
     );
-    return (response['businesses'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    return asMapList(response['businesses']);
   }
 
   Future<void> createMerchantBusiness({
@@ -209,15 +204,46 @@ class AuthApi {
     final path = businessType == null || businessType.trim().isEmpty
         ? '/api/bookings'
         : '/api/bookings?businessType=${Uri.encodeQueryComponent(businessType.trim())}';
+    final response = await _request('GET', path, headers: _authHeaders(token));
+    return asMapList(response['bookings']);
+  }
+
+  Future<List<Map<String, dynamic>>> fitnessBookingAttendance(
+    String token,
+    int bookingId,
+  ) async {
     final response = await _request(
       'GET',
-      path,
+      '/api/bookings/$bookingId/attendance',
       headers: _authHeaders(token),
     );
-    return (response['bookings'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['attendance']);
+  }
+
+  Future<void> setFitnessBookingAttendance({
+    required String token,
+    required int bookingId,
+    required String date,
+    required String status,
+  }) async {
+    await _request(
+      'PUT',
+      '/api/bookings/$bookingId/attendance/${Uri.encodeComponent(date)}',
+      body: {'status': status},
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
+  Future<void> clearFitnessBookingAttendance({
+    required String token,
+    required int bookingId,
+    required String date,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/bookings/$bookingId/attendance/${Uri.encodeComponent(date)}',
+      headers: _authHeaders(token),
+    );
   }
 
   Future<List<Booking>> customerBookingModels(String token) async {
@@ -251,10 +277,7 @@ class AuthApi {
       '/api/news-feed',
       headers: _authHeaders(token),
     );
-    return (response['posts'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['posts']);
   }
 
   Future<Map<String, dynamic>> setBusinessHearted({
@@ -276,10 +299,7 @@ class AuthApi {
       '/api/news-feed/$businessId/reviews',
       headers: _authHeaders(token),
     );
-    return (response['reviews'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['reviews']);
   }
 
   Future<void> createNewsReview({
@@ -316,10 +336,7 @@ class AuthApi {
       '/api/merchant/news-posts',
       headers: _authHeaders(token),
     );
-    return (response['posts'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['posts']);
   }
 
   Future<void> createMerchantNewsPost({
@@ -366,10 +383,7 @@ class AuthApi {
       '/api/bookings/availability?venueId=$venueId&date=${Uri.encodeQueryComponent(date)}',
       headers: _authHeaders(token),
     );
-    return (response['bookings'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['bookings']);
   }
 
   Future<List<Map<String, dynamic>>> merchantBookings(String token) async {
@@ -378,10 +392,7 @@ class AuthApi {
       '/api/merchant/bookings',
       headers: _authHeaders(token),
     );
-    return (response['bookings'] as List<dynamic>? ?? [])
-        .whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value))
-        .toList();
+    return asMapList(response['bookings']);
   }
 
   Future<void> approveBooking({

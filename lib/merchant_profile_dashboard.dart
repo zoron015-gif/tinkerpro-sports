@@ -4,6 +4,8 @@ import 'activity_log_page.dart';
 import 'app_bottom_navigation.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
+import 'profile_image_preview.dart';
+import 'core/booking_status.dart';
 
 const _profileInk = AppColors.ink;
 const _profileMuted = AppColors.muted;
@@ -50,10 +52,16 @@ class _MerchantProfileDashboardPageState
     _profileImage = widget.profileImage;
   }
 
+  bool _isConfirmedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isConfirmed(booking['status']);
+
+  bool _isPendingBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isPending(booking['status']);
+
   List<Map<String, dynamic>> get _todayBookings {
     final now = DateTime.now();
     return widget.bookings.where((booking) {
-      if ('${booking['status'] ?? ''}'.toLowerCase() == 'cancelled') {
+      if (BookingStatusParser.isCancelled(booking['status'])) {
         return false;
       }
       final value = booking['date'] ?? booking['bookingDate'];
@@ -66,17 +74,11 @@ class _MerchantProfileDashboardPageState
   }
 
   double get _todayRevenue => _todayBookings
-      .where((booking) {
-        final status = '${booking['status'] ?? ''}'.toLowerCase();
-        return status == 'approved' || status == 'finished';
-      })
+      .where(_isConfirmedBooking)
       .fold(0, (total, booking) => total + _number(booking['total']));
 
-  int get _todayPendingBookings => _todayBookings
-      .where(
-        (booking) => '${booking['status'] ?? ''}'.toLowerCase() == 'pending',
-      )
-      .length;
+  int get _todayPendingBookings =>
+      _todayBookings.where(_isPendingBooking).length;
 
   int get _todayParticipants => _todayBookings.fold(
     0,
@@ -303,20 +305,18 @@ class _MerchantProfileDashboardPageState
     ),
     child: Row(
       children: [
-        CircleAvatar(
+        TappableProfileAvatar(
           radius: 34,
           backgroundColor: const Color(0xFFFFE8D2),
-          backgroundImage: _profileImage,
-          child: _profileImage == null
-              ? Text(
-                  _initials(name),
-                  style: const TextStyle(
-                    color: _profileInk,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                )
-              : null,
+          image: _profileImage,
+          fallback: Text(
+            _initials(name),
+            style: const TextStyle(
+              color: _profileInk,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ),
         const SizedBox(width: 14),
         Expanded(

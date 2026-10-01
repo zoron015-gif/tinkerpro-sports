@@ -152,12 +152,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   );
 
   Widget get _merchantActionCenter {
-    final pendingCount = _bookings
-        .where((booking) => '${booking['status']}'.toLowerCase() == 'pending')
-        .length;
-    final approvedCount = _bookings
-        .where((booking) => '${booking['status']}'.toLowerCase() == 'approved')
-        .length;
+    final pendingCount = _bookings.where(_isPendingBooking).length;
+    final approvedCount = _bookings.where(_isApprovedBooking).length;
     final hasActions = pendingCount + approvedCount > 0;
 
     return Container(
@@ -344,7 +340,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final participantCounts = List<int>.filled(starts.length, 0);
     final keys = starts.map(_analyticsKey).toList();
     for (final booking in _bookings) {
-      if (_isCancelledBooking(booking)) continue;
+      if (BookingStatusParser.isCancelled(booking['status'])) continue;
       final date = _bookingDate(booking);
       if (date == null) continue;
       if (range != null &&
@@ -455,18 +451,24 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _weekdayLabel(int weekday) =>
       const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
 
-  bool _isConfirmedBooking(Map<String, dynamic> booking) {
-    final status = '${booking['status'] ?? ''}'.toLowerCase();
-    return status == 'approved' || status == 'finished';
-  }
+  bool _isPendingBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isPending(booking['status']);
 
-  bool _isCancelledBooking(Map<String, dynamic> booking) =>
-      '${booking['status'] ?? ''}'.toLowerCase() == 'cancelled';
+  bool _isApprovedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isApproved(booking['status']);
+
+  bool _isFinishedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||
+      BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
+      BookingStatusParser.parse(booking['status']) == BookingStatus.done;
+
+  bool _isConfirmedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isConfirmed(booking['status']);
 
   List<Map<String, dynamic>> get _periodBookings {
     final bucketKeys = _analyticsBuckets.map((bucket) => bucket.key).toSet();
     return _bookings.where((booking) {
-      if (_isCancelledBooking(booking)) return false;
+      if (BookingStatusParser.isCancelled(booking['status'])) return false;
       final date = _bookingDate(booking);
       if (date == null || !bucketKeys.contains(_analyticsKeyForDate(date))) {
         return false;
@@ -516,9 +518,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   int _bookingCount(dynamic value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 
-  int get _pendingBookingCount => _bookings
-      .where((booking) => '${booking['status']}'.toLowerCase() == 'pending')
-      .length;
+  int get _pendingBookingCount => _bookings.where(_isPendingBooking).length;
 
   Widget get _analyticsSummaryCard {
     final liveVenues = _businesses.where(_isLiveOnApp).length;
@@ -636,9 +636,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final detailLabels = buckets
         .map((bucket) => '${bucket.label} · ${bucket.key}')
         .toList();
-    final chartWidth = math
-        .max(280.0, values.length * 56.0)
-        .toDouble();
+    final chartWidth = math.max(280.0, values.length * 56.0).toDouble();
     final chartTitle = switch (_analyticsView) {
       'Customer count' => 'Customers by $_analyticsPeriod',
       _ => 'Sales report · $_analyticsPeriod',
@@ -1104,9 +1102,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   Widget get _analyticsBookingStatusCard {
     final confirmedCount = _bookings.where(_isConfirmedBooking).length;
-    final finishedCount = _bookings
-        .where((booking) => '${booking['status']}'.toLowerCase() == 'finished')
-        .length;
+    final finishedCount = _bookings.where(_isFinishedBooking).length;
     return _analyticsPanel(
       title: 'Bookings overview',
       subtitle: 'Current status across all venues',
@@ -1123,7 +1119,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               _bookings
                   .where(
                     (booking) =>
-                        '${booking['status']}'.toLowerCase() == 'cancelled',
+                        BookingStatusParser.isCancelled(booking['status']),
                   )
                   .length,
             ),

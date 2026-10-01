@@ -17,6 +17,10 @@ import 'news_feed.dart';
 import 'auth_api.dart';
 import 'booking_notifications.dart';
 import 'app_bottom_navigation.dart';
+import 'fitness_booking_calendar.dart';
+import 'profile_image_preview.dart';
+import 'core/booking_status.dart';
+import 'core/business_type.dart';
 
 import 'app_design_system.dart';
 
@@ -31,16 +35,14 @@ List<Map<String, dynamic>> bookingsForBusinessType(
   List<Map<String, dynamic>> bookings,
   String? businessType,
 ) {
-  final requestedType = businessType?.trim().toLowerCase();
-  final normalizedType = requestedType == 'fitness & wellness'
-      ? 'fitness'
-      : requestedType;
-  if (normalizedType == null || normalizedType.isEmpty) return bookings;
+  final requestedType = BusinessTypeParser.normalized(businessType)
+      .toLowerCase();
+  if (requestedType.isEmpty) return bookings;
   return bookings.where((booking) {
     final type = '${booking['businessType'] ?? ''}'.trim().toLowerCase();
-    return normalizedType == 'fitness'
+    return requestedType == 'fitness & wellness'
         ? type == 'fitness' || type == 'fitness & wellness'
-        : type == normalizedType;
+        : type == requestedType;
   }).toList();
 }
 
@@ -72,7 +74,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   @override
   void initState() {
     super.initState();
-    if (_isFitnessProfile) _selectedHistoryTab = 'Upcoming session';
+    if (_isFitnessProfile) _selectedHistoryTab = 'Booking session';
     _loadProfile();
     _bookingReminderTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -147,15 +149,27 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   bool get _isFitnessProfile => const {
     'fitness',
     'fitness & wellness',
-  }.contains(widget.businessType?.trim().toLowerCase());
+  }.contains(BusinessTypeParser.normalized(widget.businessType).toLowerCase());
 
   List<Map<String, dynamic>> get _profileBookings {
     return bookingsForBusinessType(_bookings, widget.businessType);
   }
 
-  List<Map<String, dynamic>> get _upcoming => _profileBookings
-      .where((booking) => '${booking['status']}'.toLowerCase() == 'approved')
-      .toList();
+  List<Map<String, dynamic>> get _upcoming => _profileBookings.where((booking) {
+    return BookingStatusParser.isApproved(booking['status']);
+  }).toList();
+
+  List<Map<String, dynamic>> get _activeFitnessBookings {
+    return _upcoming.where((booking) {
+      return isFitnessBookingActive(booking);
+    }).toList()..sort((first, second) {
+      final firstDate = DateTime.tryParse('${first['date'] ?? ''}');
+      final secondDate = DateTime.tryParse('${second['date'] ?? ''}');
+      if (firstDate == null) return 1;
+      if (secondDate == null) return -1;
+      return firstDate.compareTo(secondDate);
+    });
+  }
 
   List<Map<String, dynamic>> get _completed => _profileBookings
       .where(
@@ -209,7 +223,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             color: _profileOrange,
                           ),
                           const SizedBox(width: 10),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'Edit profile',
                               style: TextStyle(
@@ -790,20 +804,18 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           children: [
             Row(
               children: [
-                CircleAvatar(
+                TappableProfileAvatar(
                   radius: 31,
                   backgroundColor: const Color(0xFFFFF1E4),
-                  backgroundImage: _avatarImage(avatarUrl),
-                  child: !_hasAvatar(avatarUrl)
-                      ? Text(
-                          initials,
-                          style: const TextStyle(
-                            color: _profileOrange,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        )
-                      : null,
+                  image: _avatarImage(avatarUrl),
+                  fallback: Text(
+                    initials,
+                    style: const TextStyle(
+                      color: _profileOrange,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -872,7 +884,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         : 'Court match history';
     final tabs = [
       (
-        title: _isFitnessProfile ? 'Upcoming session' : 'Upcoming match',
+        title: _isFitnessProfile ? 'Booking session' : 'Upcoming match',
         icon: Icons.book_outlined,
         key: 'upcoming-booking',
       ),
@@ -1191,28 +1203,25 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   );
 
   Widget _upcomingBookingCard(BuildContext context) {
+    if (_isFitnessProfile) return _fitnessBookingSessionsCard(context);
+
     final booking = _upcoming.isEmpty ? null : _upcoming.first;
     if (booking == null) {
       return _whiteCard(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [
-          Text(
-            _isFitnessProfile ? 'UPCOMING FITNESS SESSION' : 'UPCOMING BOOKING',
-            style: const TextStyle(
+          const Text(
+            'UPCOMING BOOKING',
+            style: TextStyle(
               color: _profileOrange,
               fontSize: 10,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            _isFitnessProfile
-                ? 'No approved fitness sessions yet.'
-                : 'No approved bookings yet.',
-            style: const TextStyle(
-              color: _profileInk,
-              fontWeight: FontWeight.w800,
-            ),
+          const Text(
+            'No approved bookings yet.',
+            style: TextStyle(color: _profileInk, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -1228,11 +1237,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Row(
           children: [
             Expanded(
-              child: Text(
-                _isFitnessProfile
-                    ? 'UPCOMING FITNESS SESSION'
-                    : 'UPCOMING BOOKING',
-                style: const TextStyle(
+              child: const Text(
+                'UPCOMING BOOKING',
+                style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
@@ -1329,6 +1336,382 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     );
   }
 
+  Widget _fitnessBookingSessionsCard(BuildContext context) {
+    final bookings = _activeFitnessBookings;
+    return _whiteCard(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'ACTIVE BOOKING SESSION',
+                style: TextStyle(
+                  color: _profileOrange,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            _smallPill('${bookings.length} active'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (bookings.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'No active fitness bookings yet.',
+              style: TextStyle(
+                color: _profileMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        else ...[
+          const Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'Gym name',
+                    style: TextStyle(
+                      color: _profileMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Center(
+                    child: Text(
+                      'Price',
+                      style: TextStyle(
+                        color: _profileMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Center(
+                    child: Text(
+                      'Duration',
+                      style: TextStyle(
+                        color: _profileMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(flex: 2, child: SizedBox()),
+            ],
+          ),
+          const Divider(height: 16),
+          for (var index = 0; index < bookings.length; index++) ...[
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: ValueKey(
+                  'fitness-booking-calendar-row-${bookings[index]['id'] ?? index}',
+                ),
+                borderRadius: BorderRadius.circular(10),
+                onTap: () =>
+                    _showFitnessBookingCalendar(context, bookings[index]),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            '${bookings[index]['venueName'] ?? 'Fitness venue'}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _profileInk,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Center(
+                            child: Text(
+                              _fitnessBookingPrice(bookings[index]),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: _profileInk,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Center(
+                            child: Text(
+                              fitnessPlanDurationLabel(
+                                '${bookings[index]['fitnessPlanType'] ?? ''}',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: _profileInk,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Expanded(
+                        flex: 2,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              color: _profileOrange,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (index < bookings.length - 1) const Divider(height: 12),
+          ],
+        ],
+      ],
+    );
+  }
+
+  String _fitnessBookingPrice(Map<String, dynamic> booking) {
+    final total =
+        _bookingAmount(booking['total']) ??
+        ((_bookingAmount(booking['fitnessPlanPrice']) ?? 0) +
+            (_bookingAmount(booking['fitnessCoachPrice']) ?? 0));
+    return 'PHP ${total.toStringAsFixed(2)}';
+  }
+
+  Future<void> _showFitnessBookingCalendar(
+    BuildContext context,
+    Map<String, dynamic> booking,
+  ) async {
+    final startDate = DateTime.tryParse('${booking['date'] ?? ''}');
+    if (startDate == null) {
+      _message(context, 'The booking start date is unavailable.');
+      return;
+    }
+    final bookingId = int.tryParse('${booking['id'] ?? ''}');
+    if (bookingId == null || bookingId < 1) {
+      _message(context, 'The booking ID is unavailable.');
+      return;
+    }
+    final planType = '${booking['fitnessPlanType'] ?? ''}';
+    final endDate = fitnessPlanEndDate(startDate, planType);
+    final hours = '${booking['hours'] ?? ''}';
+    final availability = '${booking['availability'] ?? ''}';
+    String? token;
+    String? attendanceWarning;
+    var attendance = <String, String>{};
+    try {
+      final session = await AppSession.load();
+      if (!context.mounted) return;
+      token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        attendanceWarning = 'Sign in again to sync attendance. The booking calendar is still available.';
+      } else {
+        try {
+          final records = await _api.fitnessBookingAttendance(token, bookingId);
+          if (!context.mounted) return;
+          attendance = {
+            for (final record in records)
+              if (record['date'] is String &&
+                  (record['status'] == 'present' ||
+                      record['status'] == 'absent'))
+                record['date'] as String: record['status'] as String,
+          };
+        } on Exception catch (error) {
+          attendanceWarning = _fitnessAttendanceLoadWarning(error);
+        }
+      }
+    } on Exception catch (error) {
+      attendanceWarning = _fitnessAttendanceLoadWarning(error);
+    }
+    if (!context.mounted) return;
+    final attendanceToken = token;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .88,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: _profileLine,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Booking session',
+                        style: TextStyle(
+                          color: _profileInk,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close booking calendar',
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${booking['venueName'] ?? 'Fitness venue'} · '
+                  '${_fitnessBookingPrice(booking)} · '
+                  '${fitnessPlanDurationLabel(planType)}',
+                  style: const TextStyle(
+                    color: _profileMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_calendarDateLabel(startDate)} – '
+                  '${_calendarDateLabel(endDate)}',
+                  style: const TextStyle(
+                    color: _profileInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (attendanceWarning != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    key: const ValueKey('fitness-attendance-sync-warning'),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      attendanceWarning,
+                      style: const TextStyle(
+                        color: Color(0xFF8A4C00),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                FitnessBookingCalendar(
+                  startDate: startDate,
+                  endDate: endDate,
+                  hours: hours,
+                  availability: availability,
+                  attendance: attendance,
+                  onAttendanceChanged: attendanceToken == null
+                      ? null
+                      : (date, status) async {
+                          final dateKey = fitnessDateKey(date);
+                          if (status == null) {
+                            await _api.clearFitnessBookingAttendance(
+                              token: attendanceToken,
+                              bookingId: bookingId,
+                              date: dateKey,
+                            );
+                          } else {
+                            await _api.setFitnessBookingAttendance(
+                              token: attendanceToken,
+                              bookingId: bookingId,
+                              date: dateKey,
+                              status: status,
+                            );
+                          }
+                        },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _calendarDateLabel(DateTime date) =>
+      '${date.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.month - 1]} ${date.year}';
+
+  String _fitnessAttendanceLoadWarning(Object error) {
+    if (error is AuthApiException &&
+        error.statusCode == 404 &&
+        error.message == 'The requested API endpoint was not found.') {
+      return 'The running backend does not have attendance support yet. '
+          'Restart the backend to sync attendance. The calendar is still '
+          'available.';
+    }
+    return 'Could not load saved attendance. The calendar is available, '
+        'but records may be out of date. $error';
+  }
+
   Future<void> _showAllUpcomingBookings(BuildContext context) {
     return showModalBottomSheet<void>(
       context: context,
@@ -1361,9 +1744,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        _isFitnessProfile
-                            ? 'Upcoming fitness sessions'
-                            : 'Upcoming bookings',
+                        'Upcoming bookings',
                         style: const TextStyle(
                           color: _profileInk,
                           fontSize: 20,

@@ -18,6 +18,8 @@ let db;
 let sentVerificationCodes;
 let sentResetCodes;
 let paymentBooking;
+let attendanceBooking;
+let attendanceRecords;
 
 function response(rows = []) {
   return [rows, []];
@@ -50,6 +52,9 @@ function makeConnection() {
       }
       if (sql.includes('FROM fitness_business_details WHERE business_id = ?')) {
         return response(db.fitnessDetails ? [db.fitnessDetails] : []);
+      }
+      if (sql.includes('FROM merchant_news n')) {
+        return response(db.newsFeedRows);
       }
       if (sql.includes('FROM bookings') && sql.includes('AND start_time <')) {
         return response(db.overlapRows ?? (
@@ -95,6 +100,8 @@ function resetDatabase() {
     calls: [],
     accountStatus: 'active',
     venueReviews: [],
+    newsFeedRows: [],
+    customerBusinessRows: [],
     existingRegistrationUser: null,
     resetUser: null,
     verificationToken: null,
@@ -155,6 +162,14 @@ function resetDatabase() {
     webhookBooking: null,
   };
   paymentBooking = db.paymentBooking;
+  attendanceBooking = {
+    id: 501,
+    bookingDate: '2026-09-08',
+    fitnessPlanType: 'monthly',
+    businessType: 'Fitness & Wellness',
+    availability: 'Monday, Tuesday, Wednesday, Thursday, Friday, Saturday',
+  };
+  attendanceRecords = [{ date: '2026-09-09', status: 'present' }];
   sentVerificationCodes = [];
   sentResetCodes = [];
 }
@@ -209,10 +224,35 @@ before(async () => {
         return response(db.venueReviews);
       }
       if (
+        sql.includes('FROM merchant_businesses b') &&
+        sql.includes('LEFT JOIN event_business_details e') &&
+        sql.includes('ORDER BY b.created_at DESC')
+      ) {
+        return response(db.customerBusinessRows);
+      }
+      if (sql.includes('FROM merchant_news n')) {
+        return response(db.newsFeedRows);
+      }
+      if (
         sql.includes('FROM bookings b') &&
         sql.includes('LEFT JOIN fitness_business_details')
       ) {
         return response(db.customerBookings);
+      }
+      if (
+        sql.includes('FROM bookings b') &&
+        sql.includes('b.id = ? AND b.customer_id = ?')
+      ) {
+        return response(
+          attendanceBooking &&
+            Number(params[0]) === attendanceBooking.id &&
+            String(params[1]) === '42'
+            ? [attendanceBooking]
+            : [],
+        );
+      }
+      if (sql.includes('FROM fitness_booking_attendance')) {
+        return response(attendanceRecords);
       }
       if (sql.includes('SELECT start_time AS startTime')) {
         if (db.availabilityError) throw db.availabilityError;
@@ -510,6 +550,51 @@ test('customer feed reports aggregate hearts and the authenticated user heart st
   assert.deepEqual(feedQuery.params, ['42']);
 });
 
+test('customer feed includes merchant-configured event types', async () => {
+  db.newsFeedRows = [{
+    id: 15,
+    business_id: 7,
+    business_type: 'Event',
+    business_category: 'Garden',
+    event_types_json: '["Wedding","Birthday"]',
+  }];
+
+  const response = await request('/api/news-feed');
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.posts[0].eventTypes, ['Wedding', 'Birthday']);
+  const feedQuery = db.calls.find(({ sql }) =>
+    sql.includes('FROM merchant_news n'),
+  );
+  assert.ok(feedQuery);
+  assert.match(feedQuery.sql, /event_types_json/);
+});
+
+test('customer businesses include enabled Event venues without published news', async () => {
+  db.customerBusinessRows = [{
+    id: 92,
+    businessType: 'Event',
+    name: 'Garden Event Place',
+    category: 'Garden',
+    eventTypes: '["Wedding","Birthday"]',
+    heartCount: 0,
+  }];
+
+  const response = await request('/api/businesses');
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.businesses[0].eventTypes, ['Wedding', 'Birthday']);
+  const businessesQuery = db.calls.find(({ sql }) =>
+    sql.includes('LEFT JOIN event_business_details e') &&
+    sql.includes('ORDER BY b.created_at DESC'),
+  );
+  assert.ok(businessesQuery);
+  assert.match(businessesQuery.sql, /b\.business_type = 'Event'\s+OR EXISTS/);
+  assert.match(businessesQuery.sql, /AS heartCount/);
+});
+
 test('availability returns bookings and validates its required inputs', async () => {
   db.availabilityRows = [{ startTime: '09:00:00', durationHours: 1 }];
   const response = await request('/api/bookings/availability?venueId=7&date=2026-10-01');
@@ -624,6 +709,104 @@ test('Fitness bookings price the selected term, annual offer, and coach on the s
   assert.equal(insert.params[14], 'yearly');
   assert.equal(insert.params[15], 'Yoga');
   assert.equal(insert.params[16], 'Alex Coach');
+});
+
+test('customers can read, record, and clear attendance for fitness bookings', async () => {
+  const loaded = await request('/api/bookings/501/attendance');
+  assert.equal(loaded.status, 200);
+  assert.deepEqual(await loaded.json(), {
+    attendance: [{ date: '2026-09-09', status: 'present' }],
+  });
+
+  const marked = await request('/api/bookings/501/attendance/2026-10-01', {
+    method: 'PUT',
+    body: { status: 'absent' },
+  });
+  assert.equal(marked.status, 200);
+  assert.deepEqual(await marked.json(), {
+    attendance: { date: '2026-10-01', status: 'absent' },
+  });
+  const insert = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO fitness_booking_attendance'),
+  );
+  assert.deepEqual(insert.params, [501, '42', '2026-10-01', 'absent']);
+
+  const cleared = await request('/api/bookings/501/attendance/2026-10-01', {
+    method: 'DELETE',
+  });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(await cleared.json(), { message: 'Attendance cleared.' });
+});
+
+test('attendance rejects invalid dates, out-of-period dates, and future presence', async () => {
+  const invalidDate = await request('/api/bookings/501/attendance/2026-02-30', {
+    method: 'PUT',
+    body: { status: 'absent' },
+  });
+  assert.equal(invalidDate.status, 400);
+
+  const outOfPeriod = await request('/api/bookings/501/attendance/2026-10-09', {
+    method: 'PUT',
+    body: { status: 'absent' },
+  });
+  assert.equal(outOfPeriod.status, 400);
+
+  const today = new Date().toISOString().slice(0, 10);
+  attendanceBooking.bookingDate = today;
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const futurePresent = await request(
+    `/api/bookings/501/attendance/${tomorrow}`,
+    {
+      method: 'PUT',
+      body: { status: 'present' },
+    },
+  );
+  assert.equal(futurePresent.status, 400);
+  assert.equal(
+    db.calls.some(({ sql, params }) =>
+      sql.includes('INSERT INTO fitness_booking_attendance') &&
+      params[3] === 'present',
+    ),
+    false,
+  );
+});
+
+test('attendance rejects dates omitted from the merchant available days', async () => {
+  const closedSunday = await request(
+    '/api/bookings/501/attendance/2026-09-13',
+    {
+      method: 'PUT',
+      body: { status: 'absent' },
+    },
+  );
+  assert.equal(closedSunday.status, 400);
+  assert.deepEqual(await closedSunday.json(), {
+    error: 'The fitness venue is closed on this day.',
+  });
+  assert.equal(
+    db.calls.some(({ sql, params }) =>
+      sql.includes('INSERT INTO fitness_booking_attendance') &&
+      params[2] === '2026-09-13',
+    ),
+    false,
+  );
+});
+
+test('attendance is unavailable for bookings outside the customer fitness plan', async () => {
+  attendanceBooking.businessType = 'Sports';
+  const otherBusiness = await request('/api/bookings/501/attendance');
+  assert.equal(otherBusiness.status, 404);
+
+  attendanceBooking.businessType = 'Fitness & Wellness';
+  const otherCustomer = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/bookings/501/attendance`,
+    {
+      headers: {
+        authorization: `Bearer ${bearer('customer', '99')}`,
+      },
+    },
+  );
+  assert.equal(otherCustomer.status, 404);
 });
 
 test('Fitness booking rejects a category or coach not configured by the venue', async () => {

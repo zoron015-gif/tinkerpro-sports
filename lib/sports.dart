@@ -222,30 +222,15 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (images.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF17213A),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                      color: const Color(0xFF263A72),
-                      width: 1.5,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x26000000),
-                        blurRadius: 10,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    children: <Widget>[
-                      SizedBox(
-                        width: double.infinity,
-                        height: 280,
-                        child: PageView.builder(
+                SizedBox(
+                  width: double.infinity,
+                  height: MediaQuery.sizeOf(context).height * 0.5,
+                  child: ClipRRect(
+                    key: const ValueKey('sports-venue-hero-image'),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: <Widget>[
+                        PageView.builder(
                           controller: _imageController,
                           itemCount: 100000,
                           onPageChanged: (index) {
@@ -255,465 +240,481 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   _imageIndex = count == 0 ? 0 : index % count,
                             );
                           },
-                          itemBuilder: (_, index) {
-                            return GestureDetector(
-                              onTap: () => _openImageViewer(images, index),
-                              child: Image(
-                                image: _imageProvider(
-                                  images[index % images.length],
-                                ),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    Container(color: const Color(0xFFE5E7EB)),
+                          itemBuilder: (_, index) => GestureDetector(
+                            onTap: () => _openImageViewer(images, index),
+                            child: Image(
+                              image: _imageProvider(
+                                images[index % images.length],
                               ),
-                            );
-                          },
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  Container(color: const Color(0xFFE5E7EB)),
+                            ),
+                          ),
                         ),
-                      ),
-                      Positioned(
-                        top: 14,
-                        left: 14,
-                        child: _heroAction(
-                          icon: Icons.arrow_back_ios_new_rounded,
-                          onPressed: () => Navigator.of(context).pop(),
+                        Positioned(
+                          top: 32,
+                          left: 14,
+                          child: _heroAction(
+                            icon: Icons.arrow_back_ios_new_rounded,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
                         ),
-                      ),
-                      Positioned(
-                        top: 14,
-                        right: 14,
-                        child: Row(
+                        Positioned(
+                          top: 32,
+                          right: 14,
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: _toggleSaved,
+                                child: Icon(
+                                  isSaved
+                                      ? savedItemSelectedIcon
+                                      : savedItemIcon,
+                                  color: isSaved ? _sportsOrange : Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              _heroAction(
+                                icon: Icons.ios_share_rounded,
+                                onPressed: () {},
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (images.length > 1)
+                          Positioned(
+                            right: 14,
+                            bottom: 44,
+                            child: Container(
+                              key: const ValueKey('sports-venue-image-count'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.58),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                '${_imageIndex + 1}/${images.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              Transform.translate(
+                offset: Offset(0, images.isNotEmpty ? -26 : 0),
+                child: Container(
+                  key: const ValueKey('sports-venue-content-panel'),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(26),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            GestureDetector(
-                              onTap: _toggleSaved,
-                              child: Icon(
-                                isSaved ? savedItemSelectedIcon : savedItemIcon,
-                                color: isSaved ? _sportsOrange : Colors.white,
-                                size: 30,
+                            Expanded(
+                              child: Text(
+                                key: const ValueKey('sports-venue-title'),
+                                widget.venue.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF1B1C1E),
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.6,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
-                            _heroAction(
-                              icon: Icons.ios_share_rounded,
-                              onPressed: () {},
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (images.length > 1)
-                        Positioned(
-                          right: 14,
-                          bottom: 18,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.58),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              '${_imageIndex + 1}/${images.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              key: const ValueKey('sports-venue-title'),
-                              widget.venue.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF1B1C1E),
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.6,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Semantics(
-                            label: '${widget.venue.heartCount} venue hearts',
-                            child: Row(
-                              key: const ValueKey('sports-venue-heart-count'),
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.favorite_rounded,
-                                  color: Colors.red.shade600,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '${widget.venue.heartCount}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF1B1C1E),
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.venue.address,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _sportsMuted,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          if (widget.venue.availability.trim().isNotEmpty)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 9,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE9FBF2),
-                                borderRadius: BorderRadius.circular(99),
-                                border: Border.all(
-                                  color: const Color(0xFFA7E5C2),
-                                ),
-                              ),
-                              child: const Text(
-                                'OPEN NOW',
-                                style: TextStyle(
-                                  color: Color(0xFF07854B),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          _ratingStars(widget.venue.averageRating),
-                          const SizedBox(width: 5),
-                          Text(
-                            widget.venue.averageRating == 0
-                                ? 'No ratings yet'
-                                : widget.venue.averageRating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: Color(0xFF101B33),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const Text(
-                            '  •  ',
-                            style: TextStyle(color: Color(0xFFCBD2DD)),
-                          ),
-                          TextButton(
-                            key: const ValueKey('sports-venue-open-reviews'),
-                            onPressed: widget.venue.id <= 0
-                                ? null
-                                : _showVenueReviews,
-                            style: TextButton.styleFrom(
-                              foregroundColor: _sportsOrange,
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            child: Text(
-                              '${widget.venue.reviewCount} '
-                              '${widget.venue.reviewCount == 1 ? 'review' : 'reviews'} · '
-                              '${widget.venue.ratingUserCount} rated',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                decoration: TextDecoration.underline,
-                                decorationColor: _sportsOrange,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      _detailRow(
-                        Icons.sports_volleyball_outlined,
-                        '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
-                      ),
-                      _detailRow(
-                        Icons.location_on_outlined,
-                        widget.venue.address,
-                      ),
-                      if (widget.venue.distanceLabel.isNotEmpty)
-                        KeyedSubtree(
-                          key: const ValueKey('sports-venue-distance'),
-                          child: _detailRow(
-                            Icons.near_me_outlined,
-                            widget.venue.distanceLabel,
-                          ),
-                        ),
-                      if (widget.venue.hours.trim().isNotEmpty)
-                        _detailRow(
-                          Icons.access_time_outlined,
-                          widget.venue.hours,
-                        ),
-                      if (widget.venue.availability.trim().isNotEmpty)
-                        _detailRow(
-                          Icons.check_circle_outlined,
-                          widget.venue.availability,
-                        ),
-                      if (widget.venue.details.trim().isNotEmpty)
-                        _detailRow(Icons.notes_outlined, widget.venue.details),
-                      if (widget.venue.additionalPlayerFee > 0 &&
-                          widget.venue.includedPlayers > 0)
-                        _detailRow(
-                          Icons.groups_outlined,
-                          'Includes ${widget.venue.includedPlayers} players · '
-                          'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
-                          'per extra player',
-                        ),
-                      if (widget.venue.tags.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.amenitiesHeading,
-                          style: const TextStyle(
-                            color: Color(0xFF8A97AA),
-                            fontSize: 11,
-                            letterSpacing: .8,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: widget.venue.tags
-                              .where((tag) => tag.trim().isNotEmpty)
-                              .map(
-                                (tag) => DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFEFE5),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: const Color(0x33FED7AA),
-                                    ),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    child: Text(
-                                      tag,
-                                      style: const TextStyle(
-                                        color: Color(0xFF263247),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      if (widget.venue.priceDay.trim().isNotEmpty)
-                        Text(
-                          widget.venue.priceDay,
-                          style: const TextStyle(
-                            color: Color(0xFF101B33),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      const SizedBox(height: 16),
-                      const Divider(color: Color(0xFFD8DDE5), thickness: 1),
-                      const SizedBox(height: 14),
-                      if (merchantName.isNotEmpty ||
-                          widget.venue.merchantEmail.isNotEmpty ||
-                          widget.venue.merchantPhone.isNotEmpty) ...[
-                        const Text(
-                          'Hosted by merchant',
-                          style: TextStyle(
-                            color: Color(0xFF1B1C1E),
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        const Text(
-                          'Verified venue manager • Fast responding',
-                          style: TextStyle(
-                            color: Color(0xFF778398),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFF8FAFC), Color(0xFFFFF7ED)],
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: const Color(0xFFE2E7EF)),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
+                            Semantics(
+                              label: '${widget.venue.heartCount} venue hearts',
+                              child: Row(
+                                key: const ValueKey('sports-venue-heart-count'),
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  CircleAvatar(
-                                    radius: 24,
-                                    backgroundColor: Colors.grey.shade300,
-                                    backgroundImage:
-                                        widget.venue.merchantAvatarUrl
-                                            .trim()
-                                            .isEmpty
-                                        ? null
-                                        : _imageProvider(
-                                            widget.venue.merchantAvatarUrl,
-                                          ),
-                                    child:
-                                        widget.venue.merchantAvatarUrl
-                                            .trim()
-                                            .isEmpty
-                                        ? const Icon(
-                                            Icons.person,
-                                            color: Colors.white,
-                                          )
-                                        : null,
+                                  Icon(
+                                    Icons.favorite_rounded,
+                                    color: Colors.red.shade600,
+                                    size: 18,
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      merchantName,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Color(0xFF1B1C1E),
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  OutlinedButton(
-                                    onPressed: () =>
-                                        _contactMerchant(widget.venue),
-                                    style: OutlinedButton.styleFrom(
-                                      minimumSize: const Size(52, 34),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                      ),
-                                      side: const BorderSide(
-                                        color: Color(0xFFD7DEE8),
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(9),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Chat',
-                                      style: TextStyle(
-                                        color: Color(0xFF263247),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    '${widget.venue.heartCount}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF1B1C1E),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ],
                               ),
-                              if (widget.venue.merchantEmail.isNotEmpty ||
-                                  widget.venue.merchantPhone.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                const Divider(height: 1),
-                                const SizedBox(height: 8),
-                                if (widget.venue.merchantPhone.isNotEmpty)
-                                  _contactChip(
-                                    Icons.phone_outlined,
-                                    widget.venue.merchantPhone,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.venue.address,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _sportsMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (widget.venue.availability.trim().isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE9FBF2),
+                                  borderRadius: BorderRadius.circular(99),
+                                  border: Border.all(
+                                    color: const Color(0xFFA7E5C2),
                                   ),
-                                if (widget.venue.merchantEmail.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: _contactChip(
-                                      Icons.email_outlined,
-                                      widget.venue.merchantEmail,
+                                ),
+                                child: const Text(
+                                  'OPEN NOW',
+                                  style: TextStyle(
+                                    color: Color(0xFF07854B),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            _ratingStars(widget.venue.averageRating),
+                            const SizedBox(width: 5),
+                            Text(
+                              widget.venue.averageRating == 0
+                                  ? 'No ratings yet'
+                                  : widget.venue.averageRating.toStringAsFixed(
+                                      1,
                                     ),
-                                  ),
-                              ],
-                            ],
-                          ),
+                              style: const TextStyle(
+                                color: Color(0xFF101B33),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const Text(
+                              '  •  ',
+                              style: TextStyle(color: Color(0xFFCBD2DD)),
+                            ),
+                            TextButton(
+                              key: const ValueKey('sports-venue-open-reviews'),
+                              onPressed: widget.venue.id <= 0
+                                  ? null
+                                  : _showVenueReviews,
+                              style: TextButton.styleFrom(
+                                foregroundColor: _sportsOrange,
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                '${widget.venue.reviewCount} '
+                                '${widget.venue.reviewCount == 1 ? 'review' : 'reviews'} · '
+                                '${widget.venue.ratingUserCount} rated',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: _sportsOrange,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                      const SizedBox(height: 14),
-                      if (widget.venue.rateLabels.isNotEmpty) ...[
-                        const Text(
-                          'Rates',
-                          style: TextStyle(
-                            color: Color(0xFF1B1C1E),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        const SizedBox(height: 8),
+                        _detailRow(
+                          Icons.sports_volleyball_outlined,
+                          '${widget.venue.sport}${widget.venue.type.trim().isEmpty ? '' : ' · ${widget.venue.type}'}${widget.venue.courts.trim().isEmpty ? '' : ' · ${widget.venue.courts}'}',
                         ),
-                        const SizedBox(height: 6),
-                        for (final rate in widget.venue.rateLabels)
-                          _detailRow(Icons.payments_outlined, rate),
-                        const SizedBox(height: 6),
-                      ],
-                      const SizedBox(height: 14),
-                      if (widget.venue.visitUrl.trim().isNotEmpty)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: () async {
-                              final uri = Uri.tryParse(widget.venue.visitUrl);
-                              if (uri == null || !await launchUrl(uri)) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Could not open venue link.',
+                        _detailRow(
+                          Icons.location_on_outlined,
+                          widget.venue.address,
+                        ),
+                        if (widget.venue.distanceLabel.isNotEmpty)
+                          KeyedSubtree(
+                            key: const ValueKey('sports-venue-distance'),
+                            child: _detailRow(
+                              Icons.near_me_outlined,
+                              widget.venue.distanceLabel,
+                            ),
+                          ),
+                        if (widget.venue.hours.trim().isNotEmpty)
+                          _detailRow(
+                            Icons.access_time_outlined,
+                            widget.venue.hours,
+                          ),
+                        if (widget.venue.availability.trim().isNotEmpty)
+                          _detailRow(
+                            Icons.check_circle_outlined,
+                            widget.venue.availability,
+                          ),
+                        if (widget.venue.details.trim().isNotEmpty)
+                          _detailRow(
+                            Icons.notes_outlined,
+                            widget.venue.details,
+                          ),
+                        if (widget.venue.additionalPlayerFee > 0 &&
+                            widget.venue.includedPlayers > 0)
+                          _detailRow(
+                            Icons.groups_outlined,
+                            'Includes ${widget.venue.includedPlayers} players · '
+                            'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
+                            'per extra player',
+                          ),
+                        if (widget.venue.tags.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.amenitiesHeading,
+                            style: const TextStyle(
+                              color: Color(0xFF8A97AA),
+                              fontSize: 11,
+                              letterSpacing: .8,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: widget.venue.tags
+                                .where((tag) => tag.trim().isNotEmpty)
+                                .map(
+                                  (tag) => DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFEFE5),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(0x33FED7AA),
                                       ),
                                     ),
-                                  );
-                                }
-                              }
-                            },
-                            icon: const Icon(Icons.open_in_new_rounded),
-                            label: const Text('Visit venue website'),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      child: Text(
+                                        tag,
+                                        style: const TextStyle(
+                                          color: Color(0xFF263247),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
                           ),
-                        ),
-                    ],
+                        ],
+                        const SizedBox(height: 12),
+                        if (widget.venue.priceDay.trim().isNotEmpty)
+                          Text(
+                            widget.venue.priceDay,
+                            style: const TextStyle(
+                              color: Color(0xFF101B33),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        const Divider(color: Color(0xFFD8DDE5), thickness: 1),
+                        const SizedBox(height: 14),
+                        if (merchantName.isNotEmpty ||
+                            widget.venue.merchantEmail.isNotEmpty ||
+                            widget.venue.merchantPhone.isNotEmpty) ...[
+                          const Text(
+                            'Hosted by merchant',
+                            style: TextStyle(
+                              color: Color(0xFF1B1C1E),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          const Text(
+                            'Verified venue manager • Fast responding',
+                            style: TextStyle(
+                              color: Color(0xFF778398),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFF8FAFC), Color(0xFFFFF7ED)],
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: const Color(0xFFE2E7EF),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 24,
+                                      backgroundColor: Colors.grey.shade300,
+                                      backgroundImage:
+                                          widget.venue.merchantAvatarUrl
+                                              .trim()
+                                              .isEmpty
+                                          ? null
+                                          : _imageProvider(
+                                              widget.venue.merchantAvatarUrl,
+                                            ),
+                                      child:
+                                          widget.venue.merchantAvatarUrl
+                                              .trim()
+                                              .isEmpty
+                                          ? const Icon(
+                                              Icons.person,
+                                              color: Colors.white,
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        merchantName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF1B1C1E),
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: () =>
+                                          _contactMerchant(widget.venue),
+                                      style: OutlinedButton.styleFrom(
+                                        minimumSize: const Size(52, 34),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        side: const BorderSide(
+                                          color: Color(0xFFD7DEE8),
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            9,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Chat',
+                                        style: TextStyle(
+                                          color: Color(0xFF263247),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (widget.venue.merchantEmail.isNotEmpty ||
+                                    widget.venue.merchantPhone.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 8),
+                                  if (widget.venue.merchantPhone.isNotEmpty)
+                                    _contactChip(
+                                      Icons.phone_outlined,
+                                      widget.venue.merchantPhone,
+                                    ),
+                                  if (widget.venue.merchantEmail.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: _contactChip(
+                                        Icons.email_outlined,
+                                        widget.venue.merchantEmail,
+                                      ),
+                                    ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        if (widget.venue.rateLabels.isNotEmpty) ...[
+                          const Text(
+                            'Rates',
+                            style: TextStyle(
+                              color: Color(0xFF1B1C1E),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          for (final rate in widget.venue.rateLabels)
+                            _detailRow(Icons.payments_outlined, rate),
+                          const SizedBox(height: 6),
+                        ],
+                        const SizedBox(height: 14),
+                        if (widget.venue.visitUrl.trim().isNotEmpty)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () async {
+                                final uri = Uri.tryParse(widget.venue.visitUrl);
+                                if (uri == null || !await launchUrl(uri)) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Could not open venue link.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              label: const Text('Visit venue website'),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

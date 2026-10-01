@@ -17,6 +17,7 @@ import 'merchant_dashboard.dart';
 import 'app_session.dart';
 import 'message_notification_host.dart';
 import 'messages_dashboard.dart';
+import 'scroll_to_top_overlay.dart';
 
 import 'dart:async';
 
@@ -38,24 +39,35 @@ class MyApp extends StatelessWidget {
 
   final AppSession? session;
 
+  static final _scrollToTopKey = GlobalKey<ScrollToTopOverlayState>();
+  static final ScrollToTopNavigatorObserver _scrollObserver =
+      ScrollToTopNavigatorObserver(
+        onNavigationChanged: () => _scrollToTopKey.currentState?.reset(),
+      );
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _rootNavigatorKey,
+      navigatorObservers: [_scrollObserver],
       title: 'TinkerPro',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: const OverviewPage(),
-      builder: (context, child) => MessageNotificationHost(
-        child: child ?? const SizedBox.shrink(),
-        onOpenConversation: (conversationId) {
-          _rootNavigatorKey.currentState?.push(
-            MaterialPageRoute<void>(
-              builder: (_) =>
-                  MessagesDashboardPage(initialConversationId: conversationId),
-            ),
-          );
-        },
+      builder: (context, child) => ScrollToTopOverlay(
+        key: _scrollToTopKey,
+        child: MessageNotificationHost(
+          child: child ?? const SizedBox.shrink(),
+          onOpenConversation: (conversationId) {
+            _rootNavigatorKey.currentState?.push(
+              MaterialPageRoute<void>(
+                builder: (_) => MessagesDashboardPage(
+                  initialConversationId: conversationId,
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

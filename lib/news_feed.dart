@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'auth_api.dart';
 import 'app_session.dart';
 import 'sports.dart';
-import 'event_dashboard.dart';
 import 'saved_items.dart';
 import 'saved_icons.dart';
 import 'messages_dashboard.dart';
@@ -212,7 +211,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         401,
       );
     }
-    final feedPosts = await _api.newsFeed(token);
+    final isEventFeed = widget.businessType.trim().toLowerCase() == 'event';
+    final feedPosts = isEventFeed
+        ? <Map<String, dynamic>>[]
+        : await _api.newsFeed(token);
     for (final post in feedPosts) {
       final key = _postHeartKey(post);
       if (key.isEmpty) continue;
@@ -225,8 +227,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         _heartedVenueKeys.remove(key);
       }
     }
-    final enabledBusinesses = await _businesses;
-    final enabledBusinessIds = enabledBusinesses
+    final businesses = await _businesses;
+    final enabledBusinessIds = businesses
+        .where((business) => !_isMerchantDisabled(business))
         .map((business) => int.tryParse('${business['id'] ?? ''}'))
         .whereType<int>()
         .toSet();
@@ -237,10 +240,82 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               businessId != null &&
               enabledBusinessIds.contains(businessId) &&
               !_isMerchantDisabled(post);
-          return {...post, 'enabled': enabled, 'businessEnabled': enabled};
+          final eventTypes = _stringList(post['eventTypes']);
+          final isEvent =
+              '${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event';
+          return {
+            ...post,
+            if (isEvent && eventTypes.isNotEmpty)
+              'category': eventTypes.join(', '),
+            'eventTypes': eventTypes,
+            'enabled': enabled,
+            'businessEnabled': enabled,
+          };
         })
         .where((post) => _matchesBusinessType(post['businessType']))
         .toList();
+    if (widget.businessType.trim().toLowerCase() == 'event') {
+      final listedBusinessIds = posts
+          .map((post) => int.tryParse('${post['businessId'] ?? ''}'))
+          .whereType<int>()
+          .toSet();
+      for (final business in businesses) {
+        if ('${business['businessType'] ?? ''}'.trim().toLowerCase() !=
+            'event') {
+          continue;
+        }
+        final businessId = int.tryParse('${business['id'] ?? ''}');
+        if (businessId == null || listedBusinessIds.contains(businessId)) {
+          continue;
+        }
+        final eventTypes = _stringList(business['eventTypes']);
+        final name = '${business['name'] ?? 'Event venue'}';
+        posts.add({
+          ...business,
+          'id': businessId,
+          'businessId': businessId,
+          'businessName': name,
+          'businessType': 'Event',
+          'category': eventTypes.isEmpty
+              ? '${business['category'] ?? 'Event'}'
+              : eventTypes.join(', '),
+          'eventTypes': eventTypes,
+          'address': business['address'] ?? '',
+          'imageUrl': business['imageUrl'],
+          'imageUrls': business['imageUrls'],
+          'title': name,
+          'body': '${business['details'] ?? ''}',
+          'averageRating': business['averageRating'] ?? 0,
+          'reviewCount': business['reviewCount'] ?? 0,
+          'ratingUserCount': business['ratingUserCount'] ?? 0,
+          'heartCount': business['heartCount'] ?? 0,
+          'enabled':
+              business['enabled'] != false &&
+              business['enabled'] != 0 &&
+              business['enabled'] != '0' &&
+              business['enabled'] != 'false' &&
+              business['enabled'] != 'FALSE',
+          'businessEnabled':
+              business['enabled'] != false &&
+              business['enabled'] != 0 &&
+              business['enabled'] != '0' &&
+              business['enabled'] != 'false' &&
+              business['enabled'] != 'FALSE',
+        });
+        final heartKey = _postHeartKey(posts.last);
+        if (heartKey.isNotEmpty) {
+          _heartCounts[heartKey] = _number(business['heartCount']).toInt();
+          if (business['heartedByMe'] == true ||
+              business['heartedByMe'] == 1 ||
+              business['heartedByMe'] == '1') {
+            _heartedVenueKeys.add(heartKey);
+          } else {
+            _heartedVenueKeys.remove(heartKey);
+          }
+        }
+        listedBusinessIds.add(businessId);
+      }
+    }
     if (!widget.savedOnly) return posts;
     final saved = await SavedItemStore.list();
     final savedKeys = saved
@@ -452,11 +527,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 (post) => '${post['address'] ?? ''}',
                 'All areas',
               );
-              final sports = _feedOptions(
-                posts,
-                (post) => '${post['category'] ?? ''}',
-                _categoryAllLabel,
-              );
+              final sports = _categoryOptions(posts);
               return Align(
                 alignment: Alignment.centerRight,
                 child: SizedBox(
@@ -784,6 +855,52 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             .toList()
           ..sort();
     return [allLabel, ...values];
+  }
+
+  List<String> _categoryFilterOptions(Map<String, dynamic> post) {
+    final eventTypes = _stringList(post['eventTypes']);
+    if ('${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event' &&
+        eventTypes.isNotEmpty) {
+      return eventTypes;
+    }
+    final category = '${post['category'] ?? ''}'.trim();
+    return category.isEmpty ? const [] : [category];
+  }
+
+  List<String> _categoryOptions(List<Map<String, dynamic>> posts) {
+    final values =
+        posts
+            .expand(_categoryFilterOptions)
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    return [_categoryAllLabel, ...values];
+  }
+
+  List<String> _stringList(Object? value) {
+    if (value is List) {
+      return value
+          .map((item) => '$item'.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded
+              .map((item) => '$item'.trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+      } on FormatException {
+        return [value.trim()];
+      }
+      return [value.trim()];
+    }
+    return const [];
   }
 
   Widget _filterLabel(String text) => Padding(
@@ -1205,20 +1322,47 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
         _sectionHeader('Most popular', 'Most hearts from users', popular),
-        _horizontalVenues(featured, identifier: 'most-popular'),
+        if (featured.isEmpty)
+          const Padding(
+            key: ValueKey('news-feed-most-popular-empty'),
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Text(
+              'No popular venues available yet.',
+              style: TextStyle(
+                color: _newsMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        else
+          _horizontalVenues(featured, identifier: 'most-popular'),
         const SizedBox(height: 22),
         _sectionHeader(
           widget.highestRatedSectionTitle,
           'Highest average review rating',
           highestRated,
         ),
-        _horizontalVenues(
-          rated,
-          identifier: widget.highestRatedSectionTitle.toLowerCase().replaceAll(
-            ' ',
-            '-',
+        if (rated.isEmpty)
+          const Padding(
+            key: ValueKey('news-feed-highest-rated-empty'),
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Text(
+              'No highest-rated venues available yet.',
+              style: TextStyle(
+                color: _newsMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        else
+          _horizontalVenues(
+            rated,
+            identifier: widget.highestRatedSectionTitle
+                .toLowerCase()
+                .replaceAll(' ', '-'),
           ),
-        ),
         const SizedBox(height: 24),
         Row(
           children: [
@@ -1751,12 +1895,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final query = _searchController.text.trim().toLowerCase();
     final filtered = posts.where((post) {
       final address = '${post['address'] ?? ''}'.toLowerCase();
-      final category = '${post['category'] ?? ''}'.toLowerCase();
       final matchesArea =
           _feedArea == 'All areas' || address.contains(_feedArea.toLowerCase());
+      final categories = _categoryFilterOptions(post)
+          .map((value) => value.toLowerCase())
+          .toList();
       final matchesSport =
           _feedSport == _categoryAllLabel ||
-          category == _feedSport.toLowerCase();
+          categories.contains(_feedSport.toLowerCase());
       final facility = '${post['facilityType'] ?? ''}';
       final hours = '${post['hours'] ?? post['opening_hours'] ?? ''}';
       final availability = '${post['availability'] ?? ''}';
@@ -1782,6 +1928,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         post['businessName'],
         post['businessType'],
         post['category'],
+        ..._stringList(post['eventTypes']),
         post['title'],
         post['body'],
         post['address'],
@@ -1887,7 +2034,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => MessagesDashboardPage(
             initialUserPosition: _userPosition,
             api: _api,
-            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
+            businessType: widget.businessType,
           ),
         ),
       );
@@ -1897,7 +2044,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => CustomerBookingsPage(
             onLogout: widget.onLogout,
             initialUserPosition: _userPosition,
-            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
+            businessType: widget.businessType,
           ),
         ),
       );
@@ -1907,7 +2054,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           builder: (_) => ProfileDashboardPage(
             onLogout: widget.onLogout,
             initialUserPosition: _userPosition,
-            businessType: widget.businessType == 'Fitness' ? 'Fitness' : null,
+            businessType: widget.businessType,
           ),
         ),
       );
@@ -2595,8 +2742,57 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       if (!mounted) return;
 
       if (type.toLowerCase().contains('event')) {
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => EventDashboardPage(onLogout: null)),
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          backgroundColor: const Color(0xFFF8F9FF),
+          builder: (context) {
+            final name = '${post['businessName'] ?? 'Event venue'}';
+            final category =
+                '${post['category'] ?? publishedBusiness['category'] ?? 'Event'}';
+            final address =
+                '${post['address'] ?? publishedBusiness['address'] ?? 'Address unavailable'}';
+            final details =
+                '${post['details'] ?? publishedBusiness['details'] ?? ''}';
+            final fee =
+                post['eventFee'] ??
+                post['event_fee'] ??
+                publishedBusiness['eventFee'] ??
+                publishedBusiness['event_fee'];
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('Event type: $category'),
+                    const SizedBox(height: 6),
+                    Text('Location: $address'),
+                    if (fee != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Price: PHP ${_number(fee).toStringAsFixed(0)} / event',
+                      ),
+                    ],
+                    if (details.trim().isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(details),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
         );
         return;
       }
