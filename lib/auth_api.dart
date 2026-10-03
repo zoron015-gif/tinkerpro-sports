@@ -8,7 +8,7 @@ import 'models/booking.dart';
 
 const apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.45:3000',
+  defaultValue: 'http://192.168.1.14:3000',
 );
 
 class AuthApiException implements Exception {
@@ -187,6 +187,7 @@ class AuthApi {
     int slotNumber = 1,
     String fitnessPlanType = '',
     String fitnessCoachName = '',
+    String eventType = '',
   }) => _request(
     'POST',
     '/api/bookings',
@@ -201,6 +202,7 @@ class AuthApi {
       'slotNumber': slotNumber,
       'fitnessPlanType': fitnessPlanType,
       'fitnessCoachName': fitnessCoachName,
+      'eventType': eventType,
     },
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
@@ -254,8 +256,14 @@ class AuthApi {
     );
   }
 
-  Future<List<Booking>> customerBookingModels(String token) async {
-    final response = await customerBookings(token);
+  Future<List<Booking>> customerBookingModels(
+    String token, {
+    String? businessType,
+  }) async {
+    final response = await customerBookings(
+      token,
+      businessType: businessType,
+    );
     return response.map(Booking.fromJson).toList();
   }
 
@@ -532,10 +540,16 @@ class AuthApi {
     headers: _authHeaders(token),
   );
 
-  Future<List<Map<String, dynamic>>> conversations(String token) async {
+  Future<List<Map<String, dynamic>>> conversations(
+    String token, {
+    String? businessType,
+  }) async {
+    final path = businessType == null || businessType.trim().isEmpty
+        ? '/api/messages/conversations'
+        : '/api/messages/conversations?businessType=${Uri.encodeQueryComponent(businessType.trim())}';
     final response = await _request(
       'GET',
-      '/api/messages/conversations',
+      path,
       headers: _authHeaders(token),
     );
     return (response['conversations'] as List<dynamic>? ?? [])
@@ -582,10 +596,14 @@ class AuthApi {
   Future<List<Map<String, dynamic>>> conversationMessages({
     required String token,
     required int conversationId,
+    String? businessType,
   }) async {
+    final path = businessType == null || businessType.trim().isEmpty
+        ? '/api/messages/conversations/$conversationId'
+        : '/api/messages/conversations/$conversationId?businessType=${Uri.encodeQueryComponent(businessType.trim())}';
     final response = await _request(
       'GET',
-      '/api/messages/conversations/$conversationId',
+      path,
       headers: _authHeaders(token),
     );
     return (response['messages'] as List<dynamic>? ?? [])
@@ -599,12 +617,16 @@ class AuthApi {
     required int conversationId,
     required String body,
     Map<String, dynamic>? attachment,
+    String? businessType,
   }) async {
     await _request(
       'POST',
       '/api/messages/conversations/$conversationId',
       body: {
         'body': body,
+        ...?(businessType == null || businessType.trim().isEmpty
+            ? null
+            : {'businessType': businessType.trim()}),
         ...?(attachment == null ? null : {'attachment': attachment}),
       },
       headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),

@@ -1,7 +1,8 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppSession {
-  AppSession._(this._preferences);
+  AppSession._(this._preferences) : _apiToken = null;
 
   static const _authenticatedKey = 'session_authenticated';
   static const _lastBookingTypeKey = 'session_last_booking_type';
@@ -12,7 +13,10 @@ class AppSession {
   static const _bookingStatusBannerDismissedPrefix =
       'booking_status_banner_dismissed_';
 
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
   final SharedPreferences _preferences;
+  String? _apiToken;
 
   bool get isAuthenticated => _preferences.getBool(_authenticatedKey) ?? false;
 
@@ -21,12 +25,20 @@ class AppSession {
 
   String? get lastBookingType => _preferences.getString(_lastBookingTypeKey);
 
-  String? get apiToken => _preferences.getString(_apiTokenKey);
+  String? get apiToken => _apiToken;
   String? get role => _preferences.getString(_roleKey);
   String? get accountEmail => _preferences.getString(_accountEmailKey);
 
   static Future<AppSession> load() async {
-    return AppSession._(await SharedPreferences.getInstance());
+    final preferences = await SharedPreferences.getInstance();
+    final session = AppSession._(preferences);
+    session._apiToken =
+        await _secureStorage.read(key: _apiTokenKey) ??
+        preferences.getString(_apiTokenKey);
+    if (session._apiToken != null && session._apiToken!.isNotEmpty) {
+      await preferences.remove(_apiTokenKey);
+    }
+    return session;
   }
 
   Future<void> markAuthenticated() async {
@@ -34,7 +46,9 @@ class AppSession {
   }
 
   Future<void> setApiToken(String token) async {
-    await _preferences.setString(_apiTokenKey, token);
+    _apiToken = token;
+    await _secureStorage.write(key: _apiTokenKey, value: token);
+    await _preferences.remove(_apiTokenKey);
   }
 
   Future<void> setRole(String role) async {
@@ -80,11 +94,13 @@ class AppSession {
       'match_notifications_enabled_${Uri.encodeComponent(accountEmail ?? 'anonymous')}';
 
   Future<void> clear() async {
+    _apiToken = null;
     await _preferences.remove(_authenticatedKey);
     await _preferences.remove(_lastBookingTypeKey);
     await _preferences.remove(_apiTokenKey);
     await _preferences.remove(_roleKey);
     await _preferences.remove(_accountEmailKey);
     await _preferences.remove(_merchantProfileEmailKey);
+    await _secureStorage.delete(key: _apiTokenKey);
   }
 }

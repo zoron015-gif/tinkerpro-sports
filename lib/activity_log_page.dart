@@ -133,6 +133,8 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
             activity['activityType']?.toString() ?? '',
             activity['venueName']?.toString() ?? '',
             activity['sportType']?.toString() ?? '',
+            activity['actorRole']?.toString() ?? '',
+            activity['requestId']?.toString() ?? '',
             ...details.values.map((value) => value.toString()),
           ].join(' ').toLowerCase();
           final matchesQuery =
@@ -422,6 +424,16 @@ class _VenueActivityTile extends StatelessWidget {
                             fontSize: 12,
                           ),
                         ),
+                        if (_auditContextLabel(activity).isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            _auditContextLabel(activity),
+                            style: const TextStyle(
+                              color: _activityMuted,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                         if (details['bookingDate'] != null ||
                             details['startTime'] != null) ...[
                           const SizedBox(height: 8),
@@ -513,6 +525,13 @@ class _ActivityTile extends StatelessWidget {
                   style: const TextStyle(color: _activityMuted, fontSize: 11),
                 ),
               ],
+              if (_auditContextLabel(activity).isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _auditContextLabel(activity),
+                  style: const TextStyle(color: _activityMuted, fontSize: 10),
+                ),
+              ],
             ],
           ),
         ),
@@ -522,7 +541,14 @@ class _ActivityTile extends StatelessWidget {
 
   IconData _activityIcon(String type) => switch (type) {
     'login' => Icons.login_rounded,
+    'login_failed' || 'login_blocked' => Icons.gpp_bad_outlined,
     'profile_updated' => Icons.person_outline_rounded,
+    'merchant_profile_updated' => Icons.storefront_outlined,
+    'business_created' || 'business_updated' => Icons.business_outlined,
+    'business_deleted' => Icons.business_center_outlined,
+    'business_enabled' || 'business_disabled' => Icons.toggle_on_outlined,
+    'news_post_created' || 'news_post_updated' || 'news_post_deleted' =>
+      Icons.article_outlined,
     'item_saved' => Icons.bookmark_add_outlined,
     'item_removed' => Icons.bookmark_remove_outlined,
     'booking_requested' => Icons.event_available_outlined,
@@ -536,6 +562,15 @@ class _ActivityTile extends StatelessWidget {
     'venue_unhearted' => Icons.heart_broken_rounded,
     _ => Icons.history_rounded,
   };
+}
+
+String _auditContextLabel(Map<String, dynamic> activity) {
+  final role = activity['actorRole']?.toString().trim() ?? '';
+  final requestId = activity['requestId']?.toString().trim() ?? '';
+  return [
+    if (role.isNotEmpty) 'Performed by $role',
+    if (requestId.isNotEmpty) 'Request ID: $requestId',
+  ].join(' · ');
 }
 
 class _ActivityMessage extends StatelessWidget {

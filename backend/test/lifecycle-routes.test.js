@@ -1,10 +1,12 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const bcrypt = require('bcryptjs');
 const { after, before, beforeEach, test } = require('node:test');
 const Module = require('node:module');
 const path = require('node:path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const readCache = require('../src/read_cache');
 const { hashVerificationCode } = require('../src/normalizers');
 
 const serverFile = path.join(__dirname, '..', 'src', 'server.js');
@@ -53,6 +55,9 @@ function makeConnection() {
       if (sql.includes('FROM fitness_business_details WHERE business_id = ?')) {
         return response(db.fitnessDetails ? [db.fitnessDetails] : []);
       }
+      if (sql.includes('FROM event_business_details WHERE business_id = ?')) {
+        return response(db.eventDetails ? [db.eventDetails] : []);
+      }
       if (sql.includes('FROM merchant_news n')) {
         return response(db.newsFeedRows);
       }
@@ -76,6 +81,17 @@ function makeConnection() {
             : [],
         );
       }
+      if (
+        sql.includes("JOIN bookings b ON c.title = CONCAT('Booking ', b.id)") &&
+        sql.includes('cm.deleted_at IS NULL')
+      ) {
+        return response(
+          db.conversationBusinessType === params[2] ? [{ id: 601 }] : [],
+        );
+      }
+      if (sql.includes('SELECT 1 FROM conversation_members')) {
+        return response([{}]);
+      }
       if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
         return response([{
           id: 501,
@@ -87,6 +103,7 @@ function makeConnection() {
           startTime: '09:00:00',
           durationHours: 2,
           players: 6,
+          businessType: 'Sports',
         }]);
       }
       if (sql.includes('SELECT id FROM conversations WHERE type = ?')) {
@@ -102,6 +119,7 @@ function makeConnection() {
 }
 
 function resetDatabase() {
+  readCache.clear();
   db = {
     calls: [],
     accountStatus: 'active',
@@ -109,6 +127,7 @@ function resetDatabase() {
     newsFeedRows: [],
     customerBusinessRows: [],
     existingRegistrationUser: null,
+    loginUser: null,
     resetUser: null,
     verificationToken: null,
     resetToken: null,
@@ -156,9 +175,15 @@ function resetDatabase() {
       }],
       fitnessCoaches: [{ name: 'Alex Coach', monthlyPrice: 300 }],
     },
+    eventDetails: {
+      eventTypes: ['Wedding', 'Birthday', 'Party'],
+      attendanceMin: 50,
+      attendanceMax: 250,
+    },
     overlap: false,
     overlapRows: null,
     transitionAffected: true,
+    conversationBusinessType: 'sports',
     paymentBooking: {
       id: 501,
       totalAmount: 270,
@@ -207,6 +232,9 @@ before(async () => {
   const fakePool = {
     execute: async (sql, params = []) => {
       db.calls.push({ sql, params });
+      if (sql.includes('SELECT id, email, password_hash, first_name')) {
+        return response(db.loginUser ? [db.loginUser] : []);
+      }
       if (sql.includes('SELECT role, status FROM users WHERE id = ?')) {
         const role = String(params[0]) === '88' ? 'merchant' : 'customer';
         return response([{ role, status: db.accountStatus }]);
@@ -279,6 +307,17 @@ before(async () => {
       }
       if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
         return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
+      }
+      if (
+        sql.includes("JOIN bookings b ON c.title = CONCAT('Booking ', b.id)") &&
+        sql.includes('cm.deleted_at IS NULL')
+      ) {
+        return response(
+          db.conversationBusinessType === params[2] ? [{ id: 601 }] : [],
+        );
+      }
+      if (sql.includes('SELECT 1 FROM conversation_members')) {
+        return response([{}]);
       }
       return response([]);
     },
@@ -361,13 +400,105 @@ test('activity log reads are scoped to the authenticated user', async () => {
   const response = await request('/api/activity-logs?userId=88');
 
   assert.equal(response.status, 200);
+  assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/i);
   assert.deepEqual(await response.json(), { activities: [] });
   const activityQuery = db.calls.find(({ sql }) =>
     sql.includes('FROM user_activity_logs') && sql.includes('WHERE user_id = ?'),
   );
   assert.ok(activityQuery);
+  assert.match(activityQuery.sql, /actor_role AS actorRole/);
+  assert.match(activityQuery.sql, /request_id AS requestId/);
+  assert.doesNotMatch(activityQuery.sql, /ip_address|user_agent/);
   assert.deepEqual(activityQuery.params, ['42']);
   assert.doesNotMatch(activityQuery.sql, /userId/i);
+});
+
+test('known-account failed sign-ins are audited without storing the password', async () => {
+  db.loginUser = {
+    id: 42,
+    email: 'customer@example.test',
+    password_hash: await bcrypt.hash('CorrectPassword1!', 4),
+    first_name: 'Test',
+    last_name: 'Customer',
+    role: 'customer',
+    status: 'active',
+  };
+  const response = await request('/api/auth/login', {
+    method: 'POST',
+    body: {
+      email: 'customer@example.test',
+      password: 'IncorrectPassword1!',
+    },
+  });
+
+  assert.equal(response.status, 401);
+  const failedLogin = db.calls.find(({ sql, params }) =>
+    sql.includes('INSERT INTO user_activity_logs') &&
+    params[1] === 'login_failed',
+  );
+  assert.ok(failedLogin);
+  assert.equal(failedLogin.params[8], '42');
+  assert.equal(failedLogin.params[9], 'customer');
+  assert.equal(failedLogin.params[10], response.headers.get('x-request-id'));
+  assert.equal(JSON.stringify(failedLogin.params).includes('IncorrectPassword1!'), false);
+});
+
+test('customer conversation filter limits results to the selected business type', async () => {
+  const response = await request(
+    '/api/messages/conversations?businessType=Fitness%20%26%20Wellness',
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { conversations: [] });
+  const conversationQuery = db.calls.find(({ sql }) =>
+    sql.includes('FROM conversations c') &&
+    sql.includes('JOIN conversation_members cm'),
+  );
+  assert.ok(conversationQuery);
+  assert.match(conversationQuery.sql, /c\.title = CONCAT\('Booking ', b\.id\)/);
+  assert.deepEqual(conversationQuery.params, ['42', '42', '42', '42', '42', 'fitness & wellness']);
+});
+
+test('customer conversation filter rejects unsupported business types', async () => {
+  const response = await request(
+    '/api/messages/conversations?businessType=unsupported',
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Invalid business type filter.',
+  });
+  assert.equal(
+    db.calls.filter(({ sql }) =>
+      sql.includes('FROM conversations c') &&
+      sql.includes('JOIN conversation_members cm'),
+    ).length,
+    0,
+  );
+});
+
+test('typed inbox cannot read or send in another business type conversation', async () => {
+  const read = await request(
+    '/api/messages/conversations/601?businessType=Fitness',
+  );
+  assert.equal(read.status, 404);
+  assert.deepEqual(await read.json(), { error: 'Conversation not found.' });
+
+  const send = await request('/api/messages/conversations/601', {
+    method: 'POST',
+    body: { body: 'Hello', businessType: 'Event' },
+  });
+  assert.equal(send.status, 404);
+  assert.deepEqual(await send.json(), { error: 'Conversation not found.' });
+
+  const scopedQueries = db.calls.filter(({ sql }) =>
+    sql.includes("JOIN bookings b ON c.title = CONCAT('Booking ', b.id)") &&
+    sql.includes('cm.deleted_at IS NULL'),
+  );
+  assert.deepEqual(scopedQueries.map(({ params }) => params[2]), [
+    'fitness & wellness',
+    'event',
+  ]);
 });
 
 test('customer booking responses include fitness class details', async () => {
@@ -490,6 +621,18 @@ test('fitness businesses persist category plans and optional coaches', async () 
     monthlyPrice: 7200,
     profileImageUrl: 'https://example.test/coach.png',
   }]);
+  const businessActivity = db.calls.find(({ sql, params }) =>
+    sql.includes('INSERT INTO user_activity_logs') &&
+    params[1] === 'business_created',
+  );
+  assert.ok(businessActivity);
+  assert.equal(businessActivity.params[8], '88');
+  assert.equal(businessActivity.params[9], 'merchant');
+  assert.equal(businessActivity.params[10], response.headers.get('x-request-id'));
+  assert.deepEqual(JSON.parse(businessActivity.params[7]), {
+    businessId: 702,
+    businessType: 'Fitness & Wellness',
+  });
 });
 
 test('fitness businesses reject invalid annual discounts and coach pricing', async () => {
@@ -590,6 +733,10 @@ test('customer businesses include Event venues without published news, including
     businessType: 'Event',
     name: 'Garden Event Place',
     category: 'Garden',
+    ownerName: 'Maya Santos',
+    ownerEmail: 'maya@example.test',
+    ownerPhone: '+639171234567',
+    ownerAvatarUrl: 'https://example.test/maya.jpg',
     eventTypes: '["Wedding","Birthday"]',
     enabled: 0,
     heartCount: 0,
@@ -600,6 +747,13 @@ test('customer businesses include Event venues without published news, including
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.businesses[0].eventTypes, ['Wedding', 'Birthday']);
+  assert.equal(body.businesses[0].ownerName, 'Maya Santos');
+  assert.equal(body.businesses[0].ownerEmail, 'maya@example.test');
+  assert.equal(body.businesses[0].ownerPhone, '+639171234567');
+  assert.equal(
+    body.businesses[0].ownerAvatarUrl,
+    'https://example.test/maya.jpg',
+  );
   assert.equal(body.businesses[0].enabled, 0);
   const businessesQuery = db.calls.find(({ sql }) =>
     sql.includes('LEFT JOIN event_business_details e') &&
@@ -612,6 +766,42 @@ test('customer businesses include Event venues without published news, including
   );
   assert.match(businessesQuery.sql, /b\.business_type = 'Event'\s+OR EXISTS/);
   assert.match(businessesQuery.sql, /AS heartCount/);
+});
+
+test('customer business catalog is cached and invalidated after merchant changes', async () => {
+  db.customerBusinessRows = [{
+    id: 92,
+    businessType: 'Sports',
+    name: 'First Court',
+    eventTypes: null,
+    enabled: 1,
+  }];
+
+  const first = await request('/api/businesses');
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).businesses[0].name, 'First Court');
+
+  db.customerBusinessRows[0].name = 'Updated Court';
+  const cached = await request('/api/businesses');
+  assert.equal(cached.status, 200);
+  assert.equal((await cached.json()).businesses[0].name, 'First Court');
+  const catalogQueryCount = () => db.calls.filter(({ sql }) =>
+    sql.includes('LEFT JOIN event_business_details e') &&
+    sql.includes('ORDER BY b.created_at DESC'),
+  ).length;
+  assert.equal(catalogQueryCount(), 1);
+
+  const update = await request('/api/merchant/businesses/92/status', {
+    method: 'PUT',
+    role: 'merchant',
+    body: { enabled: false },
+  });
+  assert.equal(update.status, 200);
+
+  const refreshed = await request('/api/businesses');
+  assert.equal(refreshed.status, 200);
+  assert.equal((await refreshed.json()).businesses[0].name, 'Updated Court');
+  assert.equal(catalogQueryCount(), 2);
 });
 
 test('availability returns bookings and validates its required inputs', async () => {
@@ -663,6 +853,7 @@ test('booking rejects an occupied interval and does not persist a booking', asyn
 test('booking success calculates add-on charges and downpayment', async () => {
   const response = await request('/api/bookings', {
     method: 'POST',
+    headers: { 'user-agent': 'LifecycleAuditTest/1.0' },
     body: {
       venueId: 7,
       date: '2026-10-01',
@@ -680,7 +871,9 @@ test('booking success calculates add-on charges and downpayment', async () => {
   assert.equal(booking.extraPlayers, 2);
   assert.equal(booking.extraPlayerCharge, 30);
   assert.equal(booking.status, 'pending');
+  assert.equal(booking.transactionId, 'TP-TXN-00000601');
   assert.equal(typeof booking.bookingToken, 'string');
+  assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/i);
   assert.ok(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')));
   const activityInsert = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO user_activity_logs'),
@@ -695,7 +888,112 @@ test('booking success calculates add-on charges and downpayment', async () => {
     startTime: '09:00',
     durationHours: 2,
     players: 6,
+    businessType: 'Sports',
+    eventType: null,
+    paymentMethod: 'online',
+    total: 270,
+    downpayment: 135,
   });
+  assert.equal(activityInsert.params[8], '42');
+  assert.equal(activityInsert.params[9], 'customer');
+  assert.equal(activityInsert.params[10], response.headers.get('x-request-id'));
+  assert.ok(activityInsert.params[11]);
+  assert.equal(activityInsert.params[12], 'LifecycleAuditTest/1.0');
+});
+
+test('Event booking validates event type and guest capacity and charges the event fee once', async () => {
+  db.venue.businessType = 'Event';
+  db.venue.eventFee = 10000;
+
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 4,
+      players: 120,
+      paymentMethod: 'cash_on_arrival',
+      eventType: 'Wedding',
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.businessType, 'Event');
+  assert.equal(booking.eventType, 'Wedding');
+  assert.equal(booking.total, 10000);
+  assert.equal(booking.downpayment, 5000);
+  const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
+  assert.ok(insert.sql.includes('event_type'));
+  assert.equal(insert.params[14], 'Wedding');
+  const requestMessage = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+  );
+  assert.ok(requestMessage);
+  const ticket = JSON.parse(requestMessage.params[3]);
+  assert.equal(ticket.businessType, 'Event');
+  assert.equal(ticket.eventType, 'Wedding');
+  assert.equal(ticket.players, 120);
+});
+
+test('Event booking rejects event types and guest counts outside venue configuration', async () => {
+  db.venue.businessType = 'Event';
+  db.venue.eventFee = 10000;
+  const invalidType = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 4,
+      players: 120,
+      paymentMethod: 'cash_on_arrival',
+      eventType: 'Concert',
+    },
+  });
+  assert.equal(invalidType.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
+
+  const invalidCapacity = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 4,
+      players: 251,
+      paymentMethod: 'cash_on_arrival',
+      eventType: 'Wedding',
+    },
+  });
+  assert.equal(invalidCapacity.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
+
+  db.overlap = true;
+  const overlappingBooking = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 4,
+      players: 120,
+      paymentMethod: 'cash_on_arrival',
+      eventType: 'Wedding',
+    },
+  });
+  assert.equal(overlappingBooking.status, 409);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
 });
 
 test('Fitness bookings price the selected term, annual offer, and coach on the server', async () => {
@@ -725,9 +1023,9 @@ test('Fitness bookings price the selected term, annual offer, and coach on the s
   assert.equal(booking.downpayment, 13200);
   const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
   assert.ok(insert.sql.includes('fitness_plan_type'));
-  assert.equal(insert.params[14], 'yearly');
-  assert.equal(insert.params[15], 'Yoga');
-  assert.equal(insert.params[16], 'Alex Coach');
+  assert.equal(insert.params[15], 'yearly');
+  assert.equal(insert.params[16], 'Yoga');
+  assert.equal(insert.params[17], 'Alex Coach');
 });
 
 test('customers can read, record, and clear attendance for fitness bookings', async () => {
@@ -959,6 +1257,14 @@ test('merchant approval issues a booking ticket', async () => {
   assert.equal(body.status, 'approved');
   assert.equal(body.message, 'Booking approved and ticket issued.');
   assert.equal(typeof body.ticketCode, 'string');
+  assert.equal(body.transactionId, 'TP-TXN-00000501');
+  const ticketMessage = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+  );
+  assert.ok(ticketMessage);
+  const ticket = JSON.parse(ticketMessage.params[3]);
+  assert.equal(ticket.transactionId, body.transactionId);
+  assert.equal(ticket.ticketCode, body.ticketCode);
   const approvalUpdate = db.calls.find(({ sql }) =>
     sql.includes("SET b.status = 'approved'"),
   );
@@ -1274,8 +1580,11 @@ test('payment checkout creates a provider session for a customer booking', async
     const payload = JSON.parse(providerRequest.options.body);
     assert.equal(payload.data.attributes.line_items[0].amount, 27000);
     assert.deepEqual(payload.data.attributes.payment_method_types, ['gcash']);
-    assert.deepEqual(payload.data.attributes.metadata, { booking_id: '501' });
-    assert.equal(payload.data.attributes.reference_number, 'BOOKING-501');
+    assert.deepEqual(payload.data.attributes.metadata, {
+      booking_id: '501',
+      transaction_id: 'TP-TXN-00000501',
+    });
+    assert.equal(payload.data.attributes.reference_number, 'TP-TXN-00000501');
     assert.ok(db.calls.some(({ sql, params }) =>
       sql.includes('SET payment_checkout_session_id = ?') &&
       params[0] === 'cs_test_501',
@@ -1352,6 +1661,7 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     status: 'pending',
     venueName: 'Test Court',
     sportType: 'Basketball',
+    businessType: 'Sports',
     merchantId: 88,
     paymentCheckoutSessionId: 'cs_test_501',
   };
@@ -1389,7 +1699,11 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
       body: payload,
     });
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { received: true, bookingId: 501 });
+    assert.deepEqual(await response.json(), {
+      received: true,
+      bookingId: 501,
+      transactionId: 'TP-TXN-00000501',
+    });
     const ticketMessage = db.calls.find(({ sql }) =>
       sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
     );
@@ -1397,6 +1711,8 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     assert.equal(ticketMessage.params[1], 88);
     const ticket = JSON.parse(ticketMessage.params[3]);
     assert.equal(ticket.type, 'booking_payment_ticket');
+    assert.equal(ticket.transactionId, 'TP-TXN-00000501');
+    assert.equal(ticket.businessType, 'Sports');
     assert.equal(ticket.status, 'payment_received');
     assert.equal(ticket.approvalStatus, 'pending');
     assert.equal(ticket.venueName, 'Test Court');
@@ -1411,7 +1727,12 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
       },
       body: payload,
     });
-    assert.deepEqual(await duplicate.json(), { received: true, duplicate: true });
+    assert.deepEqual(await duplicate.json(), {
+      received: true,
+      duplicate: true,
+      bookingId: 501,
+      transactionId: 'TP-TXN-00000501',
+    });
     assert.equal(
       db.calls.filter(({ sql }) =>
         sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),

@@ -153,7 +153,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final session = await AppSession.load();
     final token = session.apiToken;
     if (token == null || token.isEmpty) return [];
-    final bookings = await _api.customerBookingModels(token);
+    final bookings = await _api.customerBookingModels(
+      token,
+      businessType: widget.businessType,
+    );
     final bannerBooking = _bookingStatusBannerBooking(bookings);
     _bookingStatusBannerKey = bannerBooking == null
         ? null
@@ -171,7 +174,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           status == 'cancelled';
     }).length;
     try {
-      final conversations = await _api.conversations(token);
+      final conversations = await _api.conversations(
+        token,
+        businessType: widget.businessType,
+      );
       _unreadMessageCount = conversations.fold<int>(
         0,
         (total, conversation) =>
@@ -333,6 +339,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               MaterialPageRoute(
                 builder: (_) => SavedDashboardPage(
                   onLogout: widget.onLogout,
+                  itemType: SavedDashboardPage.itemTypeForBusinessType(
+                    widget.businessType,
+                  ),
                   initialUserPosition: widget.initialUserPosition,
                 ),
               ),
@@ -803,6 +812,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final total = _amount(booking['total']);
     final downpayment = _amount(booking['downpayment']);
     final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
+    final isEvent = '${booking['businessType']}'.toLowerCase() == 'event';
+    final eventType = '${booking['eventType'] ?? ''}';
 
     return Container(
       width: double.infinity,
@@ -854,10 +865,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            '${fitnessPlanType.isNotEmpty ? 'First visit' : '${booking['players']} players'} · '
+            '${fitnessPlanType.isNotEmpty ? 'First visit' : isEvent ? '${booking['players']} guests' : '${booking['players']} players'} · '
             '${booking['paymentMethod']}',
             style: const TextStyle(fontSize: 14, color: Color(0xFF4C5B72)),
           ),
+          if (isEvent && eventType.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Event: $eventType',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFB85B00),
+              ),
+            ),
+          ],
           if (fitnessPlanType.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(

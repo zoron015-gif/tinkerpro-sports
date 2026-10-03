@@ -17,6 +17,7 @@ import 'profile_dashboard.dart';
 import 'reserve_dashboard.dart';
 import 'reviews.dart';
 import 'fitness_booking_page.dart';
+import 'event_booking_page.dart';
 import 'all_venues_page.dart';
 import 'merchant_business_status.dart';
 import 'app_card_styles.dart';
@@ -24,6 +25,7 @@ import 'app_bottom_navigation.dart';
 import 'filter_panel_style.dart';
 import 'sports_slot_configurations.dart';
 import 'app_design_system.dart';
+import 'core/business_type.dart';
 
 const _newsInk = AppColors.ink;
 const _newsMuted = AppColors.muted;
@@ -198,7 +200,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     _userPosition = widget.initialUserPosition;
     _feedSport = _categoryAllLabel;
     _businesses = _api.customerBusinesses(
-      includeDisabledEvents: widget.businessType.trim().toLowerCase() == 'event',
+      includeDisabledEvents:
+          widget.businessType.trim().toLowerCase() == 'event',
     );
     _posts = _loadFeed();
     _loadSavedKeys();
@@ -319,7 +322,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
     }
     if (!widget.savedOnly) return posts;
-    final saved = await SavedItemStore.list();
+    final saved = await SavedItemStore.list(api: _api);
     final savedKeys = saved
         .where(
           (item) =>
@@ -339,10 +342,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   bool _matchesBusinessType(Object? value) {
     final type = '$value'.trim().toLowerCase();
-    if (widget.businessType.toLowerCase() == 'sports') {
+    final selectedType = BusinessTypeParser.parse(widget.businessType);
+    if (selectedType == BusinessType.sports) {
       return type == 'sports';
     }
-    if (widget.businessType.toLowerCase() == 'fitness') {
+    if (selectedType == BusinessType.fitness) {
       return type == 'fitness' ||
           type == 'wellness' ||
           type.contains('fitness') ||
@@ -353,7 +357,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Future<void> _reload() async {
     _businesses = _api.customerBusinesses(
-      includeDisabledEvents: widget.businessType.trim().toLowerCase() == 'event',
+      includeDisabledEvents:
+          widget.businessType.trim().toLowerCase() == 'event',
     );
     final refreshed = _loadFeed();
     setState(() {
@@ -377,7 +382,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   Future<void> _loadSavedKeys() async {
     try {
-      final saved = await SavedItemStore.list();
+      final saved = await SavedItemStore.list(api: _api);
       if (!mounted) return;
       setState(() {
         _savedKeys
@@ -2595,7 +2600,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     });
     try {
       if (currentlySaved) {
-        await SavedItemStore.remove(widget.savedItemType, key);
+        await SavedItemStore.remove(widget.savedItemType, key, api: _api);
       } else {
         await SavedItemStore.save(
           type: widget.savedItemType,
@@ -2603,6 +2608,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           title: businessName,
           subtitle: '${post['address'] ?? ''}',
           imageUrl: '${post['imageUrl'] ?? ''}',
+          api: _api,
         );
       }
       if (currentlySaved && widget.savedOnly && mounted) {
@@ -2818,13 +2824,15 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     Map<String, dynamic> post,
     Map<String, dynamic> business,
   ) async {
+    final rootNavigator = Navigator.of(context);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: const Color(0xFFF8F9FF),
       builder: (context) {
-        final name = '${post['businessName'] ?? business['name'] ?? 'Event venue'}';
+        final name =
+            '${post['businessName'] ?? business['name'] ?? 'Event venue'}';
         final category =
             '${post['category'] ?? business['category'] ?? 'Event'}';
         final address =
@@ -2835,6 +2843,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             post['event_fee'] ??
             business['eventFee'] ??
             business['event_fee'];
+        final eventTypes = _stringListValue([
+          business['eventTypes'],
+          business['event_types'],
+        ]);
+        final attendanceMin =
+            business['attendanceMin'] ?? business['attendance_min'];
+        final attendanceMax =
+            business['attendanceMax'] ?? business['attendance_max'];
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
@@ -2851,8 +2867,16 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 ),
                 const SizedBox(height: 12),
                 Text('Event type: $category'),
+                if (eventTypes.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Available events: ${eventTypes.join(', ')}'),
+                ],
                 const SizedBox(height: 6),
                 Text('Location: $address'),
+                if (attendanceMin != null || attendanceMax != null) ...[
+                  const SizedBox(height: 6),
+                  Text('Capacity: ${attendanceMin ?? '—'}–${attendanceMax ?? '—'} guests'),
+                ],
                 if (fee != null) ...[
                   const SizedBox(height: 6),
                   Text('Price: PHP ${_number(fee).toStringAsFixed(0)} / event'),
@@ -2861,6 +2885,29 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   const SizedBox(height: 14),
                   Text(details),
                 ],
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      rootNavigator.push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => EventBookingPage(
+                            business: business,
+                            api: _api,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.event_available_rounded),
+                    label: const Text('Request event booking'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _newsOrange,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3171,20 +3218,32 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       merchantEmail: _stringValue([
         post['merchantEmail'],
         business['merchantEmail'],
+        post['ownerEmail'],
+        business['ownerEmail'],
         post['merchant_email'],
         business['merchant_email'],
+        post['owner_email'],
+        business['owner_email'],
       ]),
       merchantPhone: _stringValue([
         post['merchantPhone'],
         business['merchantPhone'],
+        post['ownerPhone'],
+        business['ownerPhone'],
         post['merchant_phone'],
         business['merchant_phone'],
+        post['owner_phone'],
+        business['owner_phone'],
       ]),
       merchantAvatarUrl: _stringValue([
         post['merchantAvatarUrl'],
         business['merchantAvatarUrl'],
+        post['ownerAvatarUrl'],
+        business['ownerAvatarUrl'],
         post['merchant_avatar_url'],
         business['merchant_avatar_url'],
+        post['owner_avatar_url'],
+        business['owner_avatar_url'],
       ]),
     );
   }

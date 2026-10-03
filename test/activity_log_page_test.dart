@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -10,6 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({'session_api_token': 'my-token'});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
 
   testWidgets('activity page displays the signed-in account activity', (
     tester,
@@ -27,6 +33,8 @@ void main() {
                 'activityType': 'booking_requested',
                 'title': 'Booking requested',
                 'description': 'Booking #12 was requested for 2026-10-01.',
+                'actorRole': 'customer',
+                'requestId': 'abc12345-0000-4000-8000-000000000001',
                 'createdAt': '2026-09-29 08:00:00',
               },
             ],
@@ -44,6 +52,11 @@ void main() {
     expect(find.text('Booking requested'), findsOneWidget);
     expect(
       find.text('Booking #12 was requested for 2026-10-01.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Performed by customer'), findsOneWidget);
+    expect(
+      find.textContaining('abc12345-0000-4000-8000-000000000001'),
       findsOneWidget,
     );
   });
@@ -244,10 +257,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Riverside Court'), findsOneWidget);
-    expect(find.text('2 activities · Last: 2026-09-29 08:15:34'), findsOneWidget);
-    await tester.tap(
-      find.byKey(const ValueKey('activity-log-venue-id:42')),
+    expect(
+      find.text('2 activities · Last: 2026-09-29 08:15:34'),
+      findsOneWidget,
     );
+    await tester.tap(find.byKey(const ValueKey('activity-log-venue-id:42')));
     await tester.pumpAndSettle();
 
     expect(find.text('Basketball'), findsNWidgets(2));
@@ -255,7 +269,10 @@ void main() {
     expect(find.text('Booking requested'), findsOneWidget);
     expect(find.text('2026-09-29 08:15:34'), findsOneWidget);
     expect(find.text('2026-09-28 11:02:07'), findsOneWidget);
-    expect(find.textContaining('Booking: 2026-10-03 at 14:30:00'), findsOneWidget);
+    expect(
+      find.textContaining('Booking: 2026-10-03 at 14:30:00'),
+      findsOneWidget,
+    );
     expect(find.text('Duration: 2 hours'), findsOneWidget);
     expect(find.text('Players: 8'), findsOneWidget);
   });

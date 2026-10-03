@@ -722,6 +722,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               MaterialPageRoute(
                 builder: (_) => SavedDashboardPage(
                   onLogout: widget.onLogout,
+                  itemType: SavedDashboardPage.itemTypeForBusinessType(
+                    widget.businessType,
+                  ),
                   initialUserPosition: widget.initialUserPosition,
                 ),
               ),
@@ -769,7 +772,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         builder: (_) => NewsFeedPage(
           onLogout: widget.onLogout,
           initialUserPosition: widget.initialUserPosition,
-          businessType: widget.businessType ?? 'Sports',
+          businessType: _isFitnessProfile
+              ? 'Fitness'
+              : widget.businessType ?? 'Sports',
           savedItemType: _isFitnessProfile ? 'fitness' : 'sports',
           categoryNoun: _isFitnessProfile ? 'fitness type' : 'sport',
           venueNoun: _isFitnessProfile ? 'fitness studio' : 'venue',

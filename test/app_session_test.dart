@@ -2,11 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/app_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
   });
 
   test(
@@ -35,5 +38,15 @@ void main() {
     await session.setMatchNotificationsEnabled(false);
 
     expect(session.matchNotificationsEnabled, isFalse);
+  });
+
+  test('api token is kept in secure storage and surfaced on the session',
+      () async {
+    final session = await AppSession.load();
+
+    await session.setApiToken('secure-session-token');
+
+    final reloaded = await AppSession.load();
+    expect(reloaded.apiToken, 'secure-session-token');
   });
 }

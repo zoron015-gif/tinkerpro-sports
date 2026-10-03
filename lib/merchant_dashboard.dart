@@ -778,6 +778,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final plan = '${booking['fitnessPlanType'] ?? ''}';
     final category = '${booking['fitnessCategory'] ?? ''}';
     final coach = '${booking['fitnessCoachName'] ?? ''}';
+    final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
+    final eventType = '${booking['eventType'] ?? ''}';
+    if (isEvent) {
+      return eventType.isEmpty ? 'Event booking' : eventType;
+    }
     if (plan.isNotEmpty) {
       final planLabel = '${plan[0].toUpperCase()}${plan.substring(1)} plan';
       return '${category.isEmpty ? booking['sportType'] : category} · '
@@ -791,10 +796,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     return '${booking['sportType'] ?? 'Sport'} · $area';
   }
 
-  String _bookingVisitLabel(Map<String, dynamic> booking) =>
-      '${booking['fitnessPlanType'] ?? ''}'.isNotEmpty
-      ? 'First visit'
-      : '${booking['players']} players';
+  String _bookingVisitLabel(Map<String, dynamic> booking) {
+    if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty) {
+      return 'First visit';
+    }
+    return '${booking['businessType'] ?? ''}'.toLowerCase() == 'event'
+        ? '${booking['players']} guests'
+        : '${booking['players']} players';
+  }
 
   Widget _merchantHome() => RefreshIndicator(
     onRefresh: () async {

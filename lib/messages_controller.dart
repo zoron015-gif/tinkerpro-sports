@@ -7,12 +7,13 @@ import 'auth_api.dart';
 import 'messages_service.dart';
 
 class MessagesController extends ChangeNotifier {
-  MessagesController({MessagesService? service})
+  MessagesController({MessagesService? service, this.businessType})
     : _service = service ?? MessagesService();
 
   static const _realtimeRefreshInterval = Duration(seconds: 15);
 
   final MessagesService _service;
+  final String? businessType;
 
   String? token;
   String? role;
@@ -50,6 +51,7 @@ class MessagesController extends ChangeNotifier {
 
       final loadedConversations = await _service.fetchConversations(
         sessionToken,
+        businessType: businessType,
       );
       final loadedContacts = await _service.fetchContacts(sessionToken);
       final currentUser = await _service.fetchCurrentUser(sessionToken);
@@ -111,12 +113,16 @@ class MessagesController extends ChangeNotifier {
     try {
       final stateRevision = conversationStateRevision;
       final selectedConversation = selectedConversationId;
-      final conversationsFuture = _service.fetchConversations(sessionToken);
+      final conversationsFuture = _service.fetchConversations(
+        sessionToken,
+        businessType: businessType,
+      );
       final messagesFuture = selectedConversation == null
           ? null
           : _service.fetchMessages(
               token: sessionToken,
               conversationId: selectedConversation,
+              businessType: businessType,
             );
 
       final loadedConversations = await conversationsFuture;
@@ -155,6 +161,7 @@ class MessagesController extends ChangeNotifier {
       final loadedMessages = await _service.fetchMessages(
         token: sessionToken,
         conversationId: id,
+        businessType: businessType,
       );
       if (requestId != messageRequestId) return;
       if (selectedConversationId != id) return;

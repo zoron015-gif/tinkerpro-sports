@@ -75,7 +75,10 @@ void main() {
     final today = DateUtils.dateOnly(DateTime.now());
     final start = today.subtract(const Duration(days: 2));
     final end = today.add(const Duration(days: 25));
-    final nextDay = today.add(const Duration(days: 1));
+    DateTime nextDay = today.add(const Duration(days: 1));
+    if (nextDay.weekday == DateTime.sunday) {
+      nextDay = nextDay.add(const Duration(days: 1));
+    }
     final startKey =
         'fitness-calendar-day-${start.year}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}';
     final nextDayKey =

@@ -89,6 +89,7 @@ class Booking {
     this.durationHours = 0,
     this.players = 0,
     this.sportType = '',
+    this.eventType = '',
     this.slotNumber,
     this.occupiesFullStudio = true,
     this.paymentMethod = '',
@@ -103,6 +104,7 @@ class Booking {
     this.fitnessCoachPrice = 0,
     this.status = 'pending',
     this.createdAt = '',
+    this.transactionId = '',
     this.reviewId,
     this.reviewRating,
   });
@@ -114,6 +116,7 @@ class Booking {
   final double durationHours;
   final int players;
   final String sportType;
+  final String eventType;
   final int? slotNumber;
   final bool occupiesFullStudio;
   final String paymentMethod;
@@ -128,6 +131,7 @@ class Booking {
   final double fitnessCoachPrice;
   final String status;
   final String createdAt;
+  final String transactionId;
   final int? reviewId;
   final int? reviewRating;
 
@@ -139,6 +143,7 @@ class Booking {
     durationHours: _doubleValue(json['durationHours']),
     players: _intValue(json['players']) ?? 0,
     sportType: _text(json['sportType']),
+    eventType: _text(json['eventType']),
     slotNumber: _intValue(json['slotNumber']),
     occupiesFullStudio:
         json['occupiesFullStudio'] == true || json['occupiesFullStudio'] == 1,
@@ -154,6 +159,10 @@ class Booking {
     fitnessCoachPrice: _doubleValue(json['fitnessCoachPrice']),
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
     createdAt: _text(json['createdAt']),
+    transactionId: _text(
+      json['transactionId'],
+      fallback: _bookingTransactionId(json['id']),
+    ),
     reviewId: _intValue(json['reviewId']),
     reviewRating: _intValue(json['reviewRating']),
   );
@@ -165,6 +174,7 @@ class Booking {
     'businessType' => venue.businessType,
     'category' => sportType.isNotEmpty ? sportType : venue.category,
     'sportType' => sportType.isNotEmpty ? sportType : venue.category,
+    'eventType' => eventType,
     'slotNumber' => slotNumber,
     'occupiesFullStudio' => occupiesFullStudio,
     'address' => venue.address,
@@ -202,10 +212,16 @@ class Booking {
     'fitnessCoachPrice' => fitnessCoachPrice,
     'status' => status,
     'createdAt' => createdAt,
+    'transactionId' => transactionId,
     'reviewId' => reviewId,
     'reviewRating' => reviewRating,
     _ => null,
   };
+}
+
+String _bookingTransactionId(dynamic value) {
+  final id = _intValue(value);
+  return id == null ? '' : 'TP-TXN-${id.toString().padLeft(8, '0')}';
 }
 
 String _text(dynamic value, {String fallback = ''}) {

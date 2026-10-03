@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/messages_controller.dart';
 import 'package:myapp/messages_service.dart';
@@ -15,10 +16,16 @@ class _FakeMessagesService extends MessagesService {
   final Map<int, Completer<List<Map<String, dynamic>>>> pendingMessages = {};
   Completer<List<Map<String, dynamic>>>? pendingConversations;
   int conversationFetches = 0;
+  String? requestedBusinessType;
+  final List<String?> requestedMessageBusinessTypes = [];
 
   @override
-  Future<List<Map<String, dynamic>>> fetchConversations(String token) {
+  Future<List<Map<String, dynamic>>> fetchConversations(
+    String token, {
+    String? businessType,
+  }) {
     conversationFetches++;
+    requestedBusinessType = businessType;
     final pending = pendingConversations;
     if (pending != null) return pending.future;
     return Future.value(conversations);
@@ -36,7 +43,9 @@ class _FakeMessagesService extends MessagesService {
   Future<List<Map<String, dynamic>>> fetchMessages({
     required String token,
     required int conversationId,
+    String? businessType,
   }) {
+    requestedMessageBusinessTypes.add(businessType);
     final pending = pendingMessages[conversationId];
     if (pending != null) return pending.future;
     return Future.value(messagesByConversation[conversationId] ?? []);
@@ -54,6 +63,7 @@ void main() {
       'session_api_token': 'test-token',
       'session_role': 'customer',
     });
+    FlutterSecureStorage.setMockInitialValues({});
     service = _FakeMessagesService();
     controller = MessagesController(service: service);
   });
@@ -81,6 +91,21 @@ void main() {
     expect(controller.contacts.single['id'], 8);
     expect(controller.unreadMessageCount, 2);
     expect(controller.realtimeTimer, isNotNull);
+  });
+
+  test('load requests conversations for the selected business type', () async {
+    controller.disposeController();
+    controller.dispose();
+    controller = MessagesController(
+      service: service,
+      businessType: 'Fitness & Wellness',
+    );
+
+    await controller.load();
+    await controller.select(501);
+
+    expect(service.requestedBusinessType, 'Fitness & Wellness');
+    expect(service.requestedMessageBusinessTypes, ['Fitness & Wellness']);
   });
 
   test(

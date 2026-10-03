@@ -50,7 +50,7 @@ void main() {
   });
 
   test(
-    'customer bookings API sends the requested business type filter',
+    'customer booking model loader sends the requested business type filter',
     () async {
       final requestedBusinessTypes = <String?>[];
       final api = AuthApi(
@@ -66,12 +66,33 @@ void main() {
         }),
       );
 
-      await api.customerBookings('test-token', businessType: 'Sports');
-      await api.customerBookings('test-token', businessType: 'Fitness');
+      await api.customerBookingModels('test-token', businessType: 'Sports');
+      await api.customerBookingModels(
+        'test-token',
+        businessType: 'Fitness & Wellness',
+      );
 
-      expect(requestedBusinessTypes, ['Sports', 'Fitness']);
+      expect(requestedBusinessTypes, ['Sports', 'Fitness & Wellness']);
     },
   );
+
+  test('message conversation loader filters by business type', () async {
+    final requestedBusinessTypes = <String?>[];
+    final api = AuthApi(
+      client: MockClient((request) async {
+        requestedBusinessTypes.add(request.url.queryParameters['businessType']);
+        return http.Response(
+          jsonEncode({'conversations': []}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await api.conversations('test-token', businessType: 'Fitness & Wellness');
+
+    expect(requestedBusinessTypes, ['Fitness & Wellness']);
+  });
 
   test(
     'fitness attendance API reads, updates, and clears dated records',

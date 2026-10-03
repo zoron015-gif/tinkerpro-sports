@@ -2,7 +2,7 @@ import 'auth_api.dart';
 import 'app_session.dart';
 
 class SavedItemStore {
-  static Future<List<Map<String, dynamic>>> list() async {
+  static Future<List<Map<String, dynamic>>> list({AuthApi? api}) async {
     final token = (await AppSession.load()).apiToken;
     if (token == null || token.isEmpty) {
       throw const AuthApiException(
@@ -10,7 +10,7 @@ class SavedItemStore {
         401,
       );
     }
-    return AuthApi().savedItems(token);
+    return (api ?? AuthApi()).savedItems(token);
   }
 
   static Future<void> save({
@@ -19,6 +19,7 @@ class SavedItemStore {
     required String title,
     required String subtitle,
     String? imageUrl,
+    AuthApi? api,
   }) async {
     final token = (await AppSession.load()).apiToken;
     if (token == null || token.isEmpty) {
@@ -27,7 +28,7 @@ class SavedItemStore {
         401,
       );
     }
-    await AuthApi().saveItem(
+    await (api ?? AuthApi()).saveItem(
       token: token,
       type: type,
       key: key,
@@ -37,7 +38,10 @@ class SavedItemStore {
     );
   }
 
-  static Future<Map<String, int>> counts(String type) async {
+  static Future<Map<String, int>> counts(
+    String type, {
+    AuthApi? api,
+  }) async {
     final token = (await AppSession.load()).apiToken;
     if (token == null || token.isEmpty) {
       throw const AuthApiException(
@@ -45,10 +49,14 @@ class SavedItemStore {
         401,
       );
     }
-    return AuthApi().savedItemCounts(token, type);
+    return (api ?? AuthApi()).savedItemCounts(token, type);
   }
 
-  static Future<void> remove(String type, String key) async {
+  static Future<void> remove(
+    String type,
+    String key, {
+    AuthApi? api,
+  }) async {
     final token = (await AppSession.load()).apiToken;
     if (token == null || token.isEmpty) {
       throw const AuthApiException(
@@ -56,6 +64,6 @@ class SavedItemStore {
         401,
       );
     }
-    await AuthApi().removeSavedItem(token, type, key);
+    await (api ?? AuthApi()).removeSavedItem(token, type, key);
   }
 }

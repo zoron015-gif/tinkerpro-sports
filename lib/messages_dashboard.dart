@@ -85,7 +85,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   @override
   void initState() {
     super.initState();
-    _controller = MessagesController(service: MessagesService(api: widget.api));
+    _controller = MessagesController(
+      service: MessagesService(api: widget.api),
+      businessType: widget.businessType,
+    );
     _controller.addListener(_handleControllerChange);
     _load();
   }
@@ -142,6 +145,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
       final messages = await _messagesService.fetchMessages(
         token: token,
         conversationId: id,
+        businessType: widget.businessType,
       );
       if (!mounted || requestId != _controller.messageRequestId) return;
       if (_controller.selectedConversationId != id) return;
@@ -169,6 +173,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         token: token,
         conversationId: id,
         body: text,
+        businessType: widget.businessType,
         attachment: _pendingImageData == null
             ? null
             : {
@@ -764,6 +769,9 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           ),
           1 => SavedDashboardPage(
             onLogout: (_) async {},
+            itemType: SavedDashboardPage.itemTypeForBusinessType(
+              widget.businessType,
+            ),
             initialUserPosition: widget.initialUserPosition,
           ),
           3 => CustomerBookingsPage(

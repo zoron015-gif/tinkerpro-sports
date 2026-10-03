@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -12,7 +13,48 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({'session_api_token': 'test-token'});
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'test-token',
+    });
+  });
+
+  testWidgets('Fitness booking page requests only Fitness bookings', (
+    tester,
+  ) async {
+    final requests = <Uri>[];
+    final api = AuthApi(
+      client: MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.path == '/api/bookings') {
+          return http.Response(jsonEncode({'bookings': []}), 200);
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 500);
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerBookingsPage(api: api, businessType: 'Fitness'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      requests
+          .where((uri) => uri.path == '/api/bookings')
+          .map((uri) => uri.queryParameters['businessType']),
+      ['Fitness'],
+    );
+    expect(
+      requests
+          .where((uri) => uri.path == '/api/messages/conversations')
+          .map((uri) => uri.queryParameters['businessType']),
+      ['Fitness'],
+    );
   });
 
   testWidgets('tapping the booking status banner dismisses it', (tester) async {

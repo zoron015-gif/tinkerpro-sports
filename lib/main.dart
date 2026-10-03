@@ -1,7 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
-
-import 'firebase_options.dart';
-
 import 'package:flutter/material.dart';
 
 import 'saved_icons.dart';
@@ -10,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_design_system.dart';
+import 'app_startup.dart';
 import 'app_theme.dart';
 import 'auth_dashboard.dart';
 import 'reserve_dashboard.dart';
@@ -28,10 +25,9 @@ const _page = AppColors.page;
 const _muted = AppColors.muted;
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(MyApp(session: await AppSession.load()));
+  runApp(const AppStartup());
 }
 
 class MyApp extends StatelessWidget {

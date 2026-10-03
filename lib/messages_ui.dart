@@ -135,12 +135,15 @@ class MessagesBookingTicket extends StatelessWidget {
     final sportType = safeString(data['sportType']);
     final fitnessPlanType = safeString(data['fitnessPlanType']);
     final fitnessCategory = safeString(data['fitnessCategory'], sportType);
+    final businessType = safeString(data['businessType']).toLowerCase();
+    final eventType = safeString(data['eventType']);
     final fitnessCoachName = safeString(data['fitnessCoachName']);
     final fitnessPlanPrice = num.tryParse(safeString(data['fitnessPlanPrice']));
     final fitnessCoachPrice = num.tryParse(
       safeString(data['fitnessCoachPrice']),
     );
     final isFitnessBooking = fitnessPlanType.isNotEmpty;
+    final isEventBooking = businessType == 'event' || eventType.isNotEmpty;
     final fullStudio = data['fullStudio'] == true;
     final slotNumber = safeString(data['slotNumber']);
     final date = safeString(data['bookingDate'], 'Date to be confirmed');
@@ -148,6 +151,17 @@ class MessagesBookingTicket extends StatelessWidget {
     final amount = num.tryParse(safeString(data['amount']));
     final ticketCode = safeString(data['ticketCode']);
     final paymentReference = safeString(data['paymentReference']);
+    final transactionId = safeString(
+      data['transactionId'],
+      int.tryParse(bookingId) == null
+          ? '—'
+          : 'TP-TXN-${int.parse(bookingId).toString().padLeft(8, '0')}',
+    );
+    final paymentMethod = safeString(data['paymentMethod']);
+    final paymentStatus = safeString(data['paymentStatus']);
+    final isPaid =
+        paymentStatus == 'paid' ||
+        safeString(data['type']) == 'booking_payment_ticket';
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 370),
@@ -181,16 +195,33 @@ class MessagesBookingTicket extends StatelessWidget {
                   ),
                   const SizedBox(width: 9),
                   Expanded(
-                    child: Text(
-                      isFitnessBooking
-                          ? 'TINKERPRO  ·  FITNESS PASS'
-                          : 'TINKERPRO  ·  COURT PASS',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: .8,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isFitnessBooking
+                              ? 'TINKERPRO  ·  FITNESS PASS'
+                              : isEventBooking
+                              ? 'TINKERPRO  ·  EVENT PASS'
+                              : 'TINKERPRO  ·  COURT PASS',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .8,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isPaid ? 'PAYMENT RECEIPT' : 'BOOKING CONFIRMATION',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .8,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Icon(
@@ -266,6 +297,15 @@ class MessagesBookingTicket extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                  ] else if (isEventBooking && eventType.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      eventType,
+                      style: const TextStyle(
+                        color: messageMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ] else if (sportType.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
@@ -314,7 +354,7 @@ class MessagesBookingTicket extends StatelessWidget {
                       Expanded(
                         child: _TicketDetail(
                           icon: Icons.group_outlined,
-                          label: 'PLAYERS',
+                          label: isEventBooking ? 'GUESTS' : 'PLAYERS',
                           value: safeString(data['players'], '—'),
                         ),
                       ),
@@ -328,6 +368,18 @@ class MessagesBookingTicket extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (paymentMethod.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _TicketDetail(
+                      icon: Icons.payments_outlined,
+                      label: 'PAYMENT METHOD',
+                      value: switch (paymentMethod) {
+                        'online' => 'Online',
+                        'cash_on_arrival' => 'Cash on arrival',
+                        _ => paymentMethod,
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -348,7 +400,7 @@ class MessagesBookingTicket extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          approved ? 'TICKET CODE' : 'BOOKING REFERENCE',
+                          'TRANSACTION ID',
                           style: const TextStyle(
                             color: messageMuted,
                             fontSize: 9,
@@ -358,17 +410,52 @@ class MessagesBookingTicket extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          approved && ticketCode.isNotEmpty
-                              ? ticketCode
-                              : 'BK-$bookingId',
+                          transactionId,
+                          key: const ValueKey('messages-transaction-id'),
+                          style: const TextStyle(
+                            color: messageNavy,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .8,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'BOOKING REFERENCE',
+                          style: const TextStyle(
+                            color: messageMuted,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'BK-$bookingId',
                           key: const ValueKey('messages-ticket-reference'),
                           style: const TextStyle(
                             color: messageNavy,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
+                        if (approved && ticketCode.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          const Text(
+                            'TICKET CODE',
+                            style: TextStyle(
+                              color: messageMuted,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            ticketCode,
+                            style: const TextStyle(
+                              color: messageNavy,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
                         if (!approved)
                           const Padding(
                             padding: EdgeInsets.only(top: 4),
@@ -399,8 +486,12 @@ class MessagesBookingTicket extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        const Text(
-                          'TOTAL PAID',
+                        Text(
+                          isPaid
+                              ? 'TOTAL PAID'
+                              : paymentMethod == 'cash_on_arrival'
+                              ? 'DUE AT VENUE'
+                              : 'BOOKING TOTAL',
                           style: TextStyle(
                             color: messageMuted,
                             fontSize: 9,

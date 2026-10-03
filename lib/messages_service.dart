@@ -5,8 +5,10 @@ class MessagesService {
 
   final AuthApi _api;
 
-  Future<List<Map<String, dynamic>>> fetchConversations(String token) =>
-      _api.conversations(token);
+  Future<List<Map<String, dynamic>>> fetchConversations(
+    String token, {
+    String? businessType,
+  }) => _api.conversations(token, businessType: businessType);
 
   Future<List<Map<String, dynamic>>> fetchContacts(String token) =>
       _api.messageContacts(token);
@@ -32,10 +34,12 @@ class MessagesService {
   Future<List<Map<String, dynamic>>> fetchMessages({
     required String token,
     required int conversationId,
+    String? businessType,
   }) =>
       _api.conversationMessages(
         token: token,
         conversationId: conversationId,
+        businessType: businessType,
       );
 
   Future<void> sendMessage({
@@ -43,12 +47,14 @@ class MessagesService {
     required int conversationId,
     required String body,
     Map<String, dynamic>? attachment,
+    String? businessType,
   }) =>
       _api.sendConversationMessage(
         token: token,
         conversationId: conversationId,
         body: body,
         attachment: attachment,
+        businessType: businessType,
       );
 
   Future<void> deleteMessage({

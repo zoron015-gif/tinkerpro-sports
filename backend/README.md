@@ -35,18 +35,18 @@ reviews, using MySQL.
    issues the separate entry ticket and access code.
 5. Install dependencies and start the API:
 
-   ```
-
-Account registration and sign-in requests are limited to 100 requests per
-client IP and 10 per normalized email every 15 minutes. Email verification and
-password recovery are limited to 8 requests per normalized email in the same
-window. Limited requests return HTTP 429 with `Retry-After` and `RateLimit-*`
-headers. These limits are held in each API process; deployments with multiple
-instances should also enforce equivalent limits at a shared API gateway.sh
+   ```sh
    cd backend
    npm install
    npm run dev
    ```
+
+   Account registration and sign-in requests are limited to 100 requests per
+   client IP and 10 per normalized email every 15 minutes. Email verification and
+   password recovery are limited to 8 requests per normalized email in the same
+   window. Limited requests return HTTP 429 with `Retry-After` and `RateLimit-*`
+   headers. These limits are held in each API process; deployments with multiple
+   instances should also enforce equivalent limits at a shared API gateway.
 
    `npm run dev` starts `nodemon src/server.js`. For a regular start, use
    `npm start` (`node src/server.js`); `node server.js` is also supported as a
@@ -58,6 +58,13 @@ messaging, booking, profile, news, and review tables exist.
 Malformed stored JSON-array fields are logged with the field name and returned
 as empty arrays so corrupted values are diagnosable without exposing their
 contents in logs.
+
+The public `GET /api/businesses` catalog uses a bounded, in-memory read-through
+cache with a 30-second TTL. Concurrent requests for the same uncached catalog
+share one database read. Merchant business/profile and news changes, as well as
+venue heart and review changes, invalidate the cached catalog. This cache is
+per API process: multiple backend instances have separate caches, and changes
+made outside the API can remain visible for up to 30 seconds.
 
 If MySQL reports `ER_ACCESS_DENIED_ERROR`, check `DB_USER` and `DB_PASSWORD`
 against your MySQL account. Do not use your Gmail password or Gmail App

@@ -20,9 +20,9 @@ flutter run --dart-define=API_BASE_URL=http://<host-reachable-from-device>:3000
 ```
 
 The API listens on port 3000 by default. The app's compiled-in API URL is
-`http://192.168.1.45:3000`; override it with `API_BASE_URL` as above when that
-address is not reachable from your device. For the Android emulator, the host
-machine is usually reachable at `10.0.2.2`, so use
+`http://192.168.1.14:3000`; override it with `API_BASE_URL` as above if your
+computer's LAN address changes. For the Android emulator, the host machine is
+usually reachable at `10.0.2.2`, so use
 `http://10.0.2.2:3000`. A physical device needs the computer's reachable LAN
 address, and both devices must be able to reach each other.
 

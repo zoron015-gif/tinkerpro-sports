@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   total_amount DECIMAL(10, 2) NOT NULL,
   downpayment_amount DECIMAL(10, 2) NOT NULL,
   extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  event_type VARCHAR(100) NULL,
   sport_type VARCHAR(100) NULL,
   slot_number INT UNSIGNED NULL,
   occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1,
@@ -363,9 +364,15 @@ CREATE TABLE IF NOT EXISTS user_activity_logs (
   venue_name VARCHAR(255) NULL,
   sport_type VARCHAR(100) NULL,
   details_json JSON NULL,
+  actor_user_id BIGINT UNSIGNED NULL,
+  actor_role VARCHAR(50) NULL,
+  request_id CHAR(36) NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(500) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_user_activity_logs_user_created (user_id, created_at, id),
+  KEY idx_user_activity_logs_request (request_id),
   CONSTRAINT fk_user_activity_logs_user FOREIGN KEY (user_id)
     REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
