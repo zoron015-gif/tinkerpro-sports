@@ -27,7 +27,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AppStartup());
+  runApp(AppStartup(appBuilder: (session) => MyApp(session: session)));
 }
 
 class MyApp extends StatelessWidget {
@@ -715,6 +715,7 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: const ValueKey('overview-hero-card'),
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
       decoration: BoxDecoration(
@@ -765,6 +766,7 @@ class _Hero extends StatelessWidget {
               const SizedBox(height: 22),
               const Text(
                 'Your sport.\nYour event.\nYour place.',
+                key: ValueKey('overview-hero-title'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 35,
@@ -783,6 +785,7 @@ class _Hero extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
+                key: const ValueKey('overview-hero-explore'),
                 onPressed: onExplore,
                 icon: const Icon(Icons.arrow_forward_rounded, size: 19),
                 label: const Text('Explore bookings'),
@@ -1065,28 +1068,40 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                 ),
               ),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverGrid(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final booking = (_showEvents ? _events : _sports)[index];
-                  final selected = _selectedBooking == booking.$3;
-                  return _SportCard(
-                    imagePath: booking.$1,
-                    icon: booking.$2,
-                    title: booking.$3,
-                    subtitle: booking.$4,
-                    selected: selected,
-                    onTap: () => setState(() => _selectedBooking = booking.$3),
-                  );
-                }, childCount: (_showEvents ? _events : _sports).length),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: .96,
-                ),
-              ),
+            SliverLayoutBuilder(
+              builder: (context, constraints) {
+                final compact =
+                    constraints.crossAxisExtent < AppResponsive.singleColumn ||
+                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
+                return SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppResponsive.pageInset(
+                      constraints.crossAxisExtent,
+                    ),
+                  ),
+                  sliver: SliverGrid(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final booking = (_showEvents ? _events : _sports)[index];
+                      final selected = _selectedBooking == booking.$3;
+                      return _SportCard(
+                        imagePath: booking.$1,
+                        icon: booking.$2,
+                        title: booking.$3,
+                        subtitle: booking.$4,
+                        selected: selected,
+                        onTap: () =>
+                            setState(() => _selectedBooking = booking.$3),
+                      );
+                    }, childCount: (_showEvents ? _events : _sports).length),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: compact ? 1 : 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: compact ? 1.15 : .96,
+                    ),
+                  ),
+                );
+              },
             ),
             SliverToBoxAdapter(
               child: Padding(
@@ -1174,8 +1189,19 @@ class _SelectionHeroState extends State<_SelectionHero> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final heroHeight = textScale > 1.2
+        ? screenWidth < AppResponsive.narrowPhone
+              ? 500.0
+              : screenWidth < AppResponsive.compactPhone
+              ? 440.0
+              : 360.0
+        : screenWidth < AppResponsive.narrowPhone
+        ? 250.0
+        : 224.0;
     return Container(
-      height: 224,
+      height: heroHeight,
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -1211,12 +1237,16 @@ class _SelectionHeroState extends State<_SelectionHero> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(
+              screenWidth < AppResponsive.narrowPhone ? 16 : 24,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Row(
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 6,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -1237,7 +1267,6 @@ class _SelectionHeroState extends State<_SelectionHero> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 7),
                     const Text(
                       'COMING SOON',
                       style: TextStyle(

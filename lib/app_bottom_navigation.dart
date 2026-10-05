@@ -26,43 +26,52 @@ class AppBottomNavigation extends StatelessWidget {
   final bool hideMerchantVenues;
 
   @override
-  Widget build(BuildContext context) => Theme(
-    data: Theme.of(context).copyWith(
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        shadowColor: const Color(0x14000000),
-        elevation: 2,
-        height: 72,
-        indicatorColor: AppColors.softOrange,
-        iconTheme: WidgetStateProperty.resolveWith((states) {
-          final selected = states.contains(WidgetState.selected);
-          return IconThemeData(
-            color: selected ? _navigationOrange : _navigationMuted,
-            size: 24,
-          );
-        }),
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          final selected = states.contains(WidgetState.selected);
-          return TextStyle(
-            color: selected ? _navigationNavy : _navigationMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          );
-        }),
-      ),
-    ),
-    child: NavigationBar(
-      height: 72,
-      elevation: 0,
-      indicatorShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-      ),
-      selectedIndex: selectedIndex,
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-      onDestinationSelected: onDestinationSelected,
-      destinations: merchantMode
-          ? const [
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final compact = AppResponsive.isCompact(width);
+      final veryNarrow = width < AppResponsive.narrowPhone;
+      final barHeight = compact ? 68.0 : 72.0;
+      final labelSize = veryNarrow ? 9.0 : compact ? 10.0 : 12.0;
+      return Theme(
+        data: Theme.of(context).copyWith(
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            shadowColor: const Color(0x14000000),
+            elevation: 2,
+            height: barHeight,
+            indicatorColor: AppColors.softOrange,
+            iconTheme: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                color: selected ? _navigationOrange : _navigationMuted,
+                size: compact ? 22 : 24,
+              );
+            }),
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                color: selected ? _navigationNavy : _navigationMuted,
+                fontSize: labelSize,
+                fontWeight: FontWeight.w700,
+              );
+            }),
+          ),
+        ),
+        child: NavigationBar(
+          height: barHeight,
+          elevation: 0,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          selectedIndex: selectedIndex,
+          labelBehavior: veryNarrow
+              ? NavigationDestinationLabelBehavior.onlyShowSelected
+              : NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected: onDestinationSelected,
+          destinations: merchantMode
+              ? const [
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-dashboard'),
                 icon: Icon(Icons.dashboard_outlined),
@@ -93,8 +102,8 @@ class AppBottomNavigation extends StatelessWidget {
                 selectedIcon: Icon(Icons.person_rounded),
                 label: 'Profile',
               ),
-            ]
-          : [
+                ]
+              : [
               NavigationDestination(
           key: const ValueKey('news-feed-nav-explore'),
           icon: Icon(
@@ -129,8 +138,10 @@ class AppBottomNavigation extends StatelessWidget {
           selectedIcon: const Icon(Icons.person_rounded),
           label: 'Profile',
         ),
-      ],
-    ),
+                ],
+        ),
+      );
+    },
   );
 
   Widget _countBadge(IconData icon, int count) => Badge(

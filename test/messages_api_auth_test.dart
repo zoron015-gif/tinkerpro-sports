@@ -49,6 +49,58 @@ void main() {
     },
   );
 
+  test(
+    'API errors preserve a valid support request ID and safe status message',
+    () async {
+      final api = AuthApi(
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({'error': 'SQL exception: private database details'}),
+            500,
+            headers: {
+              'content-type': 'application/json',
+              'x-request-id': 'abc12345-0000-4000-8000-000000000001',
+            },
+          ),
+        ),
+      );
+
+      await expectLater(
+        api.conversations('test-session-token'),
+        throwsA(
+          isA<AuthApiException>()
+              .having(
+                (error) => error.userMessage,
+                'userMessage',
+                'Something went wrong on our end. Please try again.',
+              )
+              .having(
+                (error) => error.requestId,
+                'requestId',
+                'abc12345-0000-4000-8000-000000000001',
+              ),
+        ),
+      );
+    },
+  );
+
+  test('successful API responses must be JSON objects', () async {
+    final api = AuthApi(
+      client: MockClient((_) async => http.Response('[]', 200)),
+    );
+
+    await expectLater(
+      api.conversations('test-session-token'),
+      throwsA(
+        isA<AuthApiException>().having(
+          (error) => error.message,
+          'message',
+          'The server returned an invalid response.',
+        ),
+      ),
+    );
+  });
+
   test('customer venue catalog excludes disabled businesses', () async {
     final api = AuthApi(
       client: MockClient(

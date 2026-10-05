@@ -7,11 +7,15 @@ import 'app_design_system.dart';
 import 'app_session.dart';
 import 'app_theme.dart';
 import 'firebase_options.dart';
-import 'main.dart';
 
 class AppStartup extends StatefulWidget {
-  const AppStartup({super.key, this.initialize});
+  const AppStartup({
+    super.key,
+    required this.appBuilder,
+    this.initialize,
+  });
 
+  final Widget Function(AppSession?) appBuilder;
   final Future<AppSession> Function()? initialize;
 
   @override
@@ -45,7 +49,7 @@ class _AppStartupState extends State<AppStartup> {
   Widget build(BuildContext context) => FutureBuilder<AppSession>(
     future: _initialization,
     builder: (context, snapshot) {
-      if (snapshot.hasData) return MyApp(session: snapshot.data);
+      if (snapshot.hasData) return widget.appBuilder(snapshot.data);
       final error = snapshot.connectionState == ConnectionState.done
           ? snapshot.error
           : null;

@@ -9,7 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_session.dart';
-import 'activity_log_page.dart';
+import 'features/activity_log/presentation/activity_log_routes.dart';
 import 'saved_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'customer_bookings_page.dart';
@@ -74,7 +74,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   @override
   void initState() {
     super.initState();
-    if (_isFitnessProfile) _selectedHistoryTab = 'Booking session';
+    if (_isFitnessProfile) {
+      _selectedHistoryTab = 'Booking session';
+    } else if (_isEventProfile) {
+      _selectedHistoryTab = 'Upcoming event';
+    }
     _loadProfile();
     _bookingReminderTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -150,6 +154,27 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     'fitness',
     'fitness & wellness',
   }.contains(BusinessTypeParser.normalized(widget.businessType).toLowerCase());
+
+  bool get _isEventProfile =>
+      BusinessTypeParser.parse(widget.businessType) == BusinessType.event;
+
+  String get _historyTitle => _isFitnessProfile
+      ? 'Fitness booking history'
+      : _isEventProfile
+      ? 'Event booking history'
+      : 'Court match history';
+
+  String get _upcomingTitle => _isFitnessProfile
+      ? 'Booking session'
+      : _isEventProfile
+      ? 'Upcoming event'
+      : 'Upcoming match';
+
+  String get _peopleLabel => _isFitnessProfile
+      ? 'participants'
+      : _isEventProfile
+      ? 'guests'
+      : 'players';
 
   List<Map<String, dynamic>> get _profileBookings {
     return bookingsForBusinessType(_bookings, widget.businessType);
@@ -624,9 +649,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       case 'edit':
         await _editProfile();
       case 'activity':
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => ActivityLogPage(api: _api)),
-        );
+        await Navigator.of(context).push(ActivityLogRoutes.open(api: _api));
       case 'switch':
         _message(context, 'Host portal is opening soon.');
       case 'logout':
@@ -701,6 +724,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     .toSet()
                     .length,
                 fitness: _isFitnessProfile,
+                event: _isEventProfile,
               ),
               const SizedBox(height: 10),
               _profileHistorySection(context),
@@ -868,14 +892,25 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required int matches,
     required int venues,
     required bool fitness,
+    required bool event,
   }) => _whiteCard(
     padding: const EdgeInsets.symmetric(vertical: 14),
     children: [
       Row(
         children: [
-          _Stat(value: '$matches', label: fitness ? 'Bookings' : 'Matches'),
+          _Stat(
+            value: '$matches',
+            label: fitness
+                ? 'Bookings'
+                : event
+                ? 'Events'
+                : 'Matches',
+          ),
           _statDivider(),
-          _Stat(value: '$venues', label: 'Venues visited'),
+          _Stat(
+            value: '$venues',
+            label: _isEventProfile ? 'Event venues visited' : 'Venues visited',
+          ),
         ],
       ),
     ],
@@ -884,17 +919,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   Widget _statDivider() => Container(height: 34, width: 1, color: _profileLine);
 
   Widget _profileHistorySection(BuildContext context) {
-    final historyTitle = _isFitnessProfile
-        ? 'Fitness booking history'
-        : 'Court match history';
+    final historyTitle = _historyTitle;
     final tabs = [
       (
-        title: _isFitnessProfile ? 'Booking session' : 'Upcoming match',
+        title: _upcomingTitle,
         icon: Icons.book_outlined,
         key: 'upcoming-booking',
       ),
       (
-        title: 'Venues visited',
+        title: _isEventProfile ? 'Event venues visited' : 'Venues visited',
         icon: Icons.flag_outlined,
         key: 'venues-visited',
       ),
@@ -903,6 +936,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         icon: Icons.list_alt_rounded,
         key: _isFitnessProfile
             ? 'fitness-booking-history'
+            : _isEventProfile
+            ? 'event-booking-history'
             : 'court-match-history',
       ),
     ];
@@ -963,7 +998,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           ),
         ),
         const SizedBox(height: 8),
-        _selectedHistoryTab == 'Venues visited'
+        _selectedHistoryTab == tabs[1].title
             ? _visitedVenuesCard(context)
             : _selectedHistoryTab == historyTitle
             ? _courtMatchHistoryCard(context)
@@ -977,7 +1012,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required IconData icon,
     required Color color,
   }) {
-    if (key != 'upcoming-booking' && key != 'court-match-history') {
+    if (key != 'upcoming-booking' &&
+        key != 'court-match-history' &&
+        key != 'event-booking-history') {
       return Icon(icon, size: 23, color: color);
     }
 
@@ -1044,7 +1081,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     if (start == null || end == null) return 'Schedule unavailable';
     final now = DateTime.now();
     if (!end.isAfter(now)) {
-      return _isFitnessProfile ? 'Session complete' : 'Match complete';
+      return _isFitnessProfile
+          ? 'Session complete'
+          : _isEventProfile
+          ? 'Event complete'
+          : 'Match complete';
     }
     if (!start.isAfter(now)) {
       return 'In progress · ${_formatCountdown(end.difference(now))} left';
@@ -1215,8 +1256,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       return _whiteCard(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [
-          const Text(
-            'UPCOMING BOOKING',
+          Text(
+            _isEventProfile ? 'UPCOMING EVENT' : 'UPCOMING BOOKING',
             style: TextStyle(
               color: _profileOrange,
               fontSize: 10,
@@ -1224,13 +1265,17 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'No approved bookings yet.',
+          Text(
+            _isEventProfile
+                ? 'No approved event bookings yet.'
+                : 'No approved bookings yet.',
             style: TextStyle(color: _profileInk, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Your booking ticket will appear here after merchant approval.',
+          Text(
+            _isEventProfile
+                ? 'Your event booking ticket will appear here after merchant approval.'
+                : 'Your booking ticket will appear here after merchant approval.',
             style: TextStyle(color: _profileMuted, fontSize: 11),
           ),
         ],
@@ -1242,8 +1287,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Row(
           children: [
             Expanded(
-              child: const Text(
-                'UPCOMING BOOKING',
+              child: Text(
+                _isEventProfile ? 'UPCOMING EVENT' : 'UPCOMING BOOKING',
                 style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
@@ -1275,13 +1320,18 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           style: const TextStyle(color: _profileMuted, fontSize: 11),
         ),
         Text(
-          _isFitnessProfile
-              ? '${booking['players'] ?? 0} participants · ${booking['paymentMethod'] ?? ''}'
-              : '${booking['players'] ?? 0} players · ${booking['paymentMethod'] ?? ''}',
+          '${booking['players'] ?? 0} $_peopleLabel · '
+          '${booking['paymentMethod'] ?? ''}',
           textAlign: TextAlign.center,
           style: const TextStyle(color: _profileMuted, fontSize: 11),
         ),
         ..._fitnessBookingDetails(booking),
+        if (_isEventProfile &&
+            '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
+          _bookingDetailLine(
+            Icons.celebration_outlined,
+            'Event type: ${booking['eventType']}',
+          ),
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
@@ -1797,6 +1847,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             child: Text(
               _isFitnessProfile
                   ? 'APPROVED FITNESS SESSION'
+                  : _isEventProfile
+                  ? 'APPROVED EVENT BOOKING'
                   : 'APPROVED BOOKING',
               style: const TextStyle(
                 color: _profileOrange,
@@ -1825,9 +1877,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       _bookingDetailLine(
         Icons.schedule_outlined,
         '${booking['durationHours'] ?? 0} hour(s) · '
-        '${booking['players'] ?? 0} '
-        '${_isFitnessProfile ? 'participants' : 'players'}',
+        '${booking['players'] ?? 0} $_peopleLabel',
       ),
+      if (_isEventProfile && '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
+        _bookingDetailLine(
+          Icons.celebration_outlined,
+          'Event type: ${booking['eventType']}',
+        ),
       ..._fitnessBookingDetails(booking),
       _bookingDetailLine(
         Icons.payment_outlined,
@@ -1909,9 +1965,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'VENUES VISITED',
+                _isEventProfile ? 'EVENT VENUES VISITED' : 'VENUES VISITED',
                 style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
@@ -1926,12 +1982,16 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           ],
         ),
         if (venues.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'No completed court visits yet.',
+                _isFitnessProfile
+                    ? 'No completed studio visits yet.'
+                    : _isEventProfile
+                    ? 'No completed event visits yet.'
+                    : 'No completed court visits yet.',
                 style: TextStyle(
                   color: _profileInk,
                   fontWeight: FontWeight.w800,
@@ -1942,12 +2002,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           )
         else ...[
           const SizedBox(height: 8),
-          for (final venue in venues.take(2)) ...[
+          for (final venue in venues.take(3)) ...[
             _visitedVenueItem(
               venue,
               onTap: () => _showVisitedVenueTimeline(context, venue),
             ),
-            if (venue != venues.take(2).last) const SizedBox(height: 8),
+            if (venue != venues.take(3).last) const SizedBox(height: 8),
           ],
         ],
       ],
@@ -1985,10 +2045,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ? (latestBooking['imageUrls'] as List).first
               : null),
     );
-    final price =
-        latestBooking['pricePerHour'] ??
-        latestBooking['venuePricePerHour'] ??
-        latestBooking['venue_price_per_hour'];
+    final price = _isEventProfile
+        ? latestBooking['eventFee'] ??
+              latestBooking['event_fee'] ??
+              latestBooking['pricePerHour']
+        : latestBooking['pricePerHour'] ??
+              latestBooking['venuePricePerHour'] ??
+              latestBooking['venue_price_per_hour'];
     final amount = price is num ? price.toDouble() : double.tryParse('$price');
     final date = '${latestBooking['date'] ?? ''}'.trim();
     return Material(
@@ -2016,6 +2079,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           child: Icon(
                             _isFitnessProfile
                                 ? Icons.fitness_center_rounded
+                                : _isEventProfile
+                                ? Icons.celebration_outlined
                                 : Icons.sports_tennis_rounded,
                             color: _profileOrange,
                           ),
@@ -2028,6 +2093,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             child: Icon(
                               _isFitnessProfile
                                   ? Icons.fitness_center_rounded
+                                  : _isEventProfile
+                                  ? Icons.celebration_outlined
                                   : Icons.sports_tennis_rounded,
                               color: _profileOrange,
                             ),
@@ -2053,8 +2120,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     const SizedBox(height: 4),
                     Text(
                       amount == null
-                          ? 'Hourly rate unavailable'
-                          : 'PHP ${amount.toStringAsFixed(2)} / hour',
+                          ? _isEventProfile
+                                ? 'Event fee unavailable'
+                                : 'Hourly rate unavailable'
+                          : 'PHP ${amount.toStringAsFixed(2)}'
+                                '${_isEventProfile ? ' / event' : ' / hour'}',
                       style: const TextStyle(
                         color: _profileNavy,
                         fontSize: 12,
@@ -2102,7 +2172,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   }
 
   Widget _courtMatchHistoryCard(BuildContext context) {
-    final bookings = _completed.take(2).toList();
+    final bookings = _completed.take(3).toList();
     return _whiteCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       children: [
@@ -2112,6 +2182,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               child: Text(
                 _isFitnessProfile
                     ? 'FITNESS BOOKING HISTORY'
+                    : _isEventProfile
+                    ? 'EVENT BOOKING HISTORY'
                     : 'COURT MATCH HISTORY',
                 style: const TextStyle(
                   color: _profileOrange,
@@ -2134,6 +2206,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               child: Text(
                 _isFitnessProfile
                     ? 'Completed fitness bookings will appear here.'
+                    : _isEventProfile
+                    ? 'Completed event bookings will appear here.'
                     : 'Completed bookings will appear here.',
                 style: const TextStyle(
                   color: _profileInk,
@@ -2159,10 +2233,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         context,
         title: _isFitnessProfile
             ? 'Fitness booking history'
+            : _isEventProfile
+            ? 'Event booking history'
             : 'Court match history',
         countLabel: '${_completed.length} completed',
         emptyText: _isFitnessProfile
             ? 'No completed fitness bookings yet.'
+            : _isEventProfile
+            ? 'No completed event bookings yet.'
             : 'No completed bookings yet.',
         children: _completed
             .asMap()
@@ -2177,10 +2255,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     final venues = _visitedVenueEntries;
     return _showProfileListSheet(
       context,
-      title: 'Venues visited',
+      title: _isEventProfile ? 'Event venues visited' : 'Venues visited',
       countLabel: '${venues.length} venues',
       emptyText: _isFitnessProfile
           ? 'No completed studio visits yet.'
+          : _isEventProfile
+          ? 'No completed event visits yet.'
           : 'No completed court visits yet.',
       children: venues
           .map(
@@ -2295,7 +2375,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Completed visit ${venue.bookings.length - index}',
+                                '${_isEventProfile ? 'Completed event' : 'Completed visit'} ${venue.bookings.length - index}',
                                 style: const TextStyle(
                                   color: _profileInk,
                                   fontWeight: FontWeight.w900,
@@ -2311,6 +2391,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           _bookingDetailLine(
                             _isFitnessProfile
                                 ? Icons.fitness_center_rounded
+                                : _isEventProfile
+                                ? Icons.celebration_outlined
                                 : Icons.sports_tennis_outlined,
                             [
                               if (activityType.isNotEmpty) activityType,
@@ -2338,9 +2420,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         _bookingDetailLine(
                           Icons.group_outlined,
                           '${booking['durationHours'] ?? 0} hour(s) · '
-                          '${booking['players'] ?? 0} '
-                          '${_isFitnessProfile ? 'participants' : 'players'}',
+                          '${booking['players'] ?? 0} $_peopleLabel',
                         ),
+                        if (_isEventProfile &&
+                            '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
+                          _bookingDetailLine(
+                            Icons.celebration_outlined,
+                            'Event type: ${booking['eventType']}',
+                          ),
                         ..._fitnessBookingDetails(booking),
                         if (booking['id'] != null) ...[
                           const SizedBox(height: 4),
@@ -2465,10 +2552,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   ) => _visitedVenueItem(
     (name: '${booking['venueName'] ?? 'Venue'}', bookings: [booking]),
     details:
-        'Completed · ${_time(booking['startTime'])} · '
+        '${_isFitnessProfile
+            ? 'Completed session'
+            : _isEventProfile
+            ? 'Completed event'
+            : 'Completed match'} · '
+        '${_time(booking['startTime'])} · '
         '${booking['durationHours'] ?? 0} hour(s) · '
-        '${booking['players'] ?? 0} '
-        '${_isFitnessProfile ? 'participants' : 'players'}',
+        '${booking['players'] ?? 0} $_peopleLabel'
+        '${_isEventProfile && '${booking['eventType'] ?? ''}'.trim().isNotEmpty ? ' · ${booking['eventType']}' : ''}',
     badge: '#${index + 1}',
     onTap: () => _showCompletedMatchDetails(context, booking, index),
   );
@@ -2485,8 +2577,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ? (booking['imageUrls'] as List).first
               : null),
     );
-    final hourlyRate = _bookingAmount(
-      booking['pricePerHour'] ?? booking['venuePricePerHour'],
+    final bookingRate = _bookingAmount(
+      _isEventProfile
+          ? booking['eventFee'] ??
+                booking['event_fee'] ??
+                booking['venuePricePerHour']
+          : booking['pricePerHour'] ?? booking['venuePricePerHour'],
     );
     final total = _bookingAmount(booking['total']);
     final extraPlayerCharge = _bookingAmount(booking['extraPlayerCharge']);
@@ -2527,10 +2623,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     width: double.infinity,
                     height: 190,
                     child: image == null
-                        ? const ColoredBox(
+                        ? ColoredBox(
                             color: Color(0xFFFFF1E4),
                             child: Icon(
-                              Icons.sports_tennis_rounded,
+                              _isEventProfile
+                                  ? Icons.celebration_outlined
+                                  : Icons.sports_tennis_rounded,
                               color: _profileOrange,
                               size: 44,
                             ),
@@ -2538,10 +2636,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         : Image(
                             image: image,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const ColoredBox(
+                            errorBuilder: (_, _, _) => ColoredBox(
                               color: Color(0xFFFFF1E4),
                               child: Icon(
-                                Icons.sports_tennis_rounded,
+                                _isEventProfile
+                                    ? Icons.celebration_outlined
+                                    : Icons.sports_tennis_rounded,
                                 color: _profileOrange,
                                 size: 44,
                               ),
@@ -2569,6 +2669,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 Text(
                   _isFitnessProfile
                       ? 'Completed fitness session'
+                      : _isEventProfile
+                      ? 'Completed event booking'
                       : 'Completed court match',
                   style: const TextStyle(
                     color: _profileOrange,
@@ -2585,18 +2687,24 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 _bookingDetailLine(
                   Icons.schedule_outlined,
                   '${booking['durationHours'] ?? 0} hour(s) · '
-                  '${booking['players'] ?? 0} '
-                  '${_isFitnessProfile ? 'participants' : 'players'}',
+                  '${booking['players'] ?? 0} $_peopleLabel',
                 ),
+                if (_isEventProfile &&
+                    '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
+                  _bookingDetailLine(
+                    Icons.celebration_outlined,
+                    'Event type: ${booking['eventType']}',
+                  ),
                 ..._fitnessBookingDetails(booking),
                 _bookingDetailLine(
                   Icons.payment_outlined,
                   '${booking['paymentMethod'] ?? 'Payment method not specified'}',
                 ),
-                if (hourlyRate != null)
+                if (bookingRate != null)
                   _bookingDetailLine(
                     Icons.sell_outlined,
-                    'PHP ${hourlyRate.toStringAsFixed(2)} / hour',
+                    'PHP ${bookingRate.toStringAsFixed(2)}'
+                    '${_isEventProfile ? ' / event' : ' / hour'}',
                   ),
                 if (extraPlayerCharge != null && extraPlayerCharge > 0)
                   _bookingDetailLine(

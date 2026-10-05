@@ -36,6 +36,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   DateTime _date = DateUtils.dateOnly(DateTime.now());
   TimeOfDay? _time;
   String _payment = 'online';
+  final String _bookingIdempotencyKey = newBookingIdempotencyKey();
   String? _token;
   List<Map<String, dynamic>> _busyTimes = [];
   bool _loadingAvailability = true;
@@ -255,6 +256,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       setState(() => _submitting = true);
       final response = await widget.api.createBooking(
         token: token,
+        idempotencyKey: _bookingIdempotencyKey,
         venueId: _businessId,
         date: _dateString(_date),
         startTime:

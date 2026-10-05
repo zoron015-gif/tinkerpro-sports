@@ -27,6 +27,16 @@ abstract final class AppSpacing {
   static const xxLarge = 32.0;
 }
 
+abstract final class AppResponsive {
+  static const compactPhone = 360.0;
+  static const narrowPhone = 320.0;
+  static const singleColumn = 380.0;
+
+  static bool isCompact(double width) => width < compactPhone;
+
+  static double pageInset(double width) => isCompact(width) ? 12 : 20;
+}
+
 abstract final class AppRadii {
   static const control = 12.0;
   static const button = 12.0;

@@ -20,7 +20,10 @@ void main() {
   ) async {
     final initialization = Completer<AppSession>();
     await tester.pumpWidget(
-      AppStartup(initialize: () => initialization.future),
+      AppStartup(
+        appBuilder: (_) => const MyApp(),
+        initialize: () => initialization.future,
+      ),
     );
 
     expect(find.text('TinkerPro'), findsOneWidget);
@@ -41,6 +44,7 @@ void main() {
     final retryAttempt = Completer<AppSession>();
     await tester.pumpWidget(
       AppStartup(
+        appBuilder: (_) => const MyApp(),
         initialize: () {
           attempts++;
           return attempts == 1 ? initialAttempt.future : retryAttempt.future;

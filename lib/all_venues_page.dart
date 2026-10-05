@@ -21,6 +21,7 @@ class AllVenuesPage extends StatefulWidget {
     this.ratedHeading = 'Courts with the highest ratings',
     this.searchHint = 'Search venues, sports, or areas...',
     this.collectionDescription = 'Browse every venue in this collection.',
+    this.priceFilterLabel = 'Price (PHP / hour)',
   });
 
   final String title;
@@ -34,6 +35,7 @@ class AllVenuesPage extends StatefulWidget {
   final String ratedHeading;
   final String searchHint;
   final String collectionDescription;
+  final String priceFilterLabel;
 
   @override
   State<AllVenuesPage> createState() => _AllVenuesPageState();
@@ -57,6 +59,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     super.initState();
     _sport = widget.categoryAllLabel;
     _userPosition = widget.initialUserPosition;
+    _maxPrice = _priceFilterMaximum;
   }
 
   @override
@@ -117,6 +120,15 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       ) ??
       0;
 
+  double get _priceFilterMaximum {
+    var maximum = 700.0;
+    for (final post in widget.posts) {
+      final price = _venuePrice(post);
+      if (price > maximum) maximum = price;
+    }
+    return (maximum / 100).ceil() * 100.0;
+  }
+
   double _distanceFrom(Position position, Map<String, dynamic> post) {
     final latitude = double.tryParse(
       '${post['latitude'] ?? post['lat'] ?? ''}',
@@ -162,7 +174,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       _courtType = 'All';
       _availability = 'Any';
       _priceSort = 'Recommended';
-      _maxPrice = 700;
+      _maxPrice = _priceFilterMaximum;
       _userPosition = null;
       _amenities.clear();
     });
@@ -175,7 +187,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       (_courtType == 'All' ? 0 : 1) +
       (_availability == 'Any' ? 0 : 1) +
       (_priceSort == 'Recommended' ? 0 : 1) +
-      (_maxPrice >= 700 ? 0 : 1) +
+      (_maxPrice >= _priceFilterMaximum ? 0 : 1) +
       _amenities.length +
       (_userPosition == null ? 0 : 1);
 
@@ -378,15 +390,15 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                             ],
                           ),
                           const SizedBox(height: filterPanelSectionSpacing),
-                          _filterLabel('Price (PHP / hour)'),
+                          _filterLabel(widget.priceFilterLabel),
                           Slider(
                             key: const ValueKey('all-venues-filter-price'),
                             value: _maxPrice,
                             min: 0,
-                            max: 700,
+                            max: _priceFilterMaximum,
                             divisions: 14,
-                            label: _maxPrice >= 700
-                                ? '700+'
+                            label: _maxPrice >= _priceFilterMaximum
+                                ? '${_priceFilterMaximum.round()}+'
                                 : _maxPrice.round().toString(),
                             onChanged: (value) {
                               setState(() => _maxPrice = value);

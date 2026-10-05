@@ -58,6 +58,13 @@ function makeConnection() {
       if (sql.includes('FROM event_business_details WHERE business_id = ?')) {
         return response(db.eventDetails ? [db.eventDetails] : []);
       }
+      if (
+        sql.includes('SELECT idempotency_request_hash AS requestHash') &&
+        sql.includes('FROM bookings')
+      ) {
+        const stored = db.idempotencyRecords.get(`${params[0]}:${params[1]}`);
+        return response(stored ? [stored] : []);
+      }
       if (sql.includes('FROM merchant_news n')) {
         return response(db.newsFeedRows);
       }
@@ -92,6 +99,35 @@ function makeConnection() {
       if (sql.includes('SELECT 1 FROM conversation_members')) {
         return response([{}]);
       }
+      if (sql.includes('INSERT INTO bookings')) {
+        const recordKey = `${params[0]}:${params[22]}`;
+        if (db.idempotencyRecords.has(recordKey)) {
+          const error = new Error(
+            'Duplicate entry for uq_bookings_customer_idempotency',
+          );
+          error.code = 'ER_DUP_ENTRY';
+          throw error;
+        }
+        db.idempotencyRecords.set(recordKey, {
+          customerId: params[0],
+          bookingId: 601,
+          requestHash: params[23],
+          responseJson: null,
+          responseStatus: null,
+        });
+        return [{ insertId: 601 }, []];
+      }
+      if (sql.includes('SET idempotency_response_json = ?')) {
+        const record = [...db.idempotencyRecords.values()].find((item) =>
+          item.bookingId === params[1] &&
+          String(item.customerId) === String(params[2]),
+        );
+        if (record) {
+          record.responseJson = params[0];
+          record.responseStatus = 201;
+        }
+        return [{ affectedRows: 1 }, []];
+      }
       if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
         return response([{
           id: 501,
@@ -122,8 +158,11 @@ function resetDatabase() {
   readCache.clear();
   db = {
     calls: [],
+    idempotencyRecords: new Map(),
     accountStatus: 'active',
     venueReviews: [],
+    customerHeartedBusinessRows: [],
+    reviewEligibleBookings: [],
     newsFeedRows: [],
     customerBusinessRows: [],
     existingRegistrationUser: null,
@@ -210,10 +249,20 @@ function bearer(role = 'customer', id = role === 'merchant' ? '88' : '42') {
   return jwt.sign({ sub: id, email: `${role}@example.test`, role }, process.env.JWT_SECRET);
 }
 
-async function request(url, { role, ...options } = {}) {
+async function request(
+  url,
+  { role, idempotencyKey = 'test-idempotency-key-0001', ...options } = {},
+) {
   const headers = new Headers(options.headers);
   headers.set('authorization', `Bearer ${bearer(role)}`);
   if (options.body !== undefined) headers.set('content-type', 'application/json');
+  if (
+    url === '/api/bookings' &&
+    options.method === 'POST' &&
+    idempotencyKey !== null
+  ) {
+    headers.set('idempotency-key', idempotencyKey);
+  }
   return fetch(`http://127.0.0.1:${server.address().port}${url}`, {
     ...options,
     headers,
@@ -232,6 +281,13 @@ before(async () => {
   const fakePool = {
     execute: async (sql, params = []) => {
       db.calls.push({ sql, params });
+      if (
+        sql.includes('SELECT idempotency_request_hash AS requestHash') &&
+        sql.includes('FROM bookings')
+      ) {
+        const stored = db.idempotencyRecords.get(`${params[0]}:${params[1]}`);
+        return response(stored ? [stored] : []);
+      }
       if (sql.includes('SELECT id, email, password_hash, first_name')) {
         return response(db.loginUser ? [db.loginUser] : []);
       }
@@ -270,6 +326,15 @@ before(async () => {
         sql.includes('ORDER BY b.created_at DESC')
       ) {
         return response(db.customerBusinessRows);
+      }
+      if (sql.includes('FROM venue_hearts WHERE user_id = ?')) {
+        return response(db.customerHeartedBusinessRows);
+      }
+      if (
+        sql.includes('LEFT JOIN venue_reviews r ON r.booking_id = b.id') &&
+        sql.includes('b.venue_id = ?')
+      ) {
+        return response(db.reviewEligibleBookings);
       }
       if (sql.includes('FROM merchant_news n')) {
         return response(db.newsFeedRows);
@@ -394,6 +459,205 @@ test('booking rejects malformed input without opening a transaction', async () =
     error: 'Choose Online payment or Cash on Arrival (COA).',
   });
   assert.equal(db.calls.filter(({ sql }) => sql.includes('FOR UPDATE')).length, 0);
+});
+
+test('mutating API routes reject non-object JSON bodies', async () => {
+  const response = await request('/api/auth/register', {
+    method: 'POST',
+    body: ['player@example.test', 'Password123'],
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'The request body must be a JSON object.',
+  });
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('FROM users WHERE email = ?')),
+    false,
+  );
+});
+
+test('profile routes reject invalid field types before database writes', async () => {
+  const response = await request('/api/auth/profile', {
+    method: 'PUT',
+    body: { firstName: { value: 'Taylor' } },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'One or more profile fields are invalid.',
+  });
+  assert.equal(db.calls.length, 0);
+});
+
+test('conversation routes reject malformed identifiers without querying', async () => {
+  const response = await request('/api/messages/conversations/12abc');
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'The conversation is invalid.',
+  });
+  assert.equal(db.calls.length, 0);
+});
+
+test('booking numeric fields reject booleans and blank numeric strings', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: true,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 2,
+      paymentMethod: 'online',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('FROM merchant_businesses b JOIN users u')),
+    false,
+  );
+});
+
+test('merchant business payload validation rejects invalid numeric and list types', async () => {
+  const response = await request('/api/merchant/businesses', {
+    method: 'POST',
+    role: 'merchant',
+    body: {
+      businessType: 'Sports',
+      name: 'Court',
+      category: 'Basketball',
+      address: 'Cebu',
+      facilityType: 'Indoor',
+      hours: '9 AM - 9 PM',
+      pricePerHour: true,
+      includedPlayers: 4,
+      additionalPlayerFee: 10,
+      tags: ['Parking', false],
+    },
+  });
+
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.deepEqual(body.validationErrors, ['pricePerHour', 'tags']);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_businesses')),
+    false,
+  );
+});
+
+test('merchant business routes deny customers and inactive merchants', async () => {
+  const customerResponse = await request('/api/merchant/businesses', {
+    role: 'customer',
+  });
+  assert.equal(customerResponse.status, 403);
+  assert.deepEqual(await customerResponse.json(), {
+    error: 'Only active merchant accounts can access this endpoint.',
+  });
+
+  db.calls = [];
+  db.accountStatus = 'suspended';
+  const inactiveMerchantResponse = await request('/api/merchant/businesses', {
+    role: 'merchant',
+  });
+  assert.equal(inactiveMerchantResponse.status, 403);
+  assert.deepEqual(await inactiveMerchantResponse.json(), {
+    error: 'Only active merchant accounts can access this endpoint.',
+  });
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_businesses')),
+    false,
+  );
+});
+
+test('booking requests require an idempotency key', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: null,
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 2,
+      paymentMethod: 'online',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'A valid Idempotency-Key header is required for booking requests.',
+  });
+  assert.equal(db.calls.some(({ sql }) => sql.includes('START TRANSACTION')), false);
+});
+
+test('booking retries with the same idempotency key return the original result', async () => {
+  const key = 'booking-attempt-identifier-0001';
+  const body = {
+    venueId: 7,
+    date: '2026-10-01',
+    startTime: '09:00',
+    durationHours: 2,
+    players: 6,
+    paymentMethod: 'online',
+  };
+  const firstResponse = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: key,
+    body,
+  });
+  const firstResult = await firstResponse.json();
+  const retryResponse = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: key,
+    body,
+  });
+
+  assert.equal(firstResponse.status, 201);
+  assert.equal(retryResponse.status, 201);
+  assert.deepEqual(await retryResponse.json(), firstResult);
+  assert.equal(
+    db.calls.filter(({ sql }) => sql.includes('INSERT INTO bookings')).length,
+    1,
+  );
+  assert.equal(
+    db.calls.filter(({ sql }) => sql.includes('INSERT INTO conversations')).length,
+    1,
+  );
+});
+
+test('booking idempotency keys cannot be reused with different booking details', async () => {
+  const key = 'booking-attempt-identifier-0002';
+  const body = {
+    venueId: 7,
+    date: '2026-10-01',
+    startTime: '09:00',
+    durationHours: 2,
+    players: 6,
+    paymentMethod: 'online',
+  };
+  const firstResponse = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: key,
+    body,
+  });
+  assert.equal(firstResponse.status, 201);
+
+  const changedResponse = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: key,
+    body: {...body, players: 7},
+  });
+
+  assert.equal(changedResponse.status, 409);
+  assert.deepEqual(await changedResponse.json(), {
+    error: 'This Idempotency-Key was already used for a different booking request.',
+  });
+  assert.equal(
+    db.calls.filter(({ sql }) => sql.includes('INSERT INTO bookings')).length,
+    1,
+  );
 });
 
 test('activity log reads are scoped to the authenticated user', async () => {
@@ -694,6 +958,22 @@ test('venue heart updates validate the venue and remain scoped to the user', asy
   assert.deepEqual(countQuery.params, [7]);
 });
 
+test('customers can read only their own venue hearts', async () => {
+  db.customerHeartedBusinessRows = [{ businessId: 7 }, { businessId: 92 }];
+
+  const response = await request('/api/customer/venue-hearts');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    businesses: [{ businessId: 7 }, { businessId: 92 }],
+  });
+  const query = db.calls.find(({ sql }) =>
+    sql.includes('FROM venue_hearts WHERE user_id = ?'),
+  );
+  assert.ok(query);
+  assert.deepEqual(query.params, ['42']);
+});
+
 test('customer feed reports aggregate hearts and the authenticated user heart state', async () => {
   const response = await request('/api/news-feed');
 
@@ -768,6 +1048,37 @@ test('customer businesses include Event venues without published news, including
   assert.match(businessesQuery.sql, /AS heartCount/);
 });
 
+test('event venue review records its booking and venue details in activity history', async () => {
+  db.reviewEligibleBookings = [{
+    id: 180,
+    venueId: 92,
+    venueName: 'Garden Event Place',
+    sportType: 'Wedding',
+    bookingDate: '2026-09-28',
+    startTime: '10:00:00',
+  }];
+
+  const response = await request('/api/news-feed/92/reviews', {
+    method: 'POST',
+    body: { rating: 5, comment: 'Wonderful event venue.' },
+  });
+
+  assert.equal(response.status, 201);
+  const bookingQuery = db.calls.find(({ sql }) =>
+    sql.includes('LEFT JOIN venue_reviews r ON r.booking_id = b.id') &&
+    sql.includes('b.venue_id = ?'),
+  );
+  assert.ok(bookingQuery);
+  assert.match(bookingQuery.sql, /b\.venue_id AS venueId/);
+  assert.match(bookingQuery.sql, /v\.name AS venueName/);
+  assert.deepEqual(bookingQuery.params, [92, '42']);
+  const activity = db.calls.find(({ sql, params }) =>
+    sql.includes('INSERT INTO user_activity_logs') &&
+    params.includes('Garden Event Place'),
+  );
+  assert.ok(activity);
+});
+
 test('customer business catalog is cached and invalidated after merchant changes', async () => {
   db.customerBusinessRows = [{
     id: 92,
@@ -818,11 +1129,16 @@ test('availability returns bookings and validates its required inputs', async ()
 test('availability database failures return the generic server error', async () => {
   db.availabilityError = new Error('simulated database failure');
   const originalConsoleError = console.error;
-  console.error = () => {};
+  let loggedError;
+  console.error = (...args) => { loggedError = args; };
   try {
     const response = await request('/api/bookings/availability?venueId=7&date=2026-10-01');
+    const requestId = response.headers.get('x-request-id');
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { error: 'An unexpected server error occurred.' });
+    assert.equal(loggedError[0], 'API request failed.');
+    assert.equal(loggedError[1].requestId, requestId);
+    assert.equal(loggedError[1].error, db.availabilityError);
   } finally {
     console.error = originalConsoleError;
   }
@@ -1781,4 +2097,28 @@ test('venue reviews include each reviewer profile image URL', async () => {
   const body = await response.json();
   assert.equal(body.reviews[0].avatarUrl, 'https://images.example.test/maya.png');
   assert.ok(db.calls.some(({ sql }) => sql.includes('u.avatar_url AS avatarUrl')));
+});
+
+test('JSON output escapes HTML-sensitive characters and prevents MIME sniffing', async () => {
+  const originalText = '</script><img src=x onerror=alert(1)> &';
+  db.venueReviews = [{
+    id: 31,
+    businessId: 12,
+    customerId: 42,
+    firstName: 'Maya',
+    lastName: 'Player',
+    avatarUrl: null,
+    rating: 5,
+    comment: originalText,
+  }];
+
+  const response = await request('/api/news-feed/12/reviews');
+  const rawBody = await response.text();
+
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.ok(rawBody.includes('\\u003c/script\\u003e'));
+  assert.ok(rawBody.includes('\\u003cimg'));
+  assert.ok(rawBody.includes('\\u0026'));
+  assert.equal(JSON.parse(rawBody).reviews[0].comment, originalText);
 });

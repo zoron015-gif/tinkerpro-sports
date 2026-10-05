@@ -324,6 +324,13 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(26),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x33000000),
+                        blurRadius: 18,
+                        offset: Offset(0, -7),
+                      ),
+                    ],
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -1009,12 +1016,12 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
         try {
           return MemoryImage(base64Decode(image.substring(comma + 1)));
         } on FormatException {
-          return const AssetImage('assets/venue/missing-image.png');
+          return const AssetImage('assets/court/pickle-court.jpg');
         }
       }
     }
     if (image.startsWith('http')) return NetworkImage(image);
-    return const AssetImage('assets/venue/missing-image.png');
+    return const AssetImage('assets/court/pickle-court.jpg');
   }
 
   @override
@@ -1337,6 +1344,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     var occupiedBookings = <Map<String, dynamic>>[];
     var availabilityLoading = true;
     var availabilityNow = DateTime.now();
+    final bookingIdempotencyKey = newBookingIdempotencyKey();
     Timer? availabilityTimer;
     final session = await AppSession.load();
     final token = session.apiToken;
@@ -1968,6 +1976,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             : () {
                                 _submitBooking(
                                   modalContext: modalContext,
+                                  idempotencyKey: bookingIdempotencyKey,
                                   venue: venue,
                                   bookingDate: bookingDate,
                                   bookingTime: bookingTime,
@@ -2164,6 +2173,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
 
   Future<void> _submitBooking({
     required BuildContext modalContext,
+    required String idempotencyKey,
     required SportsVenue venue,
     required DateTime bookingDate,
     required TimeOfDay bookingTime,
@@ -2243,6 +2253,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       if (!confirmed) return;
       final response = await _api.createBooking(
         token: token,
+        idempotencyKey: idempotencyKey,
         venueId: venue.id,
         date: date,
         startTime: startTime,

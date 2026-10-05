@@ -61,6 +61,37 @@ void main() {
     );
   });
 
+  testWidgets('activity log shows a safe error and support reference', (
+    tester,
+  ) async {
+    const requestId = 'abc12345-0000-4000-8000-000000000001';
+    final api = AuthApi(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({'error': 'Database connection string and stack trace'}),
+          500,
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': requestId,
+          },
+        );
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: ActivityLogPage(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Something went wrong on our end. Please try again.'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Support reference: $requestId'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Database connection string'), findsNothing);
+  });
+
   testWidgets('calendar filter shows one date and can be cleared', (
     tester,
   ) async {

@@ -8,6 +8,18 @@ function normalizeText(value, max = 255) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+function isValidEmail(value) {
+  return typeof value === 'string' &&
+    value.length <= 254 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isNumericInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  return Number.isFinite(Number(value));
+}
+
 function parseBusinessCoordinates(body) {
   const hasLatitude = Object.prototype.hasOwnProperty.call(body, 'latitude');
   const hasLongitude = Object.prototype.hasOwnProperty.call(body, 'longitude');
@@ -21,6 +33,9 @@ function parseBusinessCoordinates(body) {
     (rawLongitude === null || rawLongitude === '')
   ) {
     return { provided: true, valid: true, latitude: null, longitude: null };
+  }
+  if (!isNumericInput(rawLatitude) || !isNumericInput(rawLongitude)) {
+    return { provided: true, valid: false, latitude: null, longitude: null };
   }
   const latitude = Number(rawLatitude);
   const longitude = Number(rawLongitude);
@@ -45,6 +60,7 @@ function eventDetailsFromBody(body) {
       ? value.filter((item) => typeof item === 'string').slice(0, 20)
       : [];
   const integer = (value) => {
+    if (!isNumericInput(value)) return null;
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
   };
@@ -131,6 +147,8 @@ module.exports = {
   eventDetailsFromBody,
   hashBookingToken,
   hashVerificationCode,
+  isNumericInput,
+  isValidEmail,
   isValidRole,
   normalizeEmail,
   normalizeText,

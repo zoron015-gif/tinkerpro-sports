@@ -6,6 +6,8 @@ const {
   eventDetailsFromBody,
   hashBookingToken,
   hashVerificationCode,
+  isNumericInput,
+  isValidEmail,
   isValidRole,
   normalizeEmail,
   normalizeText,
@@ -20,6 +22,20 @@ test('normalizes email and bounded text safely', () => {
   assert.equal(normalizeEmail(null), '');
   assert.equal(normalizeText('  Court  ', 4), 'Cour');
   assert.equal(normalizeText(42), '');
+});
+
+test('validates email and numeric input without accepting coercible types', () => {
+  assert.equal(isValidEmail('player@example.test'), true);
+  assert.equal(isValidEmail('player@localhost'), false);
+  assert.equal(isValidEmail(' player@example.test'), false);
+  assert.equal(isValidEmail('x'.repeat(250) + '@example.test'), false);
+  assert.equal(isNumericInput(12), true);
+  assert.equal(isNumericInput('12.5'), true);
+  assert.equal(isNumericInput(''), false);
+  assert.equal(isNumericInput('   '), false);
+  assert.equal(isNumericInput(true), false);
+  assert.equal(isNumericInput(null), false);
+  assert.equal(isNumericInput(Infinity), false);
 });
 
 test('parses business coordinates only when a complete valid pair is provided', () => {
@@ -40,6 +56,12 @@ test('parses business coordinates only when a complete valid pair is provided', 
     { provided: true, valid: true, latitude: 10.3, longitude: 123.8 },
   );
   assert.deepEqual(parseBusinessCoordinates({ latitude: 91, longitude: 0 }), {
+    provided: true,
+    valid: false,
+    latitude: null,
+    longitude: null,
+  });
+  assert.deepEqual(parseBusinessCoordinates({ latitude: false, longitude: 0 }), {
     provided: true,
     valid: false,
     latitude: null,

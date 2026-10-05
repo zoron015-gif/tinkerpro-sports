@@ -19,6 +19,7 @@ const _text = AppColors.ink;
 const _muted = AppColors.muted;
 const _mint = AppColors.orange;
 const _gold = Color(0xFFFFA63D);
+const _reserveCardRadius = 17.0;
 
 class ReserveDashboardPage extends StatefulWidget {
   const ReserveDashboardPage({super.key, this.initialSelection, this.onLogout});
@@ -104,7 +105,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
               scrolledUnderElevation: 0,
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const Center(
@@ -131,8 +132,9 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 8),
                   _ExperienceCard(
+                    key: const ValueKey('reserve-option-sports'),
                     imagePath: 'assets/book-type/sports.jpg',
                     badge: '18 Courts Open',
                     title: 'Sports',
@@ -150,8 +152,9 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     selected: _selected == 'Sports',
                     onTap: () => setState(() => _selected = 'Sports'),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   _ExperienceCard(
+                    key: const ValueKey('reserve-option-event'),
                     imagePath: 'assets/book-type/event.jpg',
                     badge: 'VIP Banquets & Lounges',
                     title: 'Event',
@@ -162,8 +165,9 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     selected: _selected == 'Event',
                     onTap: () => setState(() => _selected = 'Event'),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   _ExperienceCard(
+                    key: const ValueKey('reserve-option-fitness'),
                     imagePath: 'assets/book-type/fitness.jpg',
                     badge: 'Fitness Classes Open',
                     title: 'Fitness & Wellness',
@@ -296,6 +300,7 @@ class _ExperienceCard extends StatelessWidget {
     required this.accent,
     required this.selected,
     required this.onTap,
+    super.key,
   });
 
   final String imagePath;
@@ -310,19 +315,20 @@ class _ExperienceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
     return Semantics(
       button: true,
       selected: selected,
       label: '$title booking option',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(_reserveCardRadius),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          height: 220,
+          height: textScale > 1.2 ? 176 : 160,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(_reserveCardRadius),
             border: Border.all(
               color: selected ? accent : Colors.white.withValues(alpha: .16),
               width: selected ? 2 : 1,
@@ -340,19 +346,46 @@ class _ExperienceCard extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 124,
+                width: 112,
                 height: double.infinity,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(17),
-                    child: Image.asset(imagePath, fit: BoxFit.cover),
-                  ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(17),
+                        child: Image.asset(imagePath, fit: BoxFit.cover),
+                      ),
+                    ),
+                    const Positioned(
+                      top: 10,
+                      right: 5,
+                      bottom: 10,
+                      width: 18,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Color(0x00000000),
+                                Color(0x1F000000),
+                                Color(0x00000000),
+                              ],
+                              stops: [0, .55, 1],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 12, 14, 10),
+                  padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -369,7 +402,7 @@ class _ExperienceCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
                         title,
                         style: TextStyle(
@@ -379,7 +412,7 @@ class _ExperienceCard extends StatelessWidget {
                           letterSpacing: -.2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         description,
                         maxLines: 2,
@@ -390,13 +423,20 @@ class _ExperienceCard extends StatelessWidget {
                           height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: tags
-                            .map((tag) => _OptionChip(label: tag))
-                            .toList(),
+                      const SizedBox(height: 4),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (var index = 0; index < tags.length; index++)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: index == tags.length - 1 ? 0 : 6,
+                                ),
+                                child: _OptionChip(label: tags[index]),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

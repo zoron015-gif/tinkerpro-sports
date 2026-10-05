@@ -68,9 +68,6 @@ CREATE TABLE IF NOT EXISTS merchant_profiles (
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-ALTER TABLE merchant_profiles
-  ADD COLUMN IF NOT EXISTS business_image LONGTEXT NULL;
-
 ALTER TABLE users
   MODIFY COLUMN avatar_url LONGTEXT NULL;
 
@@ -101,30 +98,6 @@ CREATE TABLE IF NOT EXISTS merchant_businesses (
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB;
-
-ALTER TABLE merchant_businesses
-  ADD COLUMN IF NOT EXISTS price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0
-  AFTER facility_type;
-
-ALTER TABLE merchant_businesses
-  ADD COLUMN IF NOT EXISTS slot_count INT UNSIGNED NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS sports_slots_json JSON NULL;
-
-ALTER TABLE merchant_businesses
-  ADD COLUMN IF NOT EXISTS image_urls JSON NULL
-  AFTER image_url;
-
-ALTER TABLE merchant_businesses
-  ADD COLUMN IF NOT EXISTS enabled TINYINT(1) NOT NULL DEFAULT 1
-  AFTER availability;
-
-ALTER TABLE merchant_businesses
-  ADD COLUMN IF NOT EXISTS opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours'
-  AFTER price_per_hour,
-  ADD COLUMN IF NOT EXISTS availability VARCHAR(50) NOT NULL DEFAULT 'Any'
-  AFTER opening_hours,
-  ADD COLUMN IF NOT EXISTS amenities_json JSON NULL
-  AFTER availability;
 
 CREATE TABLE IF NOT EXISTS sports_business_details (
   business_id BIGINT UNSIGNED NOT NULL,
@@ -197,6 +170,10 @@ CREATE TABLE IF NOT EXISTS bookings (
   occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1,
   booking_token_hash CHAR(64) NULL,
   ticket_token_hash CHAR(64) NULL,
+  idempotency_key VARCHAR(100) NULL,
+  idempotency_request_hash CHAR(64) NULL,
+  idempotency_response_json JSON NULL,
+  idempotency_response_status SMALLINT UNSIGNED NULL,
   payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
   payment_checkout_session_id VARCHAR(100) NULL,
   payment_reference VARCHAR(100) NULL,
@@ -208,16 +185,12 @@ CREATE TABLE IF NOT EXISTS bookings (
   KEY idx_bookings_customer (customer_id, booking_date, start_time),
   KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
   UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id),
+  UNIQUE KEY uq_bookings_customer_idempotency (customer_id, idempotency_key),
   CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
     ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
-
-ALTER TABLE bookings
-  ADD COLUMN IF NOT EXISTS sport_type VARCHAR(100) NULL,
-  ADD COLUMN IF NOT EXISTS slot_number INT UNSIGNED NULL,
-  ADD COLUMN IF NOT EXISTS occupies_full_studio TINYINT(1) NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS fitness_booking_attendance (
   booking_id BIGINT UNSIGNED NOT NULL,

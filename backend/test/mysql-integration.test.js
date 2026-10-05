@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { readFile } = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 const { test } = require('node:test');
@@ -12,11 +12,16 @@ const configured =
   process.env.MYSQL_TEST_DATABASE &&
   process.env.MYSQL_TEST_HOST &&
   process.env.MYSQL_TEST_USER;
+const required = process.env.MYSQL_TEST_REQUIRED === '1';
 
 test(
   'MySQL schema supports Fitness booking, conflict detection, and merchant approval',
-  { skip: !configured },
+  { skip: !configured && !required },
   async (t) => {
+    assert.ok(
+      configured,
+      'MYSQL_TEST_DATABASE, MYSQL_TEST_HOST, and MYSQL_TEST_USER are required',
+    );
     const databasePrefix = process.env.MYSQL_TEST_DATABASE;
     assert.match(
       databasePrefix,
@@ -62,6 +67,28 @@ test(
       databaseName,
     );
     await admin.query(schema);
+    const backendDirectory = path.join(__dirname, '..');
+    const migration = spawnSync(
+      process.execPath,
+      ['scripts/migrate.js'],
+      {
+        cwd: backendDirectory,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          DB_HOST: mysqlOptions.host,
+          DB_PORT: String(mysqlOptions.port),
+          DB_NAME: databaseName,
+          DB_USER: mysqlOptions.user,
+          DB_PASSWORD: mysqlOptions.password,
+        },
+      },
+    );
+    assert.equal(
+      migration.status,
+      0,
+      `Database migrations failed: ${migration.stderr || migration.stdout}`,
+    );
     db = await mysql.createConnection({
       ...mysqlOptions,
       database: databaseName,
@@ -69,7 +96,6 @@ test(
     });
 
     const port = await _freePort();
-    const backendDirectory = path.join(__dirname, '..');
     serverProcess = spawn(process.execPath, ['src/server.js'], {
       cwd: backendDirectory,
       env: {
@@ -159,6 +185,7 @@ test(
     const createdResponse = await _request(port, '/api/bookings', {
       method: 'POST',
       token: customerToken,
+      idempotencyKey: 'mysql-fitness-booking-attempt-0001',
       body: bookingRequest,
     });
     assert.equal(createdResponse.status, 201);
@@ -166,9 +193,19 @@ test(
     assert.equal(created.booking.total, 1500);
     const bookingId = created.booking.id;
 
+    const retryResponse = await _request(port, '/api/bookings', {
+      method: 'POST',
+      token: customerToken,
+      idempotencyKey: 'mysql-fitness-booking-attempt-0001',
+      body: bookingRequest,
+    });
+    assert.equal(retryResponse.status, 201);
+    assert.deepEqual(await retryResponse.json(), created);
+
     const conflictResponse = await _request(port, '/api/bookings', {
       method: 'POST',
       token: customerToken,
+      idempotencyKey: 'mysql-fitness-booking-attempt-0002',
       body: bookingRequest,
     });
     assert.equal(conflictResponse.status, 409);
@@ -241,12 +278,17 @@ async function _waitForServer(port, process, getStderr) {
   );
 }
 
-async function _request(port, route, { method = 'GET', token, body } = {}) {
+async function _request(
+  port,
+  route,
+  { method = 'GET', token, body, idempotencyKey } = {},
+) {
   return fetch(`http://127.0.0.1:${port}${route}`, {
     method,
     headers: {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(body ? { 'content-type': 'application/json' } : {}),
+      ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });

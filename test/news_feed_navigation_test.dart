@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -79,6 +80,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({'session_api_token': 'test-token'});
+    FlutterSecureStorage.setMockInitialValues({'session_api_token': 'test-token'});
   });
 
   testWidgets('News Feed filters open from the right and show active count', (
@@ -117,6 +119,7 @@ void main() {
     tester,
   ) async {
     final requests = <String>[];
+    final submittedReviews = <Map<String, dynamic>>[];
     final eventApi = AuthApi(
       client: MockClient((request) async {
         requests.add('${request.method} ${request.url.path}');
@@ -155,17 +158,69 @@ void main() {
             headers: {'content-type': 'application/json'},
           );
         }
-        if (request.url.path == '/api/businesses/88/heart') {
+        if (request.url.path == '/api/customer/venue-hearts') {
           return http.Response(
-            jsonEncode({'heartCount': 7, 'heartedByMe': true}),
+            jsonEncode({
+              'businesses': [
+                {'businessId': 88},
+              ],
+            }),
             200,
             headers: {'content-type': 'application/json'},
           );
         }
-        if (request.url.path == '/api/news-feed/88/reviews') {
+        if (request.url.path == '/api/bookings') {
           return http.Response(
-            jsonEncode({'reviews': []}),
+            jsonEncode({
+              'bookings': [
+                {
+                  'id': 180,
+                  'venueId': 88,
+                  'venueName': 'Cebu Event Hall',
+                  'businessType': 'Event',
+                  'eventType': 'Wedding',
+                  'status': 'finished',
+                },
+              ],
+            }),
             200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/businesses/88/heart') {
+          return http.Response(
+            jsonEncode({
+              'heartCount': request.method == 'DELETE' ? 5 : 7,
+              'heartedByMe': request.method != 'DELETE',
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (
+          request.url.path == '/api/news-feed/88/reviews' &&
+          request.method == 'GET'
+        ) {
+          return http.Response(
+            jsonEncode({'reviews': submittedReviews}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/news-feed/88/reviews' &&
+            request.method == 'POST') {
+          final payload = jsonDecode(request.body) as Map<String, dynamic>;
+          submittedReviews.add({
+            'id': 1,
+            'customerId': 42,
+            'rating': payload['rating'],
+            'comment': payload['comment'],
+            'firstName': 'Event',
+            'lastName': 'Guest',
+          });
+          return http.Response(
+            jsonEncode({'review': submittedReviews.last}),
+            201,
             headers: {'content-type': 'application/json'},
           );
         }
@@ -216,6 +271,15 @@ void main() {
       find.byKey(const ValueKey('news-feed-reviews-business-88')),
       findsOneWidget,
     );
+    expect(find.text('Review'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const ValueKey('news-feed-heart-business-88')),
+          )
+          .tooltip,
+      'Remove heart',
+    );
 
     await tester.drag(
       find.byKey(const ValueKey('news-feed-content-list')),
@@ -228,11 +292,12 @@ void main() {
     await tester.ensureVisible(heartButton);
     await tester.tap(heartButton);
     await tester.pumpAndSettle();
-    expect(requests, contains('PUT /api/businesses/88/heart'));
+    expect(requests, contains('DELETE /api/businesses/88/heart'));
     expect(
       find.byKey(const ValueKey('news-feed-heart-count-business-88')),
       findsOneWidget,
     );
+    expect(find.byTooltip('Heart venue'), findsOneWidget);
 
     final reviewsButton = find.byKey(
       const ValueKey('news-feed-reviews-business-88'),
@@ -241,9 +306,28 @@ void main() {
     await tester.tap(reviewsButton);
     await tester.pumpAndSettle();
     expect(requests, contains('GET /api/news-feed/88/reviews'));
-    Navigator.of(tester.element(find.text('Cebu Event Hall reviews'))).pop();
+    expect(
+      find.text('Cebu Event Hall ratings & reviews'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Rate this event venue after your completed booking'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('review-rating-star-4')));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Comment'),
+      'Great event venue.',
+    );
+    await tester.tap(find.text('Submit rating'));
     await tester.pumpAndSettle();
-
+    expect(requests, contains('POST /api/news-feed/88/reviews'));
+    expect(submittedReviews.single['rating'], 4);
+    expect(submittedReviews.single['comment'], 'Great event venue.');
+    Navigator.of(
+      tester.element(find.text('Cebu Event Hall ratings & reviews')),
+    ).pop();
+    await tester.pumpAndSettle();
     final eventExploreButton = find.byKey(
       const ValueKey('news-feed-explore-business-88'),
     );
@@ -254,14 +338,27 @@ void main() {
       find.byKey(const ValueKey('sports-venue-content-panel')),
       findsOneWidget,
     );
+    final eventContentPanel = tester.widget<Container>(
+      find.byKey(const ValueKey('sports-venue-content-panel')),
+    );
+    expect(
+      (eventContentPanel.decoration! as BoxDecoration).boxShadow,
+      isNotEmpty,
+    );
     expect(find.text('PHP 1200.00 / event'), findsWidgets);
     expect(find.text('Bring your own decorations.'), findsOneWidget);
-    expect(find.text('Event details'), findsOneWidget);
+    expect(find.text('Reserve event'), findsOneWidget);
     final eventTitle = tester.widget<Text>(
       find.byKey(const ValueKey('sports-venue-title')),
     );
     expect(eventTitle.style?.fontSize, 24);
     expect(eventTitle.style?.fontWeight, FontWeight.w800);
+
+    await tester.tap(find.text('Reserve event'));
+    await tester.pumpAndSettle();
+    expect(find.text('Book Event'), findsOneWidget);
+    expect(find.text('BOOKING CONFIGURATION'), findsOneWidget);
+    expect(find.text('Request event booking'), findsNothing);
   });
 
   testWidgets('Event dashboard lists event businesses without news posts', (
@@ -355,11 +452,144 @@ void main() {
     );
   });
 
+  testWidgets('Event dashboard remains available when heart-state route is missing', (
+    tester,
+  ) async {
+    final eventApi = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {
+                  'id': 94,
+                  'name': 'Event Garden',
+                  'businessType': 'Event',
+                  'eventTypes': ['Wedding'],
+                  'enabled': true,
+                  'heartCount': 2,
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/customer/venue-hearts') {
+          return http.Response(
+            '<!doctype html><html><body>Not Found</body></html>',
+            404,
+            headers: {'content-type': 'text/html'},
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: EventDashboardPage(api: eventApi)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Event Garden'), findsWidgets);
+    final eventCard = find.byKey(
+      const ValueKey('news-feed-card-business-94'),
+    );
+    await tester.scrollUntilVisible(
+      eventCard,
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('news-feed-content-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(eventCard, findsOneWidget);
+    expect(find.textContaining('Could not load the news feed'), findsNothing);
+  });
+
+  testWidgets('Event popular and highest-rated lists include event fees over 700', (
+    tester,
+  ) async {
+    final eventApi = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {
+                  'id': 95,
+                  'name': 'Grand Event Hall',
+                  'businessType': 'Event',
+                  'category': 'Wedding',
+                  'eventTypes': ['Wedding'],
+                  'eventFee': 2400,
+                  'enabled': true,
+                  'heartCount': 12,
+                  'reviewCount': 4,
+                  'averageRating': 4.8,
+                  'ratingUserCount': 4,
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/customer/venue-hearts') {
+          return http.Response(
+            jsonEncode({'businesses': []}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: EventDashboardPage(api: eventApi)),
+    );
+    await tester.pumpAndSettle();
+
+    for (final key in const [
+      'news-feed-see-all-most-popular',
+      'news-feed-see-all-highest-rated',
+    ]) {
+      final seeAll = find.byKey(ValueKey(key));
+      await tester.ensureVisible(seeAll);
+      await tester.tap(seeAll);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Grand Event Hall'), findsOneWidget);
+      final allVenuesList = find.byKey(const ValueKey('all-venues-list'));
+      expect(allVenuesList, findsOneWidget);
+      expect(
+        find.descendant(
+          of: allVenuesList,
+          matching: find.byKey(
+            const ValueKey('news-feed-card-business-95'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<AllVenuesPage>(find.byType(AllVenuesPage)).priceFilterLabel,
+        'Price (PHP / event)',
+      );
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('venue feed cards use a denser image and post summary', (
     tester,
   ) async {
     await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: api())));
-    await tester.pumpAndSettle();
+    for (var frame = 0; frame < 8; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     final card = find.byKey(const ValueKey('news-feed-card-business-42'));
     await tester.scrollUntilVisible(
@@ -378,6 +608,29 @@ void main() {
           .getSize(find.byKey(const ValueKey('news-feed-image-business-42')))
           .height,
       160,
+    );
+    for (final image in tester.widgetList<Image>(
+      find.descendant(of: card, matching: find.byType(Image)),
+    )) {
+      expect(image.filterQuality, FilterQuality.high);
+    }
+    final address = find.descendant(
+      of: card,
+      matching: find.text('Cebu City'),
+    );
+    final price = find.descendant(
+      of: card,
+      matching: find.text('PHP 200 / hr'),
+    );
+    expect(address, findsOneWidget);
+    expect(price, findsOneWidget);
+    expect(
+      tester.getTopLeft(price).dx,
+      greaterThan(tester.getTopLeft(address).dx),
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('Basketball news')),
+      findsNothing,
     );
     expect(tester.widget<Text>(find.text('Court updates').first).maxLines, 2);
     expect(tester.takeException(), isNull);
@@ -673,6 +926,13 @@ void main() {
       find.byKey(const ValueKey('sports-venue-content-panel')),
     );
     expect(contentTop.dy - heroBottom.dy, -26);
+    final sportsContentPanel = tester.widget<Container>(
+      find.byKey(const ValueKey('sports-venue-content-panel')),
+    );
+    expect(
+      (sportsContentPanel.decoration! as BoxDecoration).boxShadow,
+      isNotEmpty,
+    );
     final imageCountBottom = tester.getBottomLeft(
       find.byKey(const ValueKey('sports-venue-image-count')),
     );
@@ -802,6 +1062,13 @@ void main() {
       find.byKey(const ValueKey('sports-venue-hero-image')),
     );
     expect(contentTop.dy - heroBottom.dy, -26);
+    final fitnessContentPanel = tester.widget<Container>(
+      find.byKey(const ValueKey('sports-venue-content-panel')),
+    );
+    expect(
+      (fitnessContentPanel.decoration! as BoxDecoration).boxShadow,
+      isNotEmpty,
+    );
     for (final control in [
       Icons.arrow_back_ios_new_rounded,
       Icons.bookmark_border_rounded,
@@ -958,6 +1225,10 @@ void main() {
                     'id': 71,
                     'name': 'Pilates Studio',
                     'businessType': 'Fitness & Wellness',
+                    'category': 'Pilates',
+                    'address': 'Cebu City',
+                    'pricePerHour': 450,
+                    'averageRating': 4.8,
                     'enabled': true,
                     'latitude': 10.325,
                     'longitude': 123.901,
@@ -966,6 +1237,10 @@ void main() {
                     'id': 72,
                     'name': 'Yoga Wellness',
                     'businessType': 'Wellness',
+                    'category': 'Yoga',
+                    'address': 'Mandaue City',
+                    'pricePerHour': 300,
+                    'averageRating': 4.6,
                     'enabled': true,
                     'latitude': 10.333,
                     'longitude': 123.912,
@@ -1064,6 +1339,15 @@ void main() {
             .expand((layer) => layer.markers),
         hasLength(3),
       );
+      await tester.tap(find.byIcon(Icons.location_on).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Pilates Studio'), findsOneWidget);
+      expect(find.text('Pilates'), findsOneWidget);
+      expect(find.text('Cebu City'), findsOneWidget);
+      expect(find.text('PHP 450 / hr'), findsOneWidget);
+      expect(find.text('Get directions'), findsOneWidget);
+      await tester.tapAt(const Offset(12, 200));
+      await tester.pumpAndSettle();
 
       await tester.tap(
         find.byKey(const ValueKey('news-feed-toggle-court-map')),

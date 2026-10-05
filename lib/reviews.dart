@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
+import 'models/booking.dart';
 
 class ReviewsSheet extends StatefulWidget {
   const ReviewsSheet({
@@ -11,13 +12,16 @@ class ReviewsSheet extends StatefulWidget {
     required this.api,
     required this.businessId,
     required this.businessName,
+    this.isEvent = false,
     this.onSubmitted,
   });
 
   final AuthApi api;
   final int businessId;
   final String businessName;
-  final VoidCallback? onSubmitted;
+  final bool isEvent;
+  final void Function(double average, int reviewCount, int ratedUsers)?
+  onSubmitted;
 
   @override
   State<ReviewsSheet> createState() => _ReviewsSheetState();
@@ -47,16 +51,23 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
   }
 
   Future<void> _loadReviews() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final token = (await AppSession.load()).apiToken;
       if (token == null || token.isEmpty) {
         throw const AuthApiException('Please sign in to view reviews.', 401);
       }
-      final reviews = await widget.api.newsReviews(
-        token: token,
-        businessId: widget.businessId,
-      );
-      final bookings = await widget.api.customerBookingModels(token);
+      final results = await Future.wait([
+        widget.api.newsReviews(token: token, businessId: widget.businessId),
+        widget.api.customerBookingModels(token),
+      ]);
+      final reviews = results[0] as List<Map<String, dynamic>>;
+      final bookings = results[1] as List<Booking>;
       final venueBookings = bookings.where(
         (booking) => booking.venue.id == widget.businessId,
       );
@@ -104,11 +115,16 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
       );
       _comment.clear();
       await _loadReviews();
-      widget.onSubmitted?.call();
-      if (mounted) setState(() => _submitting = false);
+      final ratings = _ratingSummary;
+      widget.onSubmitted?.call(
+        ratings.average,
+        _reviews.length,
+        ratings.ratedUsers,
+      );
     } on Exception catch (error) {
-      if (mounted) setState(() => _submitting = false);
       _showError('$error');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -157,7 +173,9 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
               ),
               const SizedBox(height: 16),
               Text(
-                '${widget.businessName} reviews',
+                widget.isEvent
+                    ? '${widget.businessName} ratings & reviews'
+                    : '${widget.businessName} reviews',
                 style: const TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w900,
@@ -185,7 +203,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                     const Icon(Icons.star_rounded, color: Colors.amber),
                     const SizedBox(width: 12),
                     Text(
-                      '${_reviews.length} reviews · $ratedUsers rated',
+                      '${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'} · $ratedUsers rated',
                       style: const TextStyle(
                         color: Color(0xFF68748A),
                         fontSize: 12,
@@ -229,15 +247,33 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
     ),
   );
 
+  ({double average, int ratedUsers}) get _ratingSummary {
+    final ratings = _reviews
+        .map((review) => double.tryParse('${review['rating']}') ?? 0)
+        .toList();
+    final average = ratings.isEmpty
+        ? 0.0
+        : ratings.reduce((total, rating) => total + rating) / ratings.length;
+    final ratedUsers = _reviews
+        .map((review) => review['customerId'] ?? review['customer_id'])
+        .where((id) => id != null)
+        .toSet()
+        .length;
+    return (average: average, ratedUsers: ratedUsers);
+  }
+
   Widget _reviewList() {
     if (_reviews.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No reviews yet. Be the first to rate this venue after a completed booking.',
+          widget.isEvent
+              ? 'No ratings yet. Complete an event booking to leave the first rating and review.'
+              : 'No reviews yet. Be the first to rate this venue after a completed booking.',
           textAlign: TextAlign.center,
         ),
       );
     }
+
     return ListView.separated(
       itemCount: _reviews.length,
       separatorBuilder: (_, _) => const Divider(height: 20),
@@ -247,8 +283,8 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           '${review['firstName'] ?? ''}'.trim(),
           '${review['lastName'] ?? ''}'.trim(),
         ].where((value) => value.isNotEmpty).join(' ');
-        final avatarUrl =
-            '${review['avatarUrl'] ?? review['avatar_url'] ?? ''}'.trim();
+        final avatarUrl = '${review['avatarUrl'] ?? review['avatar_url'] ?? ''}'
+            .trim();
         final avatar = _reviewAvatar(avatarUrl);
         final rating = int.tryParse('${review['rating']}') ?? 0;
         final normalizedRating = rating.clamp(0, 5);
@@ -356,14 +392,18 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Leave a review after your completed booking',
+        Text(
+          widget.isEvent
+              ? 'Rate this event venue after your completed booking'
+              : 'Leave a review after your completed booking',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         Row(
           children: [
             for (var star = 1; star <= 5; star++)
               IconButton(
+                key: ValueKey('review-rating-star-$star'),
+                tooltip: 'Rate $star out of 5 stars',
                 onPressed: _submitting
                     ? null
                     : () => setState(() => _rating = star),
@@ -386,7 +426,13 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           width: double.infinity,
           child: FilledButton(
             onPressed: _submitting ? null : _submitReview,
-            child: Text(_submitting ? 'Submitting...' : 'Submit review'),
+            child: Text(
+              _submitting
+                  ? 'Submitting...'
+                  : widget.isEvent
+                  ? 'Submit rating'
+                  : 'Submit review',
+            ),
           ),
         ),
       ],

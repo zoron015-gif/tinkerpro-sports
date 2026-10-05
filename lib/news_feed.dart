@@ -84,6 +84,7 @@ class _NewsImageCarouselState extends State<_NewsImageCarousel> {
                     provider ??
                     const AssetImage('assets/court/pickle-court.jpg'),
                 fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
                 errorBuilder: (_, _, _) => const ColoredBox(
                   color: Color(0xFFFFE8D2),
                   child: Center(
@@ -233,6 +234,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
     }
     final businesses = await _businesses;
+    if (isEventFeed) {
+      try {
+        final heartedBusinessIds = await _api.customerHeartedBusinessIds(token);
+        _heartedVenueKeys
+          ..clear()
+          ..addAll(heartedBusinessIds.map((id) => '$id'));
+      } on AuthApiException catch (error) {
+        if (error.statusCode != 404) rethrow;
+        debugPrint(
+          'Event venue listings loaded without preloaded heart state because '
+          'the backend does not provide /api/customer/venue-hearts.',
+        );
+      }
+    }
     final enabledBusinessIds = businesses
         .where((business) => !_isMerchantDisabled(business))
         .map((business) => int.tryParse('${business['id'] ?? ''}'))
@@ -310,12 +325,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         final heartKey = _postHeartKey(posts.last);
         if (heartKey.isNotEmpty) {
           _heartCounts[heartKey] = _number(business['heartCount']).toInt();
-          if (business['heartedByMe'] == true ||
-              business['heartedByMe'] == 1 ||
-              business['heartedByMe'] == '1') {
-            _heartedVenueKeys.add(heartKey);
-          } else {
-            _heartedVenueKeys.remove(heartKey);
+          if (business.containsKey('heartedByMe')) {
+            if (business['heartedByMe'] == true ||
+                business['heartedByMe'] == 1 ||
+                business['heartedByMe'] == '1') {
+              _heartedVenueKeys.add(heartKey);
+            } else {
+              _heartedVenueKeys.remove(heartKey);
+            }
           }
         }
         listedBusinessIds.add(businessId);
@@ -1155,15 +1172,131 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     width: 40,
     height: 42,
     child: GestureDetector(
-      onTap: () => _openCourtMapLocation(
-        '${court.business['name'] ?? 'Court'}',
-        court.point,
-      ),
+      onTap: () => _openCourtMapLocation(court.business, court.point),
       child: const Icon(Icons.location_on, color: _newsOrange, size: 34),
     ),
   );
 
-  Future<void> _openCourtMapLocation(String name, LatLng point) async {
+  Future<void> _openCourtMapLocation(
+    Map<String, dynamic> business,
+    LatLng point,
+  ) async {
+    final name = '${business['name'] ?? business['businessName'] ?? 'Venue'}'
+        .trim();
+    final category = '${business['category'] ?? business['businessType'] ?? ''}'
+        .trim();
+    final address = '${business['address'] ?? ''}'.trim();
+    final price = _priceLabel(business);
+    final rating = _number(business['averageRating']);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              name.isEmpty ? 'Venue' : name,
+              style: const TextStyle(
+                color: _newsInk,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (category.isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                category,
+                style: const TextStyle(
+                  color: _newsMuted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            if (address.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: _newsOrange,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      address,
+                      style: const TextStyle(
+                        color: _newsInk,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (price != 'Price not listed')
+                  _mapDetailChip(Icons.sell_outlined, price),
+                if (rating > 0)
+                  _mapDetailChip(
+                    Icons.star_rounded,
+                    '${rating.toStringAsFixed(1)} rating',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  _launchCourtMapDirections(name, point);
+                },
+                icon: const Icon(Icons.directions_outlined),
+                label: const Text('Get directions'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mapDetailChip(IconData icon, String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF3F5F8),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: _newsOrange),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _newsInk,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _launchCourtMapDirections(String name, LatLng point) async {
     final uri = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
       'query': '${point.latitude},${point.longitude}',
@@ -1472,6 +1605,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           collectionDescription: widget.businessType == 'Sports'
               ? 'Browse every venue in this collection.'
               : 'Browse all ${widget.venueNoun} in this collection.',
+          priceFilterLabel:
+              widget.businessType.trim().toLowerCase() == 'event'
+              ? 'Price (PHP / event)'
+              : 'Price (PHP / hour)',
         ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
             SlideTransition(
@@ -1655,6 +1792,26 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           image.isEmpty
                               ? _miniImageFallback()
                               : _miniImage(image),
+                          const Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            height: 14,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0x00000000),
+                                      Color(0x26000000),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                           if (unavailable)
                             const ColoredBox(color: Color(0x55000000)),
                           if (unavailable)
@@ -1847,6 +2004,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         _imageProvider(value) ??
         const AssetImage('assets/court/pickle-court.jpg'),
     fit: BoxFit.cover,
+    filterQuality: FilterQuality.high,
     errorBuilder: (_, _, _) => _miniImageFallback(),
   );
 
@@ -2151,14 +2309,36 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 key: ValueKey('news-feed-image-${_venueIdentifier(post)}'),
                 width: double.infinity,
                 height: _newsCardImageHeight,
-                child: images.isNotEmpty
-                    ? _NewsImageCarousel(
-                        images: images,
-                        imageProvider: _imageProvider,
-                      )
-                    : image != null && image.isNotEmpty
-                    ? _image(image)
-                    : _imageFallback(),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    images.isNotEmpty
+                        ? _NewsImageCarousel(
+                            images: images,
+                            imageProvider: _imageProvider,
+                          )
+                        : image != null && image.isNotEmpty
+                        ? _image(image)
+                        : _imageFallback(),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 18,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Color(0x00000000), Color(0x26000000)],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               if (type.isNotEmpty)
                 Positioned(
@@ -2279,27 +2459,38 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ),
                   ],
                 ),
-                if (address.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        color: _newsMuted,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          address,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: _newsMuted, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Expanded(
+                      child: address.isEmpty
+                          ? const SizedBox.shrink()
+                          : Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_outlined,
+                                  color: _newsMuted,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    address,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: _newsMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(width: 8),
+                    _priceTag(priceLabel),
+                  ],
+                ),
                 if (_distanceLabel(post) case final distance?) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -2322,17 +2513,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   ),
                 ],
                 const SizedBox(height: 7),
-                _priceTag(priceLabel),
-                const SizedBox(height: 7),
-                Text(
-                  '${post['title'] ?? ''}',
-                  style: TextStyle(
-                    color: _newsInk,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
                 Text(
                   body,
                   maxLines: 2,
@@ -2406,7 +2586,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           ? null
                           : () => _showReviews(post, businessId),
                       icon: const Icon(Icons.rate_review_outlined, size: 16),
-                      label: const Text('Reviews'),
+                      label: Text(
+                        type.trim().toLowerCase() == 'event'
+                            ? 'Review'
+                            : 'Reviews',
+                      ),
                       style: TextButton.styleFrom(
                         foregroundColor: _newsInk,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -2681,6 +2865,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       height: _newsCardImageHeight,
       width: double.infinity,
       fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
       errorBuilder: (_, _, _) => _imageFallback(),
     );
   }
@@ -2761,8 +2946,18 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               savedItemType: 'event',
               amenitiesHeading: 'EVENT AMENITIES',
               isEvent: true,
-              primaryActionLabel: 'Event details',
-              onReserve: () => _showEventDetails(post, publishedBusiness),
+              primaryActionLabel: 'Reserve event',
+              onReserve: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                showDragHandle: true,
+                backgroundColor: const Color(0xFFF8F9FF),
+                builder: (_) => EventBookingPage(
+                  business: publishedBusiness,
+                  api: _api,
+                  asCheckoutSheet: true,
+                ),
+              ),
             ),
           ),
         );
@@ -2818,102 +3013,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         SnackBar(content: Text('Could not open venue page: $error')),
       );
     }
-  }
-
-  Future<void> _showEventDetails(
-    Map<String, dynamic> post,
-    Map<String, dynamic> business,
-  ) async {
-    final rootNavigator = Navigator.of(context);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: const Color(0xFFF8F9FF),
-      builder: (context) {
-        final name =
-            '${post['businessName'] ?? business['name'] ?? 'Event venue'}';
-        final category =
-            '${post['category'] ?? business['category'] ?? 'Event'}';
-        final address =
-            '${post['address'] ?? business['address'] ?? 'Address unavailable'}';
-        final details = '${post['details'] ?? business['details'] ?? ''}';
-        final fee =
-            post['eventFee'] ??
-            post['event_fee'] ??
-            business['eventFee'] ??
-            business['event_fee'];
-        final eventTypes = _stringListValue([
-          business['eventTypes'],
-          business['event_types'],
-        ]);
-        final attendanceMin =
-            business['attendanceMin'] ?? business['attendance_min'];
-        final attendanceMax =
-            business['attendanceMax'] ?? business['attendance_max'];
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('Event type: $category'),
-                if (eventTypes.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text('Available events: ${eventTypes.join(', ')}'),
-                ],
-                const SizedBox(height: 6),
-                Text('Location: $address'),
-                if (attendanceMin != null || attendanceMax != null) ...[
-                  const SizedBox(height: 6),
-                  Text('Capacity: ${attendanceMin ?? '—'}–${attendanceMax ?? '—'} guests'),
-                ],
-                if (fee != null) ...[
-                  const SizedBox(height: 6),
-                  Text('Price: PHP ${_number(fee).toStringAsFixed(0)} / event'),
-                ],
-                if (details.trim().isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(details),
-                ],
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      rootNavigator.push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => EventBookingPage(
-                            business: business,
-                            api: _api,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.event_available_rounded),
-                    label: const Text('Request event booking'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _newsOrange,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   // Retained for compatibility with older venue-post payloads.
@@ -3381,7 +3480,15 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           api: _api,
           businessId: businessId,
           businessName: '${post['businessName'] ?? ''}',
-          onSubmitted: _reload,
+          isEvent:
+              '${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event',
+          onSubmitted: (average, reviewCount, ratedUsers) {
+            setState(() {
+              post['averageRating'] = average;
+              post['reviewCount'] = reviewCount;
+              post['ratingUserCount'] = ratedUsers;
+            });
+          },
         ),
       );
 

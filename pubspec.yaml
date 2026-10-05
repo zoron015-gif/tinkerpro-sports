@@ -75,6 +75,7 @@ flutter:
   assets:
     - assets/tinker_logo.png
     - assets/google_logo.png
+    - assets/bg 1.png
 
     - assets/court/
     - assets/book-type/

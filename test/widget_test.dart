@@ -23,8 +23,20 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
 
     expect(find.text('Your sport.\nYour event.\nYour place.'), findsOneWidget);
+    final heroCard = tester.widget<Container>(
+      find.byKey(const ValueKey('overview-hero-card')),
+    );
+    expect(
+      (heroCard.decoration! as BoxDecoration).color,
+      const Color(0xFF192B50),
+    );
+    expect(
+      find.byKey(const ValueKey('assets/book-type/sports.jpg')),
+      findsNothing,
+    );
 
     await tester.scrollUntilVisible(
       find.text('Everything in one place'),
@@ -33,17 +45,108 @@ void main() {
     );
     expect(find.text('Everything in one place'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.text('Explore bookings'),
+      -200,
+      scrollable: find.byType(Scrollable),
+    );
     await tester.tap(find.text('Explore bookings'));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Continue with Google'), findsOneWidget);
+    final background = tester.widget<Image>(
+      find.byKey(const ValueKey('auth-background-image')),
+    );
+    expect((background.image as AssetImage).assetName, 'assets/bg 1.png');
+    expect(background.alignment, Alignment.center);
+    final panelFinder = find.byKey(const ValueKey('auth-form-panel'));
+    final panel = tester.widget<Container>(panelFinder);
+    final panelDecoration = panel.decoration! as BoxDecoration;
+    expect(
+      tester.getSize(panelFinder).width,
+      tester.view.physicalSize.width / tester.view.devicePixelRatio,
+    );
+    expect(panelDecoration.boxShadow, isNotEmpty);
+    expect(
+      panelDecoration.borderRadius,
+      const BorderRadius.vertical(top: Radius.circular(18)),
+    );
+    expect(
+      tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('auth-content-scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position
+          .maxScrollExtent,
+      lessThanOrEqualTo(1),
+    );
+    final loginEmailSize = tester.getSize(
+      find.byKey(const ValueKey('auth-field-email-address')),
+    );
+    final loginPasswordSize = tester.getSize(
+      find.byKey(const ValueKey('auth-field-password')),
+    );
+    final loginPrimarySize = tester.getSize(
+      find.byKey(const ValueKey('auth-primary-button')),
+    );
+    final loginSocialSize = tester.getSize(
+      find.byKey(const ValueKey('auth-social-button')),
+    );
+    final loginResetSlotSize = tester.getSize(
+      find.byKey(const ValueKey('auth-reset-slot')),
+    );
 
     await tester.tap(find.text('Register').first);
     await tester.pumpAndSettle();
 
     expect(find.text('Create your account'), findsOneWidget);
     expect(find.text('Merchant'), findsOneWidget);
+    expect(
+      tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('auth-content-scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position
+          .maxScrollExtent,
+      lessThan(270),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('auth-field-email-address'))),
+      loginEmailSize,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('auth-field-password'))),
+      loginPasswordSize,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('auth-primary-button'))),
+      loginPrimarySize,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('auth-social-button'))),
+      loginSocialSize,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('auth-reset-slot'))),
+      loginResetSlotSize,
+    );
+    expect(find.text('Continue securely with'), findsOneWidget);
 
     await tester.tap(find.text('Merchant'));
     await tester.pumpAndSettle();

@@ -371,6 +371,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     final editing = editingBusiness != null;
     final name = TextEditingController();
     final address = TextEditingController();
+    var locationManuallySelected = false;
     double? latitude = _mapCoordinate(
       editingBusiness?['latitude'] ?? editingBusiness?['lat'],
     );
@@ -510,6 +511,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     }
     name.text = editingBusiness?['name'] as String? ?? '';
     address.text = editingBusiness?['address'] as String? ?? '';
+    final originalAddress = address.text.trim();
     visitUrl.text =
         editingBusiness?['visitUrl'] as String? ??
         editingBusiness?['visit_url'] as String? ??
@@ -1180,7 +1182,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     decoration: const InputDecoration(
                                       labelText: 'Venue name (required)',
                                     ),
-                                    onChanged: (_) => setDialogState(() {}),
+                                    onChanged: (_) => setDialogState(() {
+                                      locationManuallySelected = false;
+                                    }),
                                     validator: (value) =>
                                         value == null || value.trim().isEmpty
                                         ? 'Enter a business name'
@@ -2043,6 +2047,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               setDialogState(() {
                                                 latitude = location.latitude;
                                                 longitude = location.longitude;
+                                                locationManuallySelected = true;
                                               });
                                             }
                                           },
@@ -2053,8 +2058,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           label: Text(
                                             latitude == null ||
                                                     longitude == null
-                                                ? 'Choose map pin'
-                                                : 'Update map pin',
+                                                ? 'Preview / adjust map pin'
+                                                : 'Adjust map pin',
                                           ),
                                           style: OutlinedButton.styleFrom(
                                             padding: const EdgeInsets.symmetric(
@@ -2101,7 +2106,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       alignment: Alignment.centerLeft,
                                       child: Text(
                                         latitude == null || longitude == null
-                                            ? 'Map pin is optional.'
+                                            ? 'We’ll pin the map from this address when you publish. You can adjust it here.'
                                             : 'Pinned at ${latitude!.toStringAsFixed(5)}, '
                                                   '${longitude!.toStringAsFixed(5)}',
                                         style: const TextStyle(
@@ -2847,13 +2852,34 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                   401,
                                 );
                               }
+                              var submittedLatitude = latitude;
+                              var submittedLongitude = longitude;
+                              final addressChanged =
+                                  address.text.trim() != originalAddress;
+                              if (!locationManuallySelected &&
+                                  (submittedLatitude == null ||
+                                      submittedLongitude == null ||
+                                      addressChanged)) {
+                                final addressLocation =
+                                    await geocodeVenueAddress(
+                                      address.text.trim(),
+                                    );
+                                if (addressLocation == null) {
+                                  setDialogState(
+                                    () => validationMessage = 'Could not locate this address. Check it or use Preview / adjust map pin to place the venue manually.',
+                                  );
+                                  return;
+                                }
+                                submittedLatitude = addressLocation.latitude;
+                                submittedLongitude = addressLocation.longitude;
+                              }
                               final payload = <String, dynamic>{
                                 'businessType': type,
                                 'name': name.text.trim(),
                                 'category': selectedCategory,
                                 'address': address.text.trim(),
-                                'latitude': latitude,
-                                'longitude': longitude,
+                                'latitude': submittedLatitude,
+                                'longitude': submittedLongitude,
                                 'visitUrl': visitUrl.text.trim(),
                                 'pricePerHour': type == 'Event'
                                     ? double.parse(price.text.trim())
@@ -4106,16 +4132,38 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           SizedBox(
             height: AppCardStyles.merchantImageHeight,
             width: double.infinity,
-            child: image == null || image.isEmpty
-                ? const ColoredBox(
-                    color: Color(0xFFFFE8D2),
-                    child: Icon(
-                      Icons.storefront_rounded,
-                      size: 48,
-                      color: _addOrange,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                image == null || image.isEmpty
+                    ? const ColoredBox(
+                        color: Color(0xFFFFE8D2),
+                        child: Icon(
+                          Icons.storefront_rounded,
+                          size: 48,
+                          color: _addOrange,
+                        ),
+                      )
+                    : Image(image: _imageProvider(image)!, fit: BoxFit.cover),
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 16,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00000000), Color(0x26000000)],
+                        ),
+                      ),
                     ),
-                  )
-                : Image(image: _imageProvider(image)!, fit: BoxFit.cover),
+                  ),
+                ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),

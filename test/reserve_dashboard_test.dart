@@ -1,8 +1,37 @@
-  import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/reserve_dashboard.dart';
 
 void main() {
+  testWidgets('booking options fit with minimal scrolling on a phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(home: ReserveDashboardPage()));
+    await tester.pumpAndSettle();
+
+    final verticalScrollable = find
+        .descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final position = tester.state<ScrollableState>(verticalScrollable).position;
+    expect(position.maxScrollExtent, lessThanOrEqualTo(48));
+    expect(
+      tester
+          .getBottomRight(find.byKey(const ValueKey('reserve-option-fitness')))
+          .dy,
+      lessThanOrEqualTo(
+        tester.getTopLeft(find.text('Continue to Fitness & Wellness')).dy,
+      ),
+    );
+  });
+
   testWidgets('header and benefit footer stay visible while options scroll', (
     tester,
   ) async {

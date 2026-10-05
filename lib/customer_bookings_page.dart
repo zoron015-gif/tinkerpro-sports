@@ -865,7 +865,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ),
           const SizedBox(height: 2),
           Text(
-            '${fitnessPlanType.isNotEmpty ? 'First visit' : isEvent ? '${booking['players']} guests' : '${booking['players']} players'} · '
+            '${fitnessPlanType.isNotEmpty
+                ? 'First visit'
+                : isEvent
+                ? '${booking['players']} guests'
+                : '${booking['players']} players'} · '
             '${booking['paymentMethod']}',
             style: const TextStyle(fontSize: 14, color: Color(0xFF4C5B72)),
           ),

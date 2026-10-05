@@ -20,6 +20,8 @@ const {
   createVerificationCode,
   hashBookingToken,
   hashVerificationCode,
+  isNumericInput,
+  isValidEmail,
   isValidRole,
   normalizeEmail,
   normalizeText,
@@ -29,7 +31,14 @@ const {
   publicUser,
 } = require('./normalizers');
 
+const {
+  newsPostResponse,
+  registerMerchantNewsRoutes,
+} = require('./routes/merchant_news_routes');
+const { registerAuthRoutes } = require('./routes/auth_routes');
+
 const app = express();
+app.set('json escape', true);
 const auditContextStorage = new AsyncLocalStorage();
 const port = Number(process.env.PORT || 3000);
 const customerBusinessesCacheKey = 'customer-businesses';
@@ -37,6 +46,17 @@ const customerBusinessesCacheTtlMs = 30_000;
 
 function bookingTransactionId(bookingId) {
   return `TP-TXN-${String(bookingId).padStart(8, '0')}`;
+}
+
+function positiveIntegerId(value) {
+  if (
+    (typeof value !== 'string' && typeof value !== 'number') ||
+    (typeof value === 'string' && !/^[1-9]\d*$/.test(value))
+  ) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function normalizeBusinessType(value) {
@@ -75,13 +95,11 @@ function setAuditActor(userId, role) {
   auditContext.actorRole = typeof role === 'string' ? role : null;
 }
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID ||
-  '451592121635-f7hgfk7plbi3mngvor1eenrup21mlbg5.apps.googleusercontent.com';
-
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set in the backend .env file.');
 }
 app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
   const userAgent = (req.get('user-agent') || '')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -108,31 +126,152 @@ app.use(express.json({
     }
   },
 }));
+app.use((req, res, next) => {
+  if (
+    req.body === undefined &&
+    req.path.startsWith('/api/') &&
+    ['POST', 'PUT', 'PATCH'].includes(req.method)
+  ) {
+    req.body = {};
+  }
+  if (
+    req.body !== undefined &&
+    (req.body === null ||
+      typeof req.body !== 'object' ||
+      Array.isArray(req.body))
+  ) {
+    return res.status(400).json({
+      error: 'The request body must be a JSON object.',
+    });
+  }
+  next();
+});
 
-const authRateLimitWindowMs = 15 * 60 * 1000;
-const authIpRateLimit = createRateLimiter({
-  windowMs: authRateLimitWindowMs,
-  maxRequests: 100,
-  keyGenerator: (req) => req.ip,
-});
-const accountEmailRateLimit = createRateLimiter({
-  windowMs: authRateLimitWindowMs,
-  maxRequests: 10,
-  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
-  message: 'Too many account requests. Please try again later.',
-});
-const verificationEmailRateLimit = createRateLimiter({
-  windowMs: authRateLimitWindowMs,
-  maxRequests: 8,
-  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
-  message: 'Too many verification attempts. Please try again later.',
-});
-const passwordRecoveryEmailRateLimit = createRateLimiter({
-  windowMs: authRateLimitWindowMs,
-  maxRequests: 8,
-  keyGenerator: (req) => normalizeEmail(req.body?.email) || req.ip,
-  message: 'Too many password recovery attempts. Please try again later.',
-});
+function validateBusinessPayload(body) {
+  const errors = [];
+  const textLimits = {
+    businessType: 50,
+    name: 255,
+    category: 100,
+    address: 500,
+    facilityType: 50,
+    hours: 100,
+    availability: 255,
+    visitUrl: 1000,
+    details: 1000,
+    imageUrl: 10 * 1024 * 1024,
+  };
+  for (const [field, limit] of Object.entries(textLimits)) {
+    const value = body[field];
+    if (value !== undefined && value !== null &&
+        (typeof value !== 'string' || value.length > limit)) {
+      errors.push(field);
+    }
+  }
+
+  for (const field of ['pricePerHour', 'eventFee', 'additionalPlayerFee']) {
+    const value = body[field];
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== '' &&
+      (!isNumericInput(value) ||
+        Number(value) < 0 ||
+        Number(value) > 99999999.99)
+    ) {
+      errors.push(field);
+    }
+  }
+  for (const [field, min, max] of [
+    ['includedPlayers', 0, 30],
+    ['slotCount', 1, 100],
+    ['attendanceMin', 1, 100000],
+    ['attendanceMax', 1, 100000],
+  ]) {
+    const value = body[field];
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== '' &&
+      (!isNumericInput(value) ||
+        !Number.isInteger(Number(value)) ||
+        Number(value) < min ||
+        Number(value) > max)
+    ) {
+      errors.push(field);
+    }
+  }
+  if (
+    isNumericInput(body.attendanceMin) &&
+    isNumericInput(body.attendanceMax) &&
+    Number(body.attendanceMin) > Number(body.attendanceMax)
+  ) {
+    errors.push('attendanceMin', 'attendanceMax');
+  }
+
+  for (const [field, maxItems, maxLength] of [
+    ['tags', 20, 255],
+    ['imageUrls', 20, 10 * 1024 * 1024],
+    ['eventTypes', 20, 100],
+    ['accessibilityNeeds', 20, 255],
+    ['parkingNeeds', 20, 255],
+    ['securityNeeds', 20, 255],
+  ]) {
+    const value = body[field];
+    if (
+      value !== undefined &&
+      (!Array.isArray(value) ||
+        value.length > maxItems ||
+        value.some(
+          (item) => typeof item !== 'string' || item.length > maxLength,
+        ))
+    ) {
+      errors.push(field);
+    }
+  }
+  for (const field of ['ratePeriods', 'sportsSlots', 'fitnessCategories', 'fitnessCoaches']) {
+    const value = body[field];
+    if (value !== undefined && (!Array.isArray(value) || value.length > 20)) {
+      errors.push(field);
+    }
+  }
+  if (body.ratePeriods !== undefined && Array.isArray(body.ratePeriods)) {
+    for (const period of body.ratePeriods) {
+      if (
+        !period ||
+        typeof period !== 'object' ||
+        Array.isArray(period) ||
+        typeof period.start !== 'string' ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(period.start) ||
+        typeof period.end !== 'string' ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(period.end) ||
+        Number(period.end.replace(':', '')) <=
+          Number(period.start.replace(':', '')) ||
+        !isNumericInput(period.pricePerHour) ||
+        Number(period.pricePerHour) <= 0 ||
+        Number(period.pricePerHour) > 99999999.99
+      ) {
+        errors.push('ratePeriods');
+        break;
+      }
+    }
+  }
+  if (
+    body.visitUrl !== undefined &&
+    body.visitUrl !== null &&
+    body.visitUrl !== ''
+  ) {
+    try {
+      const url = new URL(body.visitUrl);
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) {
+        errors.push('visitUrl');
+      }
+    } catch {
+      errors.push('visitUrl');
+    }
+  }
+  return [...new Set(errors)];
+}
 
 function hasValidPaymongoSignature(rawBody, signatureHeader, liveMode, secret) {
   if (!rawBody || !signatureHeader || !secret) return false;
@@ -169,14 +308,6 @@ function paymongoIsConfigured() {
     process.env.PAYMONGO_SUCCESS_URL,
     process.env.PAYMONGO_CANCEL_URL,
   ].every(isConfiguredPaymentValue);
-}
-
-function createToken(user) {
-  return jwt.sign(
-    { sub: String(user.id), email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
-  );
 }
 
 async function recordUserActivity(
@@ -239,8 +370,8 @@ app.get('/health', async (req, res, next) => {
 });
 
 app.patch('/api/messages/conversations/:id/state', requireAuth, async (req, res, next) => {
-  const conversationId = Number(req.params.id);
-  if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
+  const conversationId = positiveIntegerId(req.params.id);
+  if (conversationId === null) {
     return res.status(400).json({ error: 'The conversation is invalid.' });
   }
   const hasArchived = typeof req.body.archived === 'boolean';
@@ -288,8 +419,8 @@ app.patch('/api/messages/conversations/:id/state', requireAuth, async (req, res,
 });
 
 app.delete('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
-  const conversationId = Number(req.params.id);
-  if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
+  const conversationId = positiveIntegerId(req.params.id);
+  if (conversationId === null) {
     return res.status(400).json({ error: 'The conversation is invalid.' });
   }
   try {
@@ -308,9 +439,8 @@ app.delete('/api/messages/conversations/:id', requireAuth, async (req, res, next
 });
 
 app.post('/api/messages/blocks/:userId', requireAuth, async (req, res, next) => {
-  const blockedUserId = Number(req.params.userId);
-  if (!Number.isSafeInteger(blockedUserId) ||
-      blockedUserId <= 0 ||
+  const blockedUserId = positiveIntegerId(req.params.userId);
+  if (blockedUserId === null ||
       blockedUserId === Number(req.auth.sub)) {
     return res.status(400).json({ error: 'The user to block is invalid.' });
   }
@@ -334,8 +464,8 @@ app.post('/api/messages/blocks/:userId', requireAuth, async (req, res, next) => 
 });
 
 app.delete('/api/messages/blocks/:userId', requireAuth, async (req, res, next) => {
-  const blockedUserId = Number(req.params.userId);
-  if (!Number.isSafeInteger(blockedUserId) || blockedUserId <= 0) {
+  const blockedUserId = positiveIntegerId(req.params.userId);
+  if (blockedUserId === null) {
     return res.status(400).json({ error: 'The user to unblock is invalid.' });
   }
   try {
@@ -349,453 +479,29 @@ app.delete('/api/messages/blocks/:userId', requireAuth, async (req, res, next) =
   }
 });
 
-app.post(
-  '/api/auth/register',
-  authIpRateLimit,
-  accountEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const password = req.body.password;
-  const role = req.body.role || 'customer';
-  const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim() : null;
-  const lastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim() : null;
-
-  if (!email || !email.includes('@') || typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'A valid email and password of at least 8 characters are required.' });
-  }
-  if (role !== undefined && !isValidRole(role)) {
-    return res.status(400).json({ error: 'Role must be customer or merchant.' });
-  }
-
-  let connection;
-  try {
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-    const [existing] = await connection.execute(
-      'SELECT id, status FROM users WHERE email = ? LIMIT 1',
-      [email],
-    );
-    if (existing.length > 0) {
-      if (existing[0].status !== 'pending') {
-        await connection.rollback();
-        return res.status(409).json({ error: 'An account with this email already exists.' });
-      }
-
-      const passwordHash = await bcrypt.hash(password, 12);
-      await connection.execute(
-        `UPDATE users
-         SET password_hash = ?, role = ?, status = 'pending',
-             email_verified_at = NULL
-         WHERE id = ?`,
-        [passwordHash, role, existing[0].id],
-      );
-      await connection.execute(
-        `UPDATE email_verification_tokens
-         SET used_at = CURRENT_TIMESTAMP
-         WHERE user_id = ? AND used_at IS NULL`,
-        [existing[0].id],
-      );
-
-      const code = createVerificationCode();
-      await connection.execute(
-        `INSERT INTO email_verification_tokens
-         (user_id, token_hash, expires_at)
-         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
-        [existing[0].id, hashVerificationCode(code)],
-      );
-      setAuditActor(existing[0].id, role);
-      await recordUserActivity(
-        connection,
-        existing[0].id,
-        'account_registration',
-        'Registration restarted',
-        'A new email verification code was requested.',
-      );
-      await sendVerificationCode(email, code);
-      await connection.commit();
-
-      return res.status(200).json({
-        message: 'Registration restarted. Check your email for the new verification code.',
-        user: publicUser({
-          id: existing[0].id,
-          email,
-          first_name: null,
-          last_name: null,
-          role,
-          status: 'pending',
-        }),
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const [result] = await connection.execute(
-      `INSERT INTO users
-       (email, password_hash, first_name, last_name, role, status, email_verified_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', NULL)`,
-      [email, passwordHash, firstName, lastName, role],
-    );
-    const code = createVerificationCode();
-    await connection.execute(
-      `INSERT INTO email_verification_tokens
-       (user_id, token_hash, expires_at)
-       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
-      [result.insertId, hashVerificationCode(code)],
-    );
-    setAuditActor(result.insertId, role);
-    await recordUserActivity(
-      connection,
-      result.insertId,
-      'account_registration',
-      'Account created',
-      'Your account registration was submitted.',
-    );
-    await sendVerificationCode(email, code);
-    await connection.commit();
-
-    const user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role, status: 'pending' };
-    return res.status(201).json({
-      message: 'Registration successful. Check your email for the verification code.',
-      user: publicUser(user),
-    });
-  } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    return next(error);
-  } finally {
-    connection?.release();
-  }
-  },
-);
-
-app.post(
-  '/api/auth/verify-email',
-  authIpRateLimit,
-  verificationEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-
-  if (!email || !/^\d{6}$/.test(code)) {
-    return res.status(400).json({ error: 'A valid email and 6-digit verification code are required.' });
-  }
-
-  try {
-    const [rows] = await pool.execute(
-      `SELECT t.id AS token_id, t.token_hash, u.id, u.email, u.first_name, u.last_name, u.role
-       FROM email_verification_tokens t
-       INNER JOIN users u ON u.id = t.user_id
-       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
-       ORDER BY t.created_at DESC LIMIT 1`,
-      [email],
-    );
-    const token = rows[0];
-    if (!token || token.token_hash !== hashVerificationCode(code)) {
-      return res.status(400).json({ error: 'The verification code is invalid or expired.' });
-    }
-
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', token.id]);
-      await connection.execute('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [token.token_id]);
-      setAuditActor(token.id, token.role);
-      await recordUserActivity(
-        connection,
-        token.id,
-        'email_verified',
-        'Email verified',
-        'Your email address was verified.',
-      );
-      await connection.commit();
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-    const user = { ...token, status: 'active' };
-    return res.json({ message: 'Email verified successfully.', user: publicUser(user), token: createToken(user) });
-  } catch (error) {
-    return next(error);
-  }
-  },
-);
-
-app.post(
-  '/api/auth/resend-verification',
-  authIpRateLimit,
-  verificationEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required.' });
-  }
-
-  let connection;
-  try {
-    connection = await pool.getConnection();
-    const [users] = await connection.execute(
-      `SELECT id FROM users
-       WHERE email = ? AND status = 'pending' AND email_verified_at IS NULL
-       LIMIT 1`,
-      [email],
-    );
-    if (users.length === 0) {
-      return res.status(404).json({ error: 'No pending account was found for this email.' });
-    }
-
-    const code = createVerificationCode();
-    await connection.beginTransaction();
-    await connection.execute(
-      `UPDATE email_verification_tokens
-       SET used_at = CURRENT_TIMESTAMP
-       WHERE user_id = ? AND used_at IS NULL`,
-      [users[0].id],
-    );
-    await connection.execute(
-      `INSERT INTO email_verification_tokens
-       (user_id, token_hash, expires_at)
-       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
-      [users[0].id, hashVerificationCode(code)],
-    );
-    await sendVerificationCode(email, code);
-    await connection.commit();
-    return res.json({ message: 'A new verification code was sent.' });
-  } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    return next(error);
-  } finally {
-    connection?.release();
-  }
-  },
-);
-
-app.post(
-  '/api/auth/forgot-password',
-  authIpRateLimit,
-  passwordRecoveryEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: 'A valid email is required.' });
-  }
-
-  let connection;
-  try {
-    connection = await pool.getConnection();
-    const [users] = await connection.execute(
-      'SELECT id FROM users WHERE email = ? AND status != ? LIMIT 1',
-      [email, 'deleted'],
-    );
-    if (users.length === 0) {
-      return res.json({
-        message: 'If an account exists for this email, a password reset code was sent.',
-      });
-    }
-
-    const code = createVerificationCode();
-    await connection.beginTransaction();
-    await connection.execute(
-      `UPDATE password_reset_tokens
-       SET used_at = CURRENT_TIMESTAMP
-       WHERE user_id = ? AND used_at IS NULL`,
-      [users[0].id],
-    );
-    await connection.execute(
-      `INSERT INTO password_reset_tokens
-       (user_id, token_hash, expires_at)
-       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
-      [users[0].id, hashVerificationCode(code)],
-    );
-    await sendPasswordResetCode(email, code);
-    await connection.commit();
-    return res.json({
-      message: 'If an account exists for this email, a password reset code was sent.',
-    });
-  } catch (error) {
-    if (connection) await connection.rollback();
-    return next(error);
-  } finally {
-    connection?.release();
-  }
-  },
-);
-
-app.post(
-  '/api/auth/reset-password',
-  authIpRateLimit,
-  passwordRecoveryEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-  const password = req.body.password;
-  if (!email || !/^\d{6}$/.test(code) ||
-      typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({
-      error: 'Email, a 6-digit code, and a password of at least 8 characters are required.',
-    });
-  }
-
-  let connection;
-  try {
-    connection = await pool.getConnection();
-    const [tokens] = await connection.execute(
-      `SELECT t.id AS token_id, t.token_hash, u.id AS user_id, u.role
-       FROM password_reset_tokens t
-       INNER JOIN users u ON u.id = t.user_id
-       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
-       ORDER BY t.created_at DESC LIMIT 1`,
-      [email],
-    );
-    const token = tokens[0];
-    if (!token || token.token_hash !== hashVerificationCode(code)) {
-      return res.status(400).json({ error: 'The password reset code is invalid or expired.' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    await connection.beginTransaction();
-    await connection.execute(
-      'UPDATE users SET password_hash = ?, status = ?, email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP) WHERE id = ?',
-      [passwordHash, 'active', token.user_id],
-    );
-    await connection.execute(
-      'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [token.token_id],
-    );
-    setAuditActor(token.user_id, token.role);
-    await recordUserActivity(
-      connection,
-      token.user_id,
-      'password_changed',
-      'Password changed',
-      'Your account password was changed.',
-    );
-    await connection.commit();
-    return res.json({ message: 'Your password has been changed. You can now sign in.' });
-  } catch (error) {
-    if (connection) await connection.rollback();
-    return next(error);
-  } finally {
-    connection?.release();
-  }
-  },
-);
-
-app.post(
-  '/api/auth/verify-password-reset-code',
-  authIpRateLimit,
-  passwordRecoveryEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-  if (!email || !/^\d{6}$/.test(code)) {
-    return res.status(400).json({
-      error: 'A valid email and 6-digit verification code are required.',
-    });
-  }
-
-  try {
-    const [tokens] = await pool.execute(
-      `SELECT t.token_hash
-       FROM password_reset_tokens t
-       INNER JOIN users u ON u.id = t.user_id
-       WHERE u.email = ? AND t.used_at IS NULL AND t.expires_at > NOW()
-       ORDER BY t.created_at DESC LIMIT 1`,
-      [email],
-    );
-    const token = tokens[0];
-    if (!token || token.token_hash !== hashVerificationCode(code)) {
-      return res.status(400).json({
-        error: 'The password reset code is invalid or expired.',
-      });
-    }
-    return res.json({ message: 'Verification code accepted.' });
-  } catch (error) {
-    return next(error);
-  }
-  },
-);
-
-app.post(
-  '/api/auth/login',
-  authIpRateLimit,
-  accountEmailRateLimit,
-  async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const password = req.body.password;
-
-  if (!email || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Email and password are required.' });
-  }
-
-  try {
-    const [rows] = await pool.execute(
-      `SELECT id, email, password_hash, first_name, last_name, role, status
-       FROM users WHERE email = ? LIMIT 1`,
-      [email],
-    );
-    const user = rows[0];
-    const passwordMatches = user?.password_hash
-      ? await bcrypt.compare(password, user.password_hash)
-      : false;
-
-    if (!user || !passwordMatches) {
-      if (user) {
-        setAuditActor(user.id, user.role);
-        await recordUserActivity(
-          pool,
-          user.id,
-          'login_failed',
-          'Sign-in failed',
-          'A sign-in attempt failed because the credentials were invalid.',
-        );
-      }
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-    if (user.status !== 'active') {
-      setAuditActor(user.id, user.role);
-      await recordUserActivity(
-        pool,
-        user.id,
-        'login_blocked',
-        'Sign-in blocked',
-        `A sign-in attempt was blocked because the account is ${user.status}.`,
-      );
-      return res.status(403).json({ error: `This account is ${user.status}.` });
-    }
-
-    setAuditActor(user.id, user.role);
-    await pool.execute('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-    await recordUserActivity(
-      pool,
-      user.id,
-      'login',
-      'Signed in',
-      'You signed in to your account.',
-    );
-    return res.json({ user: publicUser(user), token: createToken(user) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-app.get('/api/auth/me', requireAuth, async (req, res, next) => {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT id, email, first_name, last_name, phone, avatar_url, address, hobby, role, status
-       FROM users WHERE id = ? LIMIT 1`,
-      [req.auth.sub],
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'User account not found.' });
-    }
-    return res.json({ user: publicUser(rows[0]) });
-  } catch (error) {
-    return next(error);
-  }
+registerAuthRoutes({
+  app,
+  pool,
+  bcrypt,
+  jwt,
+  createRateLimiter,
+  sendPasswordResetCode,
+  sendVerificationCode,
+  requireAuth,
+  normalizeEmail,
+  isValidEmail,
+  isValidRole,
+  createVerificationCode,
+  hashVerificationCode,
+  normalizeText,
+  publicUser,
+  recordUserActivity,
+  setAuditActor,
+  invalidateCustomerBusinesses,
+  fetch,
+  googleClientId: process.env.GOOGLE_CLIENT_ID ||
+    '451592121635-f7hgfk7plbi3mngvor1eenrup21mlbg5.apps.googleusercontent.com',
+  environment: process.env,
 });
 
 app.get('/api/activity-logs', requireAuth, async (req, res, next) => {
@@ -817,49 +523,13 @@ app.get('/api/activity-logs', requireAuth, async (req, res, next) => {
   }
 });
 
-app.put('/api/auth/profile', requireAuth, async (req, res, next) => {
-  const firstName = normalizeText(req.body.firstName, 100);
-  const lastName = normalizeText(req.body.lastName, 100);
-  const phone = normalizeText(req.body.phone, 30);
-  const address = normalizeText(req.body.address, 500);
-  const hobby = normalizeText(req.body.hobby, 255);
-  const avatarUrl = normalizeText(req.body.avatarUrl, 10 * 1024 * 1024);
-  if (!firstName) {
-    return res.status(400).json({ error: 'First name is required.' });
-  }
-
-  try {
-    await pool.execute(
-      'UPDATE users SET first_name = ?, last_name = ?, phone = ?, address = ?, hobby = ?, avatar_url = ? WHERE id = ?',
-      [firstName, lastName || null, phone || null, address || null, hobby || null, avatarUrl || null, req.auth.sub],
-    );
-    invalidateCustomerBusinesses();
-    await recordUserActivity(
-      pool,
-      req.auth.sub,
-      'profile_updated',
-      'Profile updated',
-      'Your profile details were changed.',
-    );
-    const [rows] = await pool.execute(
-      `SELECT id, email, first_name, last_name, phone, avatar_url, address, hobby, role, status
-       FROM users WHERE id = ? LIMIT 1`,
-      [req.auth.sub],
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'User account not found.' });
-    }
-    return res.json({ user: publicUser(rows[0]) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
 app.get('/api/messages/owner', requireAuth, async (req, res, next) => {
   const key = typeof req.query.businessKey === 'string'
     ? req.query.businessKey.trim()
     : '';
-  if (!key) return res.status(400).json({ error: 'A business key is required.' });
+  if (!key || key.length > 255) {
+    return res.status(400).json({ error: 'A valid business key is required.' });
+  }
   try {
     const [rows] = await pool.execute(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.role
@@ -966,19 +636,36 @@ app.get('/api/messages/conversations', requireAuth, async (req, res, next) => {
 });
 
 app.post('/api/messages/conversations', requireAuth, async (req, res, next) => {
-  const requestedIds = Array.isArray(req.body.participantIds)
-    ? req.body.participantIds.map(Number).filter(Number.isInteger)
+  const rawParticipantIds = req.body.participantIds;
+  const participantIdsValid = rawParticipantIds === undefined ||
+    (Array.isArray(rawParticipantIds) &&
+      rawParticipantIds.length <= 20 &&
+      rawParticipantIds.every((id) => positiveIntegerId(id) !== null));
+  const requestedIds = Array.isArray(rawParticipantIds)
+    ? rawParticipantIds.map(positiveIntegerId)
     : [];
-  const recipientId = Number(req.body.recipientId);
-  if (Number.isInteger(recipientId)) requestedIds.push(recipientId);
+  const recipientId = req.body.recipientId === undefined
+    ? null
+    : positiveIntegerId(req.body.recipientId);
+  if (recipientId !== null) requestedIds.push(recipientId);
   const participantIds = [...new Set(requestedIds)].filter(
     (id) => id !== Number(req.auth.sub),
   );
+  const requestedType = req.body.type;
   const isGroup = req.body.type === 'group' || participantIds.length > 1;
   const title = typeof req.body.title === 'string'
     ? req.body.title.trim().slice(0, 120)
     : null;
-  if (participantIds.length === 0) {
+  if (
+    !participantIdsValid ||
+    (req.body.recipientId !== undefined && recipientId === null) ||
+    (requestedType !== undefined &&
+      !['direct', 'group'].includes(requestedType)) ||
+    (req.body.title !== undefined &&
+      (typeof req.body.title !== 'string' || req.body.title.length > 120)) ||
+    (requestedType === 'direct' && participantIds.length > 1) ||
+    participantIds.length === 0
+  ) {
     return res.status(400).json({ error: 'A valid recipient is required.' });
   }
   try {
@@ -1072,7 +759,10 @@ async function isConversationMember(conversationId, userId) {
 
 app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) => {
   try {
-    const conversationId = Number(req.params.id);
+    const conversationId = positiveIntegerId(req.params.id);
+    if (conversationId === null) {
+      return res.status(400).json({ error: 'The conversation is invalid.' });
+    }
     const businessType = req.query.businessType === undefined
       ? null
       : normalizeBusinessType(req.query.businessType);
@@ -1140,9 +830,9 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
 });
 
 app.delete('/api/messages/conversations/:conversationId/messages/:messageId', requireAuth, async (req, res, next) => {
-  const conversationId = Number(req.params.conversationId);
-  const messageId = Number(req.params.messageId);
-  if (!Number.isInteger(conversationId) || !Number.isInteger(messageId)) {
+  const conversationId = positiveIntegerId(req.params.conversationId);
+  const messageId = positiveIntegerId(req.params.messageId);
+  if (conversationId === null || messageId === null) {
     return res.status(400).json({ error: 'The conversation and message are invalid.' });
   }
   try {
@@ -1188,7 +878,10 @@ app.post('/api/messages/conversations/:id', requireAuth, async (req, res, next) 
     return res.status(400).json({ error: 'The image attachment is invalid or too large.' });
   }
   try {
-    const conversationId = Number(req.params.id);
+    const conversationId = positiveIntegerId(req.params.id);
+    if (conversationId === null) {
+      return res.status(400).json({ error: 'The conversation is invalid.' });
+    }
     const [members] = await pool.execute(
       `SELECT 1 FROM conversation_members
        WHERE conversation_id = ? AND user_id = ? AND deleted_at IS NULL`,
@@ -1261,7 +954,7 @@ app.post('/api/messages/conversations/:id', requireAuth, async (req, res, next) 
   }
 });
 
-app.get('/api/merchant/profile', requireAuth, async (req, res, next) => {
+app.get('/api/merchant/profile', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
     const [rows] = await pool.execute(
       `SELECT u.id, u.email, u.first_name AS firstName, u.last_name AS lastName,
@@ -1311,9 +1004,43 @@ app.get('/api/merchant/profile', requireAuth, async (req, res, next) => {
   }
 });
 
-app.put('/api/merchant/profile', requireAuth, async (req, res, next) => {
+app.put('/api/merchant/profile', requireAuth, requireRole('merchant'), async (req, res, next) => {
   const text = (value, max = 255) =>
     typeof value === 'string' ? value.trim().slice(0, max) : '';
+  const profileTextLimits = {
+    businessName: 255,
+    businessType: 255,
+    registrationNumber: 255,
+    facilityType: 255,
+    address: 500,
+    contactEmail: 254,
+    ownerDesignation: 255,
+    firstName: 100,
+    lastName: 100,
+    phone: 30,
+    profileImage: 10 * 1024 * 1024,
+    businessImage: 10 * 1024 * 1024,
+  };
+  const invalidProfileText = Object.entries(profileTextLimits).some(
+    ([field, maxLength]) => req.body[field] != null &&
+      (typeof req.body[field] !== 'string' ||
+        req.body[field].length > maxLength),
+  );
+  const invalidCategories = req.body.categories !== undefined &&
+    (!Array.isArray(req.body.categories) ||
+      req.body.categories.length > 12 ||
+      req.body.categories.some(
+        (category) => typeof category !== 'string' || category.length > 100,
+      ));
+  if (
+    invalidProfileText ||
+    invalidCategories ||
+    (typeof req.body.contactEmail === 'string' &&
+      req.body.contactEmail.trim() !== '' &&
+      !isValidEmail(req.body.contactEmail.trim()))
+  ) {
+    return res.status(400).json({ error: 'One or more merchant profile fields are invalid.' });
+  }
   const businessName = text(req.body.businessName);
   const businessType = text(req.body.businessType);
   const registrationNumber = text(req.body.registrationNumber);
@@ -1392,7 +1119,7 @@ app.put('/api/merchant/profile', requireAuth, async (req, res, next) => {
   }
 });
 
-app.get('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+app.get('/api/merchant/businesses', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
     const [merchants] = await pool.execute(
       'SELECT id FROM users WHERE id = ? AND role = \'merchant\' LIMIT 1',
@@ -1586,9 +1313,9 @@ app.get('/api/businesses', async (req, res, next) => {
   }
 });
 
-app.delete('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
-  const id = Number.parseInt(req.params.id, 10);
-  if (!Number.isSafeInteger(id)) {
+app.delete('/api/merchant/businesses/:id', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const id = positiveIntegerId(req.params.id);
+  if (id === null) {
     return res.status(400).json({ error: 'Invalid business id.' });
   }
   try {
@@ -1614,9 +1341,9 @@ app.delete('/api/merchant/businesses/:id', requireAuth, async (req, res, next) =
   }
 });
 
-app.put('/api/merchant/businesses/:id/status', requireAuth, async (req, res, next) => {
-  const id = Number.parseInt(req.params.id, 10);
-  if (!Number.isSafeInteger(id) || typeof req.body.enabled !== 'boolean') {
+app.put('/api/merchant/businesses/:id/status', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const id = positiveIntegerId(req.params.id);
+  if (id === null || typeof req.body.enabled !== 'boolean') {
     return res.status(400).json({ error: 'Invalid business status.' });
   }
   try {
@@ -1642,10 +1369,17 @@ app.put('/api/merchant/businesses/:id/status', requireAuth, async (req, res, nex
   }
 });
 
-app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
-  const id = Number.parseInt(req.params.id, 10);
-  if (!Number.isSafeInteger(id)) {
+app.put('/api/merchant/businesses/:id', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const id = positiveIntegerId(req.params.id);
+  if (id === null) {
     return res.status(400).json({ error: 'Invalid business id.' });
+  }
+  const payloadErrors = validateBusinessPayload(req.body);
+  if (payloadErrors.length > 0) {
+    return res.status(400).json({
+      error: `Please correct the business fields: ${payloadErrors.join(', ')}.`,
+      validationErrors: payloadErrors,
+    });
   }
   const text = (value, max = 255) =>
     typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -1750,7 +1484,14 @@ app.put('/api/merchant/businesses/:id', requireAuth, async (req, res, next) => {
   }
 });
 
-app.post('/api/merchant/businesses', requireAuth, async (req, res, next) => {
+app.post('/api/merchant/businesses', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const payloadErrors = validateBusinessPayload(req.body);
+  if (payloadErrors.length > 0) {
+    return res.status(400).json({
+      error: `Please correct the business fields: ${payloadErrors.join(', ')}.`,
+      validationErrors: payloadErrors,
+    });
+  }
   const text = (value, max = 255) =>
     typeof value === 'string' ? value.trim().slice(0, max) : '';
   const businessType = text(req.body.businessType, 50);
@@ -1963,7 +1704,13 @@ app.post('/api/saved-items', requireAuth, async (req, res, next) => {
   const imageUrl = typeof req.body.imageUrl === 'string' ? req.body.imageUrl.trim() : null;
 
   if (!['sports', 'event', 'fitness'].includes(itemType) ||
-      !itemKey || !title || itemKey.length > 255 || title.length > 255) {
+      !itemKey || !title || itemKey.length > 255 || title.length > 255 ||
+      (req.body.subtitle != null &&
+        (typeof req.body.subtitle !== 'string' ||
+          req.body.subtitle.length > 500)) ||
+      (req.body.imageUrl != null &&
+        (typeof req.body.imageUrl !== 'string' ||
+          req.body.imageUrl.length > 10 * 1024 * 1024))) {
     return res.status(400).json({ error: 'A valid saved item is required.' });
   }
 
@@ -2006,7 +1753,8 @@ app.post('/api/saved-items', requireAuth, async (req, res, next) => {
 });
 
 app.delete('/api/saved-items/:itemType/:itemKey', requireAuth, async (req, res, next) => {
-  if (!['sports', 'event', 'fitness'].includes(req.params.itemType)) {
+  if (!['sports', 'event', 'fitness'].includes(req.params.itemType) ||
+      !req.params.itemKey || req.params.itemKey.length > 255) {
     return res.status(400).json({ error: 'Invalid saved item type.' });
   }
   try {
@@ -2024,145 +1772,6 @@ app.delete('/api/saved-items/:itemType/:itemKey', requireAuth, async (req, res, 
       );
     }
     return res.json({ message: 'Item removed.' });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Google OAuth: verify ID token from client and create or find user
-app.post(
-  '/api/auth/oauth/google',
-  authIpRateLimit,
-  accountEmailRateLimit,
-  async (req, res, next) => {
-  const idToken = req.body.idToken || req.body.id_token;
-  const role = typeof req.body.role === 'string'
-    ? req.body.role.trim().toLowerCase()
-    : undefined;
-  if (!idToken || typeof idToken !== 'string') {
-    return res.status(400).json({ error: 'idToken is required.' });
-  }
-  if (role !== undefined && !isValidRole(role)) {
-    return res.status(400).json({ error: 'Role must be customer or merchant.' });
-  }
-
-  try {
-    // Use Google's tokeninfo endpoint to validate the ID token. This avoids adding a new dependency.
-    const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-    const resp = await fetch(verifyUrl);
-    if (!resp.ok) {
-      return res.status(400).json({ error: 'Invalid Google ID token.' });
-    }
-    const payload = await resp.json();
-
-    if (payload.aud !== googleClientId) {
-      return res.status(400).json({ error: 'Google ID token was not issued for this application.' });
-    }
-
-    // Require verified email
-    const emailVerified = payload.email_verified === true || payload.email_verified === 'true';
-    if (!payload.email || !emailVerified) {
-      return res.status(400).json({ error: 'Google account email is not verified.' });
-    }
-
-    const email = normalizeEmail(payload.email);
-    const firstName = payload.given_name || null;
-    const lastName = payload.family_name || null;
-    const providerUserId = typeof payload.sub === 'string' ? payload.sub : '';
-    if (!providerUserId) {
-      return res.status(400).json({ error: 'Google ID token has no subject.' });
-    }
-
-    // Find or create the user
-    const [rows] = await pool.execute(
-      `SELECT id, email, first_name, last_name, role, status
-       FROM users WHERE email = ? LIMIT 1`,
-      [email],
-    );
-
-    let user;
-    if (rows.length === 0) {
-      if (!role) {
-        return res.status(409).json({
-          code: 'role_required',
-          error: 'Choose customer or merchant for this Google account.',
-        });
-      }
-      // Create a new user with active status and no password
-      const connection = await pool.getConnection();
-      try {
-        await connection.beginTransaction();
-        const [result] = await connection.execute(
-          `INSERT INTO users
-           (email, password_hash, first_name, last_name, role, status, email_verified_at)
-           VALUES (?, NULL, ?, ?, ?, 'active', CURRENT_TIMESTAMP)`,
-          [email, firstName, lastName, role],
-        );
-        await connection.commit();
-        user = { id: result.insertId, email, first_name: firstName, last_name: lastName, role, status: 'active' };
-      } catch (err) {
-        await connection.rollback();
-        throw err;
-      } finally {
-        connection.release();
-      }
-    } else {
-      user = rows[0];
-      if (!isValidRole(user.role)) {
-        if (!role) {
-          return res.status(409).json({
-            code: 'role_required',
-            error: 'Choose customer or merchant for this Google account.',
-          });
-        }
-        await pool.execute('UPDATE users SET role = ? WHERE id = ?', [
-          role,
-          user.id,
-        ]);
-        user.role = role;
-      }
-      // A Google account keeps the role chosen when it was first created.
-      // The role sent by a later login is intentionally ignored.
-      // If account exists but is not active, activate it (social sign-ins typically verify email)
-      if (user.status !== 'active') {
-        await pool.execute('UPDATE users SET status = ?, email_verified_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', user.id]);
-        user.status = 'active';
-      }
-    }
-
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute(
-        'UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [user.id],
-      );
-      await connection.execute(
-        `INSERT INTO user_identities
-         (user_id, provider, provider_user_id, provider_email, last_used_at)
-         VALUES (?, 'google', ?, ?, CURRENT_TIMESTAMP)
-         ON DUPLICATE KEY UPDATE
-           user_id = VALUES(user_id),
-           provider_email = VALUES(provider_email),
-           last_used_at = CURRENT_TIMESTAMP`,
-        [user.id, providerUserId, email],
-      );
-      setAuditActor(user.id, user.role);
-      await recordUserActivity(
-        connection,
-        user.id,
-        'login',
-        'Signed in with Google',
-        'You signed in to your account using Google.',
-      );
-      await connection.commit();
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-    return res.json({ user: publicUser(user), token: createToken(user) });
   } catch (error) {
     return next(error);
   }
@@ -2257,9 +1866,23 @@ function normalizeSportsSlots(value, totalSlots) {
   const names = new Set();
   const normalized = [];
   for (const item of value) {
-    if (!item || typeof item !== 'object') return null;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
     const sportType = typeof item.sportType === 'string'
-      ? item.sportType.trim().slice(0, 100) : '';
+      ? item.sportType.trim() : '';
+    if (
+      typeof item.sportType !== 'string' ||
+      item.sportType.length > 100 ||
+      (item.fullStudio !== undefined &&
+        typeof item.fullStudio !== 'boolean') ||
+      !isNumericInput(item.pricePerHour) ||
+      !isNumericInput(item.slotCount) ||
+      (item.includedPlayers !== undefined &&
+        !isNumericInput(item.includedPlayers)) ||
+      (item.additionalPlayerFee !== undefined &&
+        !isNumericInput(item.additionalPlayerFee))
+    ) {
+      return null;
+    }
     const pricePerHour = Number(item.pricePerHour);
     const fullStudio = item.fullStudio === true;
     const slotCount = Number(item.slotCount);
@@ -2312,7 +1935,8 @@ function configuredSportsSlots(venue) {
 app.get('/api/bookings/availability', requireAuth, requireRole('customer'), async (req, res, next) => {
   const venueId = Number(req.query.venueId);
   const bookingDate = req.query.date;
-  if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate)) {
+  if (!isNumericInput(req.query.venueId) ||
+      !Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate)) {
     return res.status(400).json({ error: 'venueId and a valid date are required.' });
   }
   try {
@@ -2345,7 +1969,8 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
   const bookingId = Number(req.body.bookingId);
   const paymentMethod = typeof req.body.paymentMethod === 'string'
     ? req.body.paymentMethod.trim() : '';
-  if (!Number.isSafeInteger(bookingId) || bookingId <= 0 ||
+  if (!isNumericInput(req.body.bookingId) ||
+      !Number.isSafeInteger(bookingId) || bookingId <= 0 ||
       !['gcash', 'paymaya'].includes(paymentMethod)) {
     return res.status(400).json({
       error: 'Choose GCash or PayMaya before starting online payment.',
@@ -2651,19 +2276,75 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     ? req.body.eventType.trim().slice(0, 100) : '';
   const requestedSlot = Number(req.body.slotNumber);
   const allowedPaymentMethods = new Set(['online', 'cash_on_arrival']);
-  if (!Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
+  const optionalTextFields = [
+    ['sportType', 100],
+    ['fitnessPlanType', 50],
+    ['fitnessCoachName', 100],
+    ['eventType', 100],
+  ];
+  const invalidOptionalText = optionalTextFields.some(([field, maxLength]) =>
+    req.body[field] !== undefined &&
+    (typeof req.body[field] !== 'string' ||
+      req.body[field].length > maxLength),
+  );
+  if (!isNumericInput(req.body.venueId ?? req.body.businessId) ||
+      !isNumericInput(req.body.durationHours ?? req.body.duration) ||
+      !isNumericInput(req.body.players) ||
+      (req.body.slotNumber !== undefined &&
+        !isNumericInput(req.body.slotNumber)) ||
+      !Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
       !validTime(startTime) || !Number.isFinite(durationHours) ||
       durationHours <= 0 || durationHours > 24 || !Number.isSafeInteger(players) ||
-      players <= 0 || players > 1000 || !allowedPaymentMethods.has(paymentMethod)) {
+      players <= 0 || players > 1000 || !allowedPaymentMethods.has(paymentMethod) ||
+      typeof req.body.paymentMethod !== 'string' ||
+      req.body.paymentMethod.length > 50 || invalidOptionalText) {
     return res.status(400).json({
       error: 'Choose Online payment or Cash on Arrival (COA).',
     });
   }
+  const idempotencyKey = req.get('Idempotency-Key')?.trim() ?? '';
+  if (!/^[A-Za-z0-9._:-]{16,100}$/.test(idempotencyKey)) {
+    return res.status(400).json({
+      error: 'A valid Idempotency-Key header is required for booking requests.',
+    });
+  }
+  const idempotencyRequestHash = crypto.createHash('sha256')
+    .update(JSON.stringify({
+      venueId,
+      bookingDate,
+      startTime,
+      durationHours,
+      players,
+      paymentMethod,
+      sportType,
+      slotNumber: Number.isFinite(requestedSlot) ? requestedSlot : null,
+      fitnessPlanType,
+      fitnessCoachName,
+      eventType: requestedEventType,
+    }))
+    .digest('hex');
 
   let connection;
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
+    const [priorRequests] = await connection.execute(
+      `SELECT idempotency_request_hash AS requestHash,
+              idempotency_response_json AS responseJson,
+              idempotency_response_status AS responseStatus
+       FROM bookings
+       WHERE customer_id = ? AND idempotency_key = ?
+       LIMIT 1 FOR UPDATE`,
+      [req.auth.sub, idempotencyKey],
+    );
+    if (priorRequests.length > 0) {
+      await connection.rollback();
+      return sendBookingIdempotencyReplay(
+        res,
+        priorRequests[0],
+        idempotencyRequestHash,
+      );
+    }
     const [venues] = await connection.execute(
       `SELECT b.id, b.merchant_id, b.name, b.category, b.business_type AS businessType,
               b.price_per_hour, b.event_fee AS eventFee,
@@ -2880,8 +2561,9 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         price_per_hour, total_amount, downpayment_amount,
         extra_player_charge, event_type, fitness_plan_type, fitness_category,
         fitness_coach_name, fitness_plan_price, fitness_coach_price,
-        booking_token_hash, payment_status, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        booking_token_hash, payment_status, idempotency_key,
+        idempotency_request_hash, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
        paymentMethod, selectedSportType, slotNumber, fullStudio ? 1 : 0,
        pricePerHour, total, downpayment, extraPlayerCharge,
@@ -2892,7 +2574,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
        isFitness ? fitnessPlanPrice : null,
        isFitness ? fitnessCoachPrice : null,
        hashBookingToken(bookingToken),
-       paymentMethod === 'online' ? 'unpaid' : 'not_required'],
+       paymentMethod === 'online' ? 'unpaid' : 'not_required',
+       idempotencyKey, idempotencyRequestHash],
     );
     const [conversation] = await connection.execute(
       'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
@@ -2974,8 +2657,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         },
       },
     );
-    await connection.commit();
-    return res.status(201).json({
+    const responseBody = {
       booking: { id: result.insertId, transactionId: bookingTransactionId(result.insertId),
         businessType: venue.businessType, venueId, date: bookingDate, startTime,
         durationHours, players, sportType: selectedSportType,
@@ -2988,14 +2670,60 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         fitnessPlanPrice: isFitness ? fitnessPlanPrice : null,
         fitnessCoachPrice: isFitness ? fitnessCoachPrice : null,
         status: 'pending', bookingToken },
-    });
+    };
+    const [idempotencyUpdate] = await connection.execute(
+      `UPDATE bookings
+       SET idempotency_response_json = ?, idempotency_response_status = 201
+       WHERE id = ? AND customer_id = ?`,
+      [JSON.stringify(responseBody), result.insertId, req.auth.sub],
+    );
+    if (idempotencyUpdate.affectedRows !== 1) {
+      throw new Error('Could not persist the booking idempotency response.');
+    }
+    await connection.commit();
+    return res.status(201).json(responseBody);
   } catch (error) {
     if (connection) await connection.rollback();
+    if (
+      error.code === 'ER_DUP_ENTRY' &&
+      String(error.message ?? '').includes('uq_bookings_customer_idempotency')
+    ) {
+      const [priorRequests] = await pool.execute(
+        `SELECT idempotency_request_hash AS requestHash,
+                idempotency_response_json AS responseJson,
+                idempotency_response_status AS responseStatus
+         FROM bookings
+         WHERE customer_id = ? AND idempotency_key = ?
+         LIMIT 1`,
+        [req.auth.sub, idempotencyKey],
+      );
+      if (priorRequests.length > 0) {
+        return sendBookingIdempotencyReplay(
+          res,
+          priorRequests[0],
+          idempotencyRequestHash,
+        );
+      }
+    }
     return next(error);
   } finally {
     connection?.release();
   }
 });
+
+function sendBookingIdempotencyReplay(res, priorRequest, requestHash) {
+  if (priorRequest.requestHash !== requestHash) {
+    return res.status(409).json({
+      error: 'This Idempotency-Key was already used for a different booking request.',
+    });
+  }
+  let responseBody = priorRequest.responseJson;
+  if (typeof responseBody === 'string') responseBody = JSON.parse(responseBody);
+  if (!responseBody || typeof responseBody !== 'object') {
+    throw new Error('Stored booking idempotency response is unavailable.');
+  }
+  return res.status(Number(priorRequest.responseStatus) || 201).json(responseBody);
+}
 
 app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
   try {
@@ -3137,8 +2865,8 @@ app.get(
   requireRole('customer'),
   async (req, res, next) => {
     try {
-      const bookingId = Number(req.params.bookingId);
-      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+      const bookingId = positiveIntegerId(req.params.bookingId);
+      if (bookingId === null) {
         return res.status(400).json({ error: 'Invalid booking ID.' });
       }
       const booking = await customerFitnessBookingForAttendance(
@@ -3164,9 +2892,9 @@ app.put(
   requireRole('customer'),
   async (req, res, next) => {
     try {
-      const bookingId = Number(req.params.bookingId);
+      const bookingId = positiveIntegerId(req.params.bookingId);
       const { date, status } = req.params;
-      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+      if (bookingId === null) {
         return res.status(400).json({ error: 'Invalid booking ID.' });
       }
       if (!['present', 'absent'].includes(req.body?.status)) {
@@ -3205,9 +2933,9 @@ app.delete(
   requireRole('customer'),
   async (req, res, next) => {
     try {
-      const bookingId = Number(req.params.bookingId);
+      const bookingId = positiveIntegerId(req.params.bookingId);
       const { date } = req.params;
-      if (!Number.isSafeInteger(bookingId) || bookingId < 1) {
+      if (bookingId === null) {
         return res.status(400).json({ error: 'Invalid booking ID.' });
       }
       const booking = await customerFitnessBookingForAttendance(
@@ -3589,206 +3317,16 @@ app.patch('/api/merchant/bookings/:id/finish', requireAuth, requireRole('merchan
   } catch (error) { return next(error); }
 });
 
-// Merchant news posts and the customer news feed.
-function newsPostResponse(row) {
-  const parseArray = (value) => {
-    if (Array.isArray(value)) return value;
-    if (typeof value !== 'string' || value.trim() === '') return [];
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-  return {
-    id: Number(row.id),
-    businessId: Number(row.business_id),
-    status: row.status,
-    title: row.title,
-    body: row.body,
-    imageUrl: row.image_url || row.business_image_url || null,
-    businessName: row.business_name || row.venue_name,
-    businessType: row.business_type || null,
-    category: row.business_category || null,
-    address: row.business_address || row.venue_address,
-    facilityType: row.facility_type || null,
-    hours: row.opening_hours || null,
-    availability: row.availability || null,
-    pricePerHour: row.price_per_hour ?? null,
-    slotCount: Number(row.slot_count || 1),
-    sportsSlots: parseArray(row.sports_slots_json),
-    eventFee: row.event_fee ?? null,
-    eventTypes: parseArray(row.event_types_json),
-    ratePeriods: parseArray(row.rate_periods),
-    tags: parseArray(row.amenities_json),
-    details: row.business_details || null,
-    imageUrls: parseArray(row.image_urls),
-    businessImageUrl: row.business_image_url || null,
-    visitUrl: row.visit_url || null,
-    latitude:
-      row.latitude === null || row.latitude === undefined
-        ? null
-        : Number(row.latitude),
-    longitude:
-      row.longitude === null || row.longitude === undefined
-        ? null
-        : Number(row.longitude),
-    merchantName: [row.merchant_first_name, row.merchant_last_name]
-      .filter(Boolean)
-      .join(' ') || 'Venue owner',
-    merchantEmail: row.merchant_email || null,
-    merchantPhone: row.merchant_phone || null,
-    merchantAvatarUrl: row.merchant_avatar_url || null,
-    enabled: !(
-      row.enabled === false ||
-      row.enabled === 0 ||
-      row.enabled === '0' ||
-      row.enabled === 'false' ||
-      row.enabled === 'FALSE'
-    ),
-    businessEnabled: !(
-      row.enabled === false ||
-      row.enabled === 0 ||
-      row.enabled === '0' ||
-      row.enabled === 'false' ||
-      row.enabled === 'FALSE'
-    ),
-    averageRating: Number(row.average_rating || 0),
-    reviewCount: Number(row.review_count || 0),
-    ratingUserCount: Number(row.rating_user_count || 0),
-    heartCount: Number(row.heart_count || 0),
-    heartedByMe:
-      row.hearted_by_me === true ||
-      row.hearted_by_me === 1 ||
-      row.hearted_by_me === '1',
-  };
-}
-
-async function merchantNewsPosts(req, res, next) {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT n.*, b.name AS business_name, b.business_type,
-              b.category AS business_category, b.address AS business_address,
-              b.latitude, b.longitude,
-              b.facility_type, b.opening_hours, b.availability,
-              b.price_per_hour, b.event_fee, b.rate_periods,
-              b.slot_count, b.sports_slots_json,
-              b.amenities_json, b.details AS business_details,
-              b.image_url AS business_image_url, b.image_urls, b.enabled,
-              b.visit_url
-       FROM merchant_news n
-       INNER JOIN merchant_businesses b ON b.id = n.business_id
-       WHERE b.merchant_id = ? ORDER BY n.created_at DESC`,
-      [req.auth.sub],
-    );
-    return res.json({ posts: rows.map(newsPostResponse) });
-  } catch (error) { return next(error); }
-}
-
-async function createMerchantNewsPost(req, res, next) {
-  const businessId = Number(req.body.businessId ?? req.body.venueId);
-  const title = normalizeText(req.body.title, 255);
-  const body = normalizeText(req.body.body, 5000);
-  const status = req.body.status || 'published';
-  if (!Number.isSafeInteger(businessId) || businessId <= 0 || !title || !body ||
-      !['draft', 'published', 'archived'].includes(status)) {
-    return res.status(400).json({ error: 'businessId, title, body, and a valid status are required.' });
-  }
-  try {
-    const [businesses] = await pool.execute(
-      'SELECT id, image_url FROM merchant_businesses WHERE id = ? AND merchant_id = ? LIMIT 1',
-      [businessId, req.auth.sub],
-    );
-    if (!businesses[0]) return res.status(404).json({ error: 'Business not found.' });
-    const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024) || businesses[0].image_url || null;
-    const [result] = await pool.execute(
-      `INSERT INTO merchant_news (business_id, title, body, image_url, status)
-       VALUES (?, ?, ?, ?, ?)`,
-      [businessId, title, body, imageUrl, status],
-    );
-    invalidateCustomerBusinesses();
-    await recordUserActivity(
-      pool,
-      req.auth.sub,
-      'news_post_created',
-      'News post created',
-      `News post #${result.insertId} was created for business #${businessId}.`,
-      {
-        venueId: businessId,
-        details: {
-          businessId,
-          newsPostId: result.insertId,
-          status,
-        },
-      },
-    );
-    return res.status(201).json({ id: result.insertId, message: 'News post created.' });
-  } catch (error) { return next(error); }
-}
-
-async function updateMerchantNewsPost(req, res, next) {
-  const id = Number(req.params.id);
-  const title = normalizeText(req.body.title, 255);
-  const body = normalizeText(req.body.body, 5000);
-  const status = req.body.status || 'draft';
-  if (!Number.isSafeInteger(id) || id <= 0 || !title || !body ||
-      !['draft', 'published', 'archived'].includes(status)) {
-    return res.status(400).json({ error: 'A valid title, body, and status are required.' });
-  }
-  try {
-    const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024);
-    const [result] = await pool.execute(
-      `UPDATE merchant_news n INNER JOIN merchant_businesses b ON b.id = n.business_id
-       SET n.title = ?, n.body = ?, n.status = ?, n.image_url = COALESCE(NULLIF(?, ''), b.image_url)
-       WHERE n.id = ? AND b.merchant_id = ?`,
-      [title, body, status, imageUrl, id, req.auth.sub],
-    );
-    if (!result.affectedRows) return res.status(404).json({ error: 'News post not found.' });
-    invalidateCustomerBusinesses();
-    await recordUserActivity(
-      pool,
-      req.auth.sub,
-      'news_post_updated',
-      'News post updated',
-      `News post #${id} was updated.`,
-      { details: { newsPostId: id, status } },
-    );
-    return res.json({ message: 'News post updated.' });
-  } catch (error) { return next(error); }
-}
-
-async function deleteMerchantNewsPost(req, res, next) {
-  const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid news post id.' });
-  try {
-    const [result] = await pool.execute(
-      `DELETE n FROM merchant_news n INNER JOIN merchant_businesses b ON b.id = n.business_id
-       WHERE n.id = ? AND b.merchant_id = ?`,
-      [id, req.auth.sub],
-    );
-    if (!result.affectedRows) return res.status(404).json({ error: 'News post not found.' });
-    invalidateCustomerBusinesses();
-    await recordUserActivity(
-      pool,
-      req.auth.sub,
-      'news_post_deleted',
-      'News post deleted',
-      `News post #${id} was deleted.`,
-      { details: { newsPostId: id } },
-    );
-    return res.json({ message: 'News post deleted.' });
-  } catch (error) { return next(error); }
-}
-
-app.get('/api/merchant/news', requireAuth, requireRole('merchant'), merchantNewsPosts);
-app.post('/api/merchant/news', requireAuth, requireRole('merchant'), createMerchantNewsPost);
-app.put('/api/merchant/news/:id', requireAuth, requireRole('merchant'), updateMerchantNewsPost);
-app.delete('/api/merchant/news/:id', requireAuth, requireRole('merchant'), deleteMerchantNewsPost);
-app.get('/api/merchant/news-posts', requireAuth, requireRole('merchant'), merchantNewsPosts);
-app.post('/api/merchant/news-posts', requireAuth, requireRole('merchant'), createMerchantNewsPost);
-app.put('/api/merchant/news-posts/:id', requireAuth, requireRole('merchant'), updateMerchantNewsPost);
-app.delete('/api/merchant/news-posts/:id', requireAuth, requireRole('merchant'), deleteMerchantNewsPost);
+registerMerchantNewsRoutes({
+  app,
+  pool,
+  requireAuth,
+  requireRole,
+  positiveIntegerId,
+  normalizeText,
+  invalidateCustomerBusinesses,
+  recordUserActivity,
+});
 
 async function customerNewsFeed(req, res, next) {
   try {
@@ -3830,8 +3368,8 @@ async function customerNewsFeed(req, res, next) {
 }
 
 async function setVenueHeart(req, res, next, hearted) {
-  const businessId = Number(req.params.businessId);
-  if (!Number.isSafeInteger(businessId) || businessId <= 0) {
+  const businessId = positiveIntegerId(req.params.businessId);
+  if (businessId === null) {
     return res.status(400).json({ error: 'A valid venue is required.' });
   }
   try {
@@ -3888,6 +3426,24 @@ async function setVenueHeart(req, res, next, hearted) {
   }
 }
 
+app.get(
+  '/api/customer/venue-hearts',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    try {
+      const [rows] = await pool.execute(
+        `SELECT business_id AS businessId
+         FROM venue_hearts WHERE user_id = ?`,
+        [req.auth.sub],
+      );
+      return res.json({ businesses: rows });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
 app.put(
   '/api/businesses/:businessId/heart',
   requireAuth,
@@ -3906,10 +3462,15 @@ app.get('/api/customer/news', requireAuth, requireRole('customer'), customerNews
 app.get('/api/news-feed', requireAuth, requireRole('customer'), customerNewsFeed);
 
 async function submitCustomerReview(req, res, next) {
-  const bookingId = Number(req.body.bookingId);
+  const bookingId = positiveIntegerId(req.body.bookingId);
   const rating = Number(req.body.rating);
   const comment = normalizeText(req.body.comment, 2000) || null;
-  if (!Number.isSafeInteger(bookingId) || bookingId <= 0 || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+  if (bookingId === null ||
+      !isNumericInput(req.body.rating) ||
+      !Number.isInteger(rating) || rating < 1 || rating > 5 ||
+      (req.body.comment != null &&
+        (typeof req.body.comment !== 'string' ||
+          req.body.comment.length > 2000))) {
     return res.status(400).json({ error: 'A valid bookingId and rating from 1 to 5 are required.' });
   }
   try {
@@ -3943,8 +3504,8 @@ async function submitCustomerReview(req, res, next) {
 }
 
 async function listBusinessReviews(req, res, next) {
-  const businessId = Number(req.params.businessId);
-  if (!Number.isSafeInteger(businessId) || businessId <= 0) {
+  const businessId = positiveIntegerId(req.params.businessId);
+  if (businessId === null) {
     return res.status(400).json({ error: 'Invalid business id.' });
   }
   try {
@@ -3962,16 +3523,24 @@ async function listBusinessReviews(req, res, next) {
 }
 
 async function submitBusinessReview(req, res, next) {
-  const businessId = Number(req.params.businessId);
+  const businessId = positiveIntegerId(req.params.businessId);
   const rating = Number(req.body.rating);
   const comment = normalizeText(req.body.comment, 2000) || null;
-  if (!Number.isSafeInteger(businessId) || businessId <= 0 ||
-      !Number.isInteger(rating) || rating < 1 || rating > 5) {
+  if (businessId === null ||
+      !isNumericInput(req.body.rating) ||
+      !Number.isInteger(rating) || rating < 1 || rating > 5 ||
+      (req.body.comment != null &&
+        (typeof req.body.comment !== 'string' ||
+          req.body.comment.length > 2000))) {
     return res.status(400).json({ error: 'A valid business id and rating from 1 to 5 are required.' });
   }
   try {
     const [bookings] = await pool.execute(
-      `SELECT b.id FROM bookings b
+      `SELECT b.id, b.venue_id AS venueId, v.name AS venueName,
+              COALESCE(b.sport_type, v.category) AS sportType,
+              b.booking_date AS bookingDate, b.start_time AS startTime
+       FROM bookings b
+       INNER JOIN merchant_businesses v ON v.id = b.venue_id
        LEFT JOIN venue_reviews r ON r.booking_id = b.id AND r.customer_id = b.customer_id
        WHERE b.venue_id = ? AND b.customer_id = ? AND b.status = 'finished'
          AND r.id IS NULL ORDER BY b.booking_date DESC, b.id DESC LIMIT 1`,
@@ -4023,11 +3592,20 @@ app.post('/api/reviews', requireAuth, requireRole('customer'), submitCustomerRev
 app.post('/api/customer/reviews', requireAuth, requireRole('customer'), submitCustomerReview);
 
 app.use((error, req, res, next) => {
-  console.error(error);
+  const requestId = auditContextStorage.getStore()?.requestId;
+  console.error('API request failed.', {
+    requestId,
+    method: req.method,
+    path: req.path,
+    error,
+  });
   if (error.type === 'entity.too.large') {
     return res.status(413).json({
       error: 'The selected images are too large. Choose fewer or smaller images.',
     });
+  }
+  if (error.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'The request body contains invalid JSON.' });
   }
   if (
     error.code === 'EAUTH' ||
@@ -4036,557 +3614,26 @@ app.use((error, req, res, next) => {
     error.responseCode === 535
   ) {
     return res.status(503).json({
-      error:
-        'We could not send the verification email. Check that SMTP_USER is the Gmail sender address and SMTP_APP_PASSWORD is a valid 16-character Gmail app password.',
+      error: 'We could not send the verification email. Please try again later.',
     });
   }
   return res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-async function ensureMerchantBusinessesSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS merchant_businesses (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      merchant_id BIGINT UNSIGNED NOT NULL,
-      business_type VARCHAR(50) NOT NULL,
-      name VARCHAR(255) NOT NULL,
-      category VARCHAR(100) NOT NULL,
-      address VARCHAR(500) NOT NULL,
-      latitude DOUBLE NULL,
-      longitude DOUBLE NULL,
-      facility_type VARCHAR(50) NOT NULL,
-      price_per_hour DECIMAL(10, 2) NOT NULL DEFAULT 0,
-      slot_count INT UNSIGNED NOT NULL DEFAULT 1,
-      sports_slots_json JSON NULL,
-      event_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
-      opening_hours VARCHAR(100) NOT NULL DEFAULT 'Open hours',
-      availability VARCHAR(255) NOT NULL DEFAULT 'Any',
-      enabled TINYINT(1) NOT NULL DEFAULT 1,
-      rate_periods JSON NULL,
-      included_players INT UNSIGNED NOT NULL DEFAULT 0,
-      additional_player_fee DECIMAL(10, 2) NOT NULL DEFAULT 0,
-      amenities_json JSON NULL,
-      details VARCHAR(1000) NULL,
-      image_url LONGTEXT NULL,
-      image_urls JSON NULL,
-      visit_url VARCHAR(1000) NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_merchant_businesses_merchant (merchant_id, created_at),
-      CONSTRAINT fk_merchant_businesses_user
-        FOREIGN KEY (merchant_id) REFERENCES users (id)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await ensureTableColumn(
-    'merchant_businesses',
-    'included_players',
-    'INT UNSIGNED NOT NULL DEFAULT 0',
-  );
-  await ensureTableColumn(
-    'merchant_businesses',
-    'additional_player_fee',
-    'DECIMAL(10, 2) NOT NULL DEFAULT 0',
-  );
-  await ensureTableColumn('conversation_members', 'archived_at', 'DATETIME NULL');
-  await ensureTableColumn('conversation_members', 'deleted_at', 'DATETIME NULL');
-  await ensureTableColumn(
-    'conversation_members',
-    'manually_unread_at',
-    'DATETIME NULL',
-  );
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS user_blocks (
-      blocker_id BIGINT UNSIGNED NOT NULL,
-      blocked_user_id BIGINT UNSIGNED NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (blocker_id, blocked_user_id),
-      KEY idx_user_blocks_blocked (blocked_user_id),
-      CONSTRAINT fk_user_blocks_blocker FOREIGN KEY (blocker_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_user_blocks_blocked FOREIGN KEY (blocked_user_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-
-  const columns = [
-    ['price_per_hour', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
-    ['slot_count', 'INT UNSIGNED NOT NULL DEFAULT 1'],
-    ['sports_slots_json', 'JSON NULL'],
-    ['event_fee', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
-    ['opening_hours', "VARCHAR(100) NOT NULL DEFAULT 'Open hours'"],
-    ['rate_periods', 'JSON NULL'],
-    ['amenities_json', 'JSON NULL'],
-    ['image_urls', 'JSON NULL'],
-    ['visit_url', 'VARCHAR(1000) NULL'],
-    ['latitude', 'DOUBLE NULL'],
-    ['longitude', 'DOUBLE NULL'],
-    ['enabled', 'TINYINT(1) NOT NULL DEFAULT 1'],
-  ];
-
-  for (const [name, definition] of columns) {
-    try {
-      await pool.execute(
-        `ALTER TABLE merchant_businesses ADD COLUMN ${name} ${definition}`,
-      );
-    } catch (error) {
-      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
-    }
-    for (const [name, definition] of [
-      ['owner_email', 'VARCHAR(255) NULL'],
-      ['owner_phone', 'VARCHAR(30) NULL'],
-    ]) {
-      try {
-        await pool.execute(
-          `ALTER TABLE saved_items ADD COLUMN ${name} ${definition}`,
-        );
-      } catch (error) {
-        if (error.code !== 'ER_DUP_FIELDNAME') throw error;
-      }
-    }
-  }
-  await pool.execute(
-    "ALTER TABLE merchant_businesses MODIFY COLUMN availability VARCHAR(255) NOT NULL DEFAULT 'Any'",
-  );
-  try {
-    await pool.execute(
-      'ALTER TABLE merchant_businesses ADD INDEX idx_merchant_businesses_type_enabled (business_type, enabled)',
-    );
-  } catch (error) {
-    if (error.code !== 'ER_DUP_KEYNAME') throw error;
-  }
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS sports_business_details (
-      business_id BIGINT UNSIGNED NOT NULL,
-      player_capacity INT UNSIGNED NULL,
-      court_type VARCHAR(100) NULL,
-      equipment TEXT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (business_id),
-      CONSTRAINT fk_sports_business_details_business
-        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS event_business_details (
-      business_id BIGINT UNSIGNED NOT NULL,
-      event_name VARCHAR(255) NULL,
-      event_type VARCHAR(100) NULL,
-      event_types_json JSON NULL,
-      event_date DATE NULL,
-      start_time TIME NULL,
-      end_time TIME NULL,
-      setup_hours DECIMAL(5, 2) NULL,
-      teardown_hours DECIMAL(5, 2) NULL,
-      estimated_attendance INT UNSIGNED NULL,
-      accessibility_needs TEXT NULL,
-      parking_security TEXT NULL,
-      attendance_min INT UNSIGNED NULL,
-      attendance_max INT UNSIGNED NULL,
-      parking_needs JSON NULL,
-      security_needs JSON NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (business_id),
-      CONSTRAINT fk_event_business_details_business
-        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS fitness_business_details (
-      business_id BIGINT UNSIGNED NOT NULL,
-      class_capacity INT UNSIGNED NULL,
-      session_duration_minutes INT UNSIGNED NULL,
-      instructor_name VARCHAR(255) NULL,
-      class_schedule TEXT NULL,
-      fitness_categories_json JSON NULL,
-      fitness_coaches_json JSON NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (business_id),
-      CONSTRAINT fk_fitness_business_details_business
-        FOREIGN KEY (business_id) REFERENCES merchant_businesses (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  for (const [name, definition] of [
-    ['fitness_categories_json', 'JSON NULL'],
-    ['fitness_coaches_json', 'JSON NULL'],
-  ]) {
-    await ensureTableColumn('fitness_business_details', name, definition);
-  }
-  for (const [name, definition] of [
-    ['event_types_json', 'JSON NULL'],
-    ['attendance_min', 'INT UNSIGNED NULL'],
-    ['attendance_max', 'INT UNSIGNED NULL'],
-    ['accessibility_needs', 'JSON NULL'],
-    ['parking_needs', 'JSON NULL'],
-    ['security_needs', 'JSON NULL'],
-  ]) {
-    await ensureTableColumn('event_business_details', name, definition);
-  }
-}
-
-async function ensureMessagingSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS conversations (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      type ENUM('direct', 'group') NOT NULL DEFAULT 'direct',
-      title VARCHAR(120) NULL,
-      created_by BIGINT UNSIGNED NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_conversations_created (created_at),
-      CONSTRAINT fk_conversations_creator FOREIGN KEY (created_by) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS conversation_members (
-      conversation_id BIGINT UNSIGNED NOT NULL,
-      user_id BIGINT UNSIGNED NOT NULL,
-      joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      archived_at DATETIME NULL,
-      deleted_at DATETIME NULL,
-      manually_unread_at DATETIME NULL,
-      PRIMARY KEY (conversation_id, user_id),
-      KEY idx_conversation_members_user (user_id),
-      CONSTRAINT fk_conversation_members_conversation FOREIGN KEY (conversation_id)
-        REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_conversation_members_user FOREIGN KEY (user_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      conversation_id BIGINT UNSIGNED NOT NULL,
-      sender_id BIGINT UNSIGNED NOT NULL,
-      body TEXT NULL,
-      attachment_json LONGTEXT NULL,
-      read_at DATETIME NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_messages_conversation_created (conversation_id, created_at),
-      KEY idx_messages_unread (conversation_id, read_at),
-      CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id)
-        REFERENCES conversations (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS message_reads (
-      message_id BIGINT UNSIGNED NOT NULL,
-      user_id BIGINT UNSIGNED NOT NULL,
-      read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (message_id, user_id),
-      KEY idx_message_reads_user (user_id, read_at),
-      CONSTRAINT fk_message_reads_message FOREIGN KEY (message_id)
-        REFERENCES messages (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_message_reads_user FOREIGN KEY (user_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  try {
-    await pool.execute(
-      'ALTER TABLE messages ADD COLUMN attachment_json LONGTEXT NULL AFTER body',
-    );
-  } catch (error) {
-    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
-  }
-  await pool.execute('ALTER TABLE messages MODIFY COLUMN body TEXT NULL');
-}
-
-async function ensureBookingsSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS bookings (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      customer_id BIGINT UNSIGNED NOT NULL,
-      venue_id BIGINT UNSIGNED NOT NULL,
-      booking_date DATE NOT NULL,
-      start_time TIME NOT NULL,
-      duration_hours DECIMAL(5, 2) NOT NULL,
-      players INT UNSIGNED NOT NULL,
-      payment_method VARCHAR(50) NOT NULL,
-      price_per_hour DECIMAL(10, 2) NOT NULL,
-      total_amount DECIMAL(10, 2) NOT NULL,
-      downpayment_amount DECIMAL(10, 2) NOT NULL,
-      extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
-      event_type VARCHAR(100) NULL,
-      fitness_plan_type ENUM('session', 'monthly', 'yearly') NULL,
-      fitness_category VARCHAR(100) NULL,
-      fitness_coach_name VARCHAR(100) NULL,
-      fitness_plan_price DECIMAL(10, 2) NULL,
-      fitness_coach_price DECIMAL(10, 2) NULL,
-      booking_token_hash CHAR(64) NULL,
-      ticket_token_hash CHAR(64) NULL,
-      payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
-      payment_checkout_session_id VARCHAR(100) NULL,
-      payment_reference VARCHAR(100) NULL,
-      paid_at DATETIME NULL,
-      status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_bookings_customer (customer_id, booking_date, start_time),
-      KEY idx_bookings_venue_time (venue_id, booking_date, start_time, status),
-      UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id),
-      CONSTRAINT fk_bookings_customer FOREIGN KEY (customer_id) REFERENCES users (id)
-        ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_bookings_venue FOREIGN KEY (venue_id) REFERENCES merchant_businesses (id)
-        ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  for (const [name, definition] of [
-    ['booking_token_hash', 'CHAR(64) NULL'],
-    ['ticket_token_hash', 'CHAR(64) NULL'],
-    ['extra_player_charge', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
-    ['event_type', 'VARCHAR(100) NULL'],
-    ['fitness_plan_type', "ENUM('session', 'monthly', 'yearly') NULL"],
-    ['fitness_category', 'VARCHAR(100) NULL'],
-    ['fitness_coach_name', 'VARCHAR(100) NULL'],
-    ['fitness_plan_price', 'DECIMAL(10, 2) NULL'],
-    ['fitness_coach_price', 'DECIMAL(10, 2) NULL'],
-    ['sport_type', 'VARCHAR(100) NULL'],
-    ['slot_number', 'INT UNSIGNED NULL'],
-    ['occupies_full_studio', 'TINYINT(1) NOT NULL DEFAULT 1'],
-    ['payment_status', "ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required'"],
-    ['payment_checkout_session_id', 'VARCHAR(100) NULL'],
-    ['payment_reference', 'VARCHAR(100) NULL'],
-    ['paid_at', 'DATETIME NULL'],
-  ]) {
-    await ensureTableColumn('bookings', name, definition);
-  }
-  const [indexes] = await pool.execute(
-    `SELECT 1 FROM information_schema.statistics
-     WHERE table_schema = DATABASE()
-       AND table_name = 'bookings'
-       AND index_name = 'uq_bookings_checkout_session'
-     LIMIT 1`,
-  );
-  if (indexes.length === 0) {
-    await pool.execute(
-      'ALTER TABLE bookings ADD UNIQUE KEY uq_bookings_checkout_session (payment_checkout_session_id)',
-    );
-  }
-}
-
-async function ensureTableColumn(tableName, columnName, definition) {
-  const [rows] = await pool.execute(
-    `SELECT 1
-       FROM information_schema.columns
-      WHERE table_schema = DATABASE()
-        AND table_name = ?
-        AND column_name = ?
-      LIMIT 1`,
-    [tableName, columnName],
-  );
-  if (rows.length > 0) return;
-  await pool.execute(
-    `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${definition}`,
-  );
-}
-
-async function ensureFitnessBookingAttendanceSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS fitness_booking_attendance (
-      booking_id BIGINT UNSIGNED NOT NULL,
-      customer_id BIGINT UNSIGNED NOT NULL,
-      attendance_date DATE NOT NULL,
-      status ENUM('present', 'absent') NOT NULL,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (booking_id, attendance_date),
-      KEY idx_fitness_attendance_customer (customer_id, booking_id),
-      CONSTRAINT fk_fitness_attendance_booking FOREIGN KEY (booking_id)
-        REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_fitness_attendance_customer FOREIGN KEY (customer_id)
-        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-}
-
-async function ensureCustomerProfileSchema() {
-  await pool.execute('ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL');
-  await ensureTableColumn('users', 'address', 'VARCHAR(500) NULL');
-  await ensureTableColumn('users', 'hobby', 'VARCHAR(255) NULL');
-}
-
-async function ensureNewsAndReviewsSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS merchant_news (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      business_id BIGINT UNSIGNED NOT NULL,
-      title VARCHAR(255) NOT NULL,
-      body TEXT NOT NULL,
-      image_url LONGTEXT NULL,
-      status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_merchant_news_business_status (business_id, status, created_at),
-      CONSTRAINT fk_merchant_news_business FOREIGN KEY (business_id)
-        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS venue_reviews (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      business_id BIGINT UNSIGNED NOT NULL,
-      booking_id BIGINT UNSIGNED NOT NULL,
-      customer_id BIGINT UNSIGNED NOT NULL,
-      rating TINYINT UNSIGNED NOT NULL,
-      comment VARCHAR(2000) NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      UNIQUE KEY uq_venue_reviews_booking_customer (booking_id, customer_id),
-      KEY idx_venue_reviews_business (business_id, created_at),
-      CONSTRAINT fk_venue_reviews_business FOREIGN KEY (business_id)
-        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_venue_reviews_booking FOREIGN KEY (booking_id)
-        REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_venue_reviews_customer FOREIGN KEY (customer_id)
-        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT chk_venue_reviews_rating CHECK (rating BETWEEN 1 AND 5)
-    ) ENGINE=InnoDB
-  `);
-}
-
-async function ensureUserActivitySchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS user_activity_logs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      user_id BIGINT UNSIGNED NOT NULL,
-      activity_type VARCHAR(50) NOT NULL,
-      title VARCHAR(255) NOT NULL,
-      description VARCHAR(500) NOT NULL,
-      venue_id BIGINT UNSIGNED NULL,
-      venue_name VARCHAR(255) NULL,
-      sport_type VARCHAR(100) NULL,
-      details_json JSON NULL,
-      actor_user_id BIGINT UNSIGNED NULL,
-      actor_role VARCHAR(50) NULL,
-      request_id CHAR(36) NULL,
-      ip_address VARCHAR(45) NULL,
-      user_agent VARCHAR(500) NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY idx_user_activity_logs_user_created (user_id, created_at, id),
-      KEY idx_user_activity_logs_request (request_id),
-      CONSTRAINT fk_user_activity_logs_user FOREIGN KEY (user_id)
-        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-  await ensureTableColumn(
-    'user_activity_logs',
-    'venue_id',
-    'BIGINT UNSIGNED NULL',
-  );
-  await ensureTableColumn(
-    'user_activity_logs',
-    'venue_name',
-    'VARCHAR(255) NULL',
-  );
-  await ensureTableColumn(
-    'user_activity_logs',
-    'sport_type',
-    'VARCHAR(100) NULL',
-  );
-  await ensureTableColumn(
-    'user_activity_logs',
-    'details_json',
-    'JSON NULL',
-  );
-  for (const [name, definition] of [
-    ['actor_user_id', 'BIGINT UNSIGNED NULL'],
-    ['actor_role', 'VARCHAR(50) NULL'],
-    ['request_id', 'CHAR(36) NULL'],
-    ['ip_address', 'VARCHAR(45) NULL'],
-    ['user_agent', 'VARCHAR(500) NULL'],
-  ]) {
-    await ensureTableColumn('user_activity_logs', name, definition);
-  }
-  const [activityIndexes] = await pool.execute(
-    `SELECT 1 FROM information_schema.statistics
-     WHERE table_schema = DATABASE()
-       AND table_name = 'user_activity_logs'
-       AND index_name = 'idx_user_activity_logs_request'
-     LIMIT 1`,
-  );
-  if (activityIndexes.length === 0) {
-    try {
-      await pool.execute(
-        'CREATE INDEX idx_user_activity_logs_request ON user_activity_logs (request_id)',
-      );
-    } catch (error) {
-      if (error.code !== 'ER_DUP_KEYNAME') throw error;
-    }
-  }
-  await pool.execute(`
-    UPDATE user_activity_logs a
-    JOIN bookings b
-      ON b.id = CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(a.description, '#', -1), ' ', 1) AS UNSIGNED)
-    JOIN merchant_businesses v ON v.id = b.venue_id
-    SET a.venue_id = b.venue_id,
-        a.venue_name = v.name,
-        a.sport_type = v.category,
-        a.details_json = JSON_OBJECT(
-          'bookingId', b.id,
-          'bookingDate', DATE_FORMAT(b.booking_date, '%Y-%m-%d'),
-          'startTime', TIME_FORMAT(b.start_time, '%H:%i:%s'),
-          'durationHours', b.duration_hours,
-          'players', b.players
-        )
-    WHERE a.venue_id IS NULL
-      AND a.activity_type IN ('booking_requested', 'booking_approved', 'booking_finished')
-      AND a.description REGEXP '^Booking #[0-9]+'
-  `);
-}
-
-async function ensureVenueHeartsSchema() {
-  await pool.execute(`
-    CREATE TABLE IF NOT EXISTS venue_hearts (
-      business_id BIGINT UNSIGNED NOT NULL,
-      user_id BIGINT UNSIGNED NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (business_id, user_id),
-      KEY idx_venue_hearts_user (user_id, business_id),
-      CONSTRAINT fk_venue_hearts_business FOREIGN KEY (business_id)
-        REFERENCES merchant_businesses (id) ON UPDATE CASCADE ON DELETE CASCADE,
-      CONSTRAINT fk_venue_hearts_user FOREIGN KEY (user_id)
-        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
-    ) ENGINE=InnoDB
-  `);
-}
-
-Promise.all([ensureMerchantBusinessesSchema(), ensureMessagingSchema()])
-  .then(() => ensureBookingsSchema())
-  .then(() => ensureFitnessBookingAttendanceSchema())
-  .then(() => ensureCustomerProfileSchema())
-  .then(() => ensureNewsAndReviewsSchema())
-  .then(() => ensureUserActivitySchema())
-  .then(() => ensureVenueHeartsSchema())
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
-    });
-    const completionInterval = setInterval(() => {
-      completeDueBookings().catch((error) => {
-        console.error('Could not automatically finish due bookings.', error);
-      });
-    }, 10_000);
-    completionInterval.unref();
+function startServer() {
+  const server = app.listen(port, () => {
+    console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
+  });
+  const completionInterval = setInterval(() => {
     completeDueBookings().catch((error) => {
       console.error('Could not automatically finish due bookings.', error);
     });
-  })
-  .catch((error) => {
-    console.error('Could not initialize merchant business schema.', error);
-    process.exitCode = 1;
+  }, 10_000);
+  completionInterval.unref();
+  completeDueBookings().catch((error) => {
+    console.error('Could not automatically finish due bookings.', error);
   });
+  return server;
+}
+
+startServer();

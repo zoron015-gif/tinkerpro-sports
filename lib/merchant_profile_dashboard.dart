@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'activity_log_page.dart';
+import 'features/activity_log/presentation/activity_log_routes.dart';
 import 'app_bottom_navigation.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
@@ -279,9 +279,7 @@ class _MerchantProfileDashboardPageState
         return;
       case _MerchantProfileSetting.activityLog:
         await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ActivityLogPage(api: widget.api, isMerchant: true),
-          ),
+          ActivityLogRoutes.open(api: widget.api, isMerchant: true),
         );
         return;
       case _MerchantProfileSetting.logOut:

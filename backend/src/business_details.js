@@ -1,4 +1,4 @@
-const { eventDetailsFromBody } = require('./normalizers');
+const { eventDetailsFromBody, isNumericInput } = require('./normalizers');
 
 async function saveEventDetails(executor, businessId, body) {
   if (body.businessType !== 'Event') {
@@ -53,12 +53,16 @@ function fitnessDetailsFromBody(body) {
     }
     const category =
       typeof item.category === 'string'
-        ? item.category.trim().slice(0, 100)
+        ? item.category.trim()
         : '';
     const normalizedName = category.toLowerCase();
-    if (!category || categoryNames.has(normalizedName)) valid = false;
+    if (!category || category.length > 100 || categoryNames.has(normalizedName)) valid = false;
     categoryNames.add(normalizedName);
     const price = (value) => {
+      if (!isNumericInput(value)) {
+        valid = false;
+        return null;
+      }
       const amount = Number(value);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 99999999.99) {
         valid = false;
@@ -69,10 +73,12 @@ function fitnessDetailsFromBody(body) {
     const yearlyDiscountType = item.yearlyDiscountType;
     let yearlyDiscountValue = null;
     if (yearlyDiscountType === 'freeMonths') {
+      if (!isNumericInput(item.yearlyDiscountValue)) valid = false;
       const amount = Number(item.yearlyDiscountValue);
       if (!Number.isInteger(amount) || amount < 1 || amount > 11) valid = false;
       else yearlyDiscountValue = amount;
     } else if (yearlyDiscountType === 'percentage') {
+      if (!isNumericInput(item.yearlyDiscountValue)) valid = false;
       const amount = Number(item.yearlyDiscountValue);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 100) valid = false;
       else yearlyDiscountValue = amount;
@@ -95,9 +101,10 @@ function fitnessDetailsFromBody(body) {
       return null;
     }
     const name =
-      typeof item.name === 'string' ? item.name.trim().slice(0, 100) : '';
-    if (!name || coachNames.has(name.toLowerCase())) valid = false;
+      typeof item.name === 'string' ? item.name.trim() : '';
+    if (!name || name.length > 100 || coachNames.has(name.toLowerCase())) valid = false;
     coachNames.add(name.toLowerCase());
+    if (!isNumericInput(item.monthlyPrice)) valid = false;
     const monthlyPrice = Number(item.monthlyPrice);
     if (
       !Number.isFinite(monthlyPrice) ||
