@@ -1,9 +1,11 @@
+import './app_design_system.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
+import 'app_preferences.dart';
 
 class MessageNotificationHost extends StatefulWidget {
   const MessageNotificationHost({
@@ -183,8 +185,8 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                       ),
                       child: Row(
                         children: [
-                          const CircleAvatar(
-                            backgroundColor: Color(0xFFFFE8D2),
+                           CircleAvatar(
+                            backgroundColor: AppColors.softOrange,
                             child: Icon(
                               Icons.chat_bubble_rounded,
                               color: Color(0xFFFF8200),
@@ -197,7 +199,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
+                                AppText(
                                   notification.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -207,7 +209,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
+                                AppText(
                                   notification.preview,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,

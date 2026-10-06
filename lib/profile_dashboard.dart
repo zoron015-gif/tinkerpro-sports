@@ -23,13 +23,15 @@ import 'core/booking_status.dart';
 import 'core/business_type.dart';
 
 import 'app_design_system.dart';
+import 'app_preferences.dart';
+import 'app_settings_page.dart';
 
 const _profileNavy = AppColors.navy;
-const _profileInk = AppColors.ink;
-const _profileOrange = AppColors.orange;
-const _profilePage = AppColors.page;
-const _profileMuted = AppColors.muted;
-const _profileLine = AppColors.borderSubtle;
+Color get _profileInk => AppColors.ink;
+Color get _profileOrange => AppColors.accent;
+Color get _profilePage => AppColors.page;
+Color get _profileMuted => AppColors.muted;
+Color get _profileLine => AppColors.borderSubtle;
 
 List<Map<String, dynamic>> bookingsForBusinessType(
   List<Map<String, dynamic>> bookings,
@@ -230,7 +232,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       pageBuilder: (dialogContext, animation, secondaryAnimation) => Align(
         alignment: Alignment.centerRight,
         child: Material(
-          color: Colors.white,
+          color: Theme.of(dialogContext).colorScheme.surface,
           elevation: 12,
           child: SizedBox(
             width: MediaQuery.sizeOf(dialogContext).width * .88,
@@ -243,23 +245,23 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                       padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.person_outline_rounded,
                             color: _profileOrange,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
+                            child: AppText(
                               'Edit profile',
                               style: TextStyle(
                                 color: _profileInk,
                                 fontSize: 19,
                                 fontWeight: FontWeight.w900,
                               ),
-                            ),
+                             localize: true,),
                           ),
                           IconButton(
-                            tooltip: 'Close',
+                            tooltip: appLanguageText('Close', 'Close'),
                             onPressed: () =>
                                 Navigator.pop(dialogContext, false),
                             icon: const Icon(Icons.close_rounded),
@@ -267,7 +269,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         ],
                       ),
                     ),
-                    const Divider(height: 1, color: _profileLine),
+                     Divider(height: 1, color: _profileLine),
                     Expanded(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -290,10 +292,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               },
                               child: CircleAvatar(
                                 radius: 38,
-                                backgroundColor: const Color(0xFFFFF1E4),
+                                backgroundColor: AppColors.softOrangeAlt,
                                 backgroundImage: _avatarImage(profileImage),
                                 child: !_hasAvatar(profileImage)
-                                    ? const Icon(
+                                    ? Icon(
                                         Icons.add_a_photo_outlined,
                                         color: _profileOrange,
                                       )
@@ -301,13 +303,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            const Text(
+                             AppText(
                               'Tap photo to change',
                               style: TextStyle(
                                 color: _profileMuted,
                                 fontSize: 11,
                               ),
-                            ),
+                             localize: true,),
                             const SizedBox(height: 12),
                             TextField(
                               controller: nameController,
@@ -345,12 +347,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                                   children: hobbies
                                       .map(
                                         (hobby) => InputChip(
-                                          label: Text(hobby),
+                                          label: AppText(hobby),
                                           onDeleted: () => setDialogState(
                                             () => hobbies.remove(hobby),
                                           ),
                                           deleteIconColor: _profileOrange,
-                                          labelStyle: const TextStyle(
+                                          labelStyle: TextStyle(
                                             color: _profileOrange,
                                             fontSize: 12,
                                           ),
@@ -385,15 +387,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            const Align(
+                             Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(
+                              child: AppText(
                                 'Press enter after each hobby',
                                 style: TextStyle(
                                   color: _profileMuted,
                                   fontSize: 11,
                                 ),
-                              ),
+                               localize: true,),
                             ),
                           ],
                         ),
@@ -407,7 +409,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             child: OutlinedButton(
                               onPressed: () =>
                                   Navigator.pop(dialogContext, false),
-                              child: const Text('Cancel'),
+                              child: const AppText('Cancel', localize: true),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -415,7 +417,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             child: FilledButton(
                               onPressed: () =>
                                   Navigator.pop(dialogContext, true),
-                              child: const Text('Save changes'),
+                              child: const AppText('Save changes', localize: true),
                             ),
                           ),
                         ],
@@ -488,7 +490,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       pageBuilder: (dialogContext, animation, secondaryAnimation) => Align(
         alignment: Alignment.centerRight,
         child: Material(
-          color: Colors.white,
+          color: Theme.of(dialogContext).colorScheme.surface,
           elevation: 12,
           child: SizedBox(
             width: MediaQuery.sizeOf(dialogContext).width * .82,
@@ -500,30 +502,30 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.settings_outlined,
                           color: _profileOrange,
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Settings',
-                            style: TextStyle(
-                              color: _profileInk,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        Expanded(
+                          child: AppText(
+                            appLanguageText('Settings', 'Mga Setting'),
+                            style: Theme.of(dialogContext).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Close settings',
+                          tooltip: appLanguageText('Close settings', 'Close settings'),
                           onPressed: () => Navigator.pop(dialogContext),
                           icon: const Icon(Icons.close_rounded),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1, color: _profileLine),
+                   Divider(height: 1, color: _profileLine),
                   const SizedBox(height: 8),
                   if (BookingNotifications.instance.isSupported)
                     StatefulBuilder(
@@ -534,20 +536,51 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           ),
                     ),
                   ListTile(
+                    key: const ValueKey('profile-settings-appearance'),
+                    leading: const Icon(Icons.palette_outlined),
+                    title: AppText(
+                      appLanguageText(
+                        'Appearance & language',
+                        'Hitsura at wika',
+                      ),
+                    ),
+                    subtitle: AppText(
+                      appLanguageText(
+                        'Dark mode, colors, text size, and language',
+                        'Madilim na tema, kulay, laki ng teksto, at wika',
+                      ),
+                    ),
+                    onTap: () => Navigator.pop(dialogContext, 'preferences'),
+                  ),
+                  ListTile(
                     leading: const Icon(Icons.edit_outlined),
-                    title: const Text('Edit profile'),
+                    title: AppText(
+                      appLanguageText('Edit profile', 'I-edit ang profile'),
+                    ),
                     onTap: () => Navigator.pop(dialogContext, 'edit'),
                   ),
                   ListTile(
                     key: const ValueKey('profile-settings-activity-log'),
                     leading: const Icon(Icons.history_rounded),
-                    title: const Text('Activity log'),
-                    subtitle: const Text('Review activity on your account'),
+                    title: AppText(
+                      appLanguageText('Activity log', 'Tala ng aktibidad'),
+                    ),
+                    subtitle: AppText(
+                      appLanguageText(
+                        'Review activity on your account',
+                        'Suriin ang aktibidad ng iyong account',
+                      ),
+                    ),
                     onTap: () => Navigator.pop(dialogContext, 'activity'),
                   ),
                   ListTile(
                     leading: const Icon(Icons.swap_horiz_rounded),
-                    title: const Text('Switch to Host Portal'),
+                    title: AppText(
+                      appLanguageText(
+                        'Switch to Host Portal',
+                        'Lumipat sa Portal ng Host',
+                      ),
+                    ),
                     onTap: () => Navigator.pop(dialogContext, 'switch'),
                   ),
                   ListTile(
@@ -555,20 +588,20 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                       Icons.logout_rounded,
                       color: Colors.red,
                     ),
-                    title: const Text(
-                      'Log out',
+                    title: AppText(
+                      appLanguageText('Log out', 'Mag-log out'),
                       style: TextStyle(color: Colors.red),
                     ),
                     onTap: () => Navigator.pop(dialogContext, 'logout'),
                   ),
                   const Spacer(),
-                  const Divider(height: 1, color: _profileLine),
+                   Divider(height: 1, color: _profileLine),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(
-                        'SUPPORT',
+                      child: AppText(
+                        appLanguageText('SUPPORT', 'TULONG'),
                         style: TextStyle(
                           color: _profileMuted,
                           fontSize: 11,
@@ -590,8 +623,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               Icons.help_outline_rounded,
                               size: 18,
                             ),
-                            label: const Text(
-                              'Help Center',
+                            label: AppText(
+                              appLanguageText(
+                                'Help Center',
+                                'Sentro ng Tulong',
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -609,8 +645,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             onPressed: () =>
                                 Navigator.pop(dialogContext, 'rules'),
                             icon: const Icon(Icons.gavel_outlined, size: 18),
-                            label: const Text(
-                              'Court Rules',
+                            label: AppText(
+                              appLanguageText(
+                                'Court Rules',
+                                'Mga Panuntunan sa Court',
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -650,6 +689,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         await _editProfile();
       case 'activity':
         await Navigator.of(context).push(ActivityLogRoutes.open(api: _api));
+      case 'preferences':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const AppSettingsPage()),
+        );
       case 'switch':
         _message(context, 'Host portal is opening soon.');
       case 'logout':
@@ -681,18 +724,18 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
         ),
-        title: const Text(
-          'Player Profile',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        title: AppText(
+          appLanguageText('Player Profile', 'Profile ng Manlalaro'),
+          style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
-            tooltip: 'QR code',
+            tooltip: appLanguageText('QR code', 'QR code'),
             onPressed: () => _message(context, 'Your QR code is ready soon.'),
             icon: const Icon(Icons.qr_code_scanner_rounded),
           ),
           IconButton(
-            tooltip: 'Settings',
+            tooltip: appLanguageText('Settings', 'Settings'),
             onPressed: () => _openSettings(context),
             icon: const Icon(Icons.settings_outlined),
           ),
@@ -807,7 +850,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               : 'Search venues, sports, and locations',
           highestRatedSectionTitle: _isFitnessProfile
               ? 'Highest Rated Fitness'
-              : 'Highest Rated Sports',
+              : 'Highest rate',
           allVenuesHeading: _isFitnessProfile
               ? 'All Fitness Studios'
               : 'All Venues',
@@ -835,11 +878,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               children: [
                 TappableProfileAvatar(
                   radius: 31,
-                  backgroundColor: const Color(0xFFFFF1E4),
+                  backgroundColor: AppColors.softOrangeAlt,
                   image: _avatarImage(avatarUrl),
-                  fallback: Text(
+                  fallback: AppText(
                     initials,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _profileOrange,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
@@ -851,18 +894,18 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      AppText(
                         name,
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileInk,
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
+                      AppText(
                         email,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileMuted,
                           fontSize: 11,
                         ),
@@ -945,8 +988,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration:  BoxDecoration(
+            color: AppColors.surface,
             border: Border(bottom: BorderSide(color: _profileLine)),
           ),
           child: Row(
@@ -988,9 +1031,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
+          child: AppText(
             _selectedHistoryTab,
-            style: const TextStyle(
+            style:  TextStyle(
               color: _profileInk,
               fontSize: 17,
               fontWeight: FontWeight.w900,
@@ -1134,9 +1177,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ..hideCurrentSnackBar()
               ..showSnackBar(
                 SnackBar(
-                  content: const Text(
+                  content: const AppText(
                     'Allow notifications and exact alarms to receive match alerts.',
-                  ),
+                   localize: true,),
                   action: SnackBarAction(
                     label: 'Settings',
                     onPressed: () => unawaited(_openNotificationSettings()),
@@ -1198,7 +1241,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required StateSetter setSettingsState,
   }) => Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: _profileLine),
     ),
@@ -1213,22 +1256,22 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               setSettingsState: setSettingsState,
             ),
       activeThumbColor: _profileOrange,
-      secondary: const Icon(
+      secondary: Icon(
         Icons.notifications_active_outlined,
         color: _profileOrange,
       ),
-      title: const Text(
+      title:  AppText(
         'Match notifications',
         style: TextStyle(
           color: _profileInk,
           fontSize: 13,
           fontWeight: FontWeight.w800,
         ),
-      ),
-      subtitle: const Text(
+       localize: true,),
+      subtitle:  AppText(
         'Get alerts when a match starts and ends.',
         style: TextStyle(color: _profileMuted, fontSize: 11),
-      ),
+       localize: true,),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
     ),
   );
@@ -1238,11 +1281,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       Icon(icon, color: _profileMuted, size: 13),
       const SizedBox(width: 4),
       Expanded(
-        child: Text(
+        child: AppText(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: _profileMuted, fontSize: 10),
+          style:  TextStyle(color: _profileMuted, fontSize: 10),
         ),
       ),
     ],
@@ -1256,7 +1299,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       return _whiteCard(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [
-          Text(
+          AppText(
             _isEventProfile ? 'UPCOMING EVENT' : 'UPCOMING BOOKING',
             style: TextStyle(
               color: _profileOrange,
@@ -1265,14 +1308,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          AppText(
             _isEventProfile
                 ? 'No approved event bookings yet.'
                 : 'No approved bookings yet.',
             style: TextStyle(color: _profileInk, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          Text(
+          AppText(
             _isEventProfile
                 ? 'Your event booking ticket will appear here after merchant approval.'
                 : 'Your booking ticket will appear here after merchant approval.',
@@ -1287,7 +1330,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Row(
           children: [
             Expanded(
-              child: Text(
+              child: AppText(
                 _isEventProfile ? 'UPCOMING EVENT' : 'UPCOMING BOOKING',
                 style: TextStyle(
                   color: _profileOrange,
@@ -1298,33 +1341,33 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
             TextButton(
               onPressed: () => _showAllUpcomingBookings(context),
-              child: const Text('View all'),
+              child: const AppText('View all', localize: true),
             ),
           ],
         ),
         const SizedBox(height: 10),
-        Text(
+        AppText(
           '${booking['venueName'] ?? 'Venue'}',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style:  TextStyle(
             color: _profileInk,
             fontWeight: FontWeight.w900,
             fontSize: 15,
           ),
-        ),
+         localize: true,),
         const SizedBox(height: 4),
-        Text(
+        AppText(
           '${booking['date'] ?? ''} · ${_time(booking['startTime'])} · '
           '${booking['durationHours'] ?? 0} hour(s)',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: _profileMuted, fontSize: 11),
-        ),
-        Text(
+          style:  TextStyle(color: _profileMuted, fontSize: 11),
+         localize: true,),
+        AppText(
           '${booking['players'] ?? 0} $_peopleLabel · '
           '${booking['paymentMethod'] ?? ''}',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: _profileMuted, fontSize: 11),
-        ),
+          style:  TextStyle(color: _profileMuted, fontSize: 11),
+         localize: true,),
         ..._fitnessBookingDetails(booking),
         if (_isEventProfile &&
             '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
@@ -1337,21 +1380,21 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF1E4),
+            color: AppColors.softOrangeAlt,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.notifications_active_outlined,
                 color: _profileOrange,
                 size: 16,
               ),
               const SizedBox(width: 7),
               Expanded(
-                child: Text(
+                child: AppText(
                   _bookingCountdown(booking),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _profileOrange,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
@@ -1364,17 +1407,17 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         const SizedBox(height: 8),
         Row(
           children: [
-            const Icon(
+            Icon(
               Icons.confirmation_num_outlined,
               color: _profileOrange,
               size: 16,
             ),
             const SizedBox(width: 6),
-            const Expanded(
-              child: Text(
+             Expanded(
+              child: AppText(
                 'Booking ticket is available in Messages.',
                 style: TextStyle(color: _profileMuted, fontSize: 11),
-              ),
+               localize: true,),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).push(
@@ -1383,7 +1426,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                       MessagesDashboardPage(businessType: widget.businessType),
                 ),
               ),
-              child: const Text('View Ticket'),
+              child: const AppText('View Ticket', localize: true),
             ),
           ],
         ),
@@ -1398,47 +1441,47 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       children: [
         Row(
           children: [
-            const Expanded(
-              child: Text(
+            Expanded(
+              child: AppText(
                 'ACTIVE BOOKING SESSION',
                 style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                 ),
-              ),
+               localize: true,),
             ),
             _smallPill('${bookings.length} active'),
           ],
         ),
         const SizedBox(height: 12),
         if (bookings.isEmpty)
-          const Padding(
+           Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text(
+            child: AppText(
               'No active fitness bookings yet.',
               style: TextStyle(
                 color: _profileMuted,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
-            ),
+             localize: true,),
           )
         else ...[
-          const Row(
+           Row(
             children: [
               Expanded(
                 flex: 4,
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
+                  child: AppText(
                     'Gym name',
                     style: TextStyle(
                       color: _profileMuted,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                     ),
-                  ),
+                   localize: true,),
                 ),
               ),
               Expanded(
@@ -1446,14 +1489,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4),
                   child: Center(
-                    child: Text(
+                    child: AppText(
                       'Price',
                       style: TextStyle(
                         color: _profileMuted,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
-                    ),
+                     localize: true,),
                   ),
                 ),
               ),
@@ -1462,14 +1505,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4),
                   child: Center(
-                    child: Text(
+                    child: AppText(
                       'Duration',
                       style: TextStyle(
                         color: _profileMuted,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
-                    ),
+                     localize: true,),
                   ),
                 ),
               ),
@@ -1495,16 +1538,16 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         flex: 4,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
+                          child: AppText(
                             '${bookings[index]['venueName'] ?? 'Fitness venue'}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style:  TextStyle(
                               color: _profileInk,
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                             ),
-                          ),
+                           localize: true,),
                         ),
                       ),
                       Expanded(
@@ -1512,12 +1555,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Center(
-                            child: Text(
+                            child: AppText(
                               _fitnessBookingPrice(bookings[index]),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style:  TextStyle(
                                 color: _profileInk,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -1531,14 +1574,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Center(
-                            child: Text(
+                            child: AppText(
                               fitnessPlanDurationLabel(
                                 '${bookings[index]['fitnessPlanType'] ?? ''}',
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style:  TextStyle(
                                 color: _profileInk,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -1547,7 +1590,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           ),
                         ),
                       ),
-                      const Expanded(
+                      Expanded(
                         flex: 2,
                         child: Align(
                           alignment: Alignment.centerRight,
@@ -1638,8 +1681,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(sheetContext).height * .88,
           ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
           child: SingleChildScrollView(
@@ -1660,43 +1703,43 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    const Expanded(
-                      child: Text(
+                     Expanded(
+                      child: AppText(
                         'Booking session',
                         style: TextStyle(
                           color: _profileInk,
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
                         ),
-                      ),
+                       localize: true,),
                     ),
                     IconButton(
-                      tooltip: 'Close booking calendar',
+                      tooltip: appLanguageText('Close booking calendar', 'Close booking calendar'),
                       onPressed: () => Navigator.pop(sheetContext),
                       icon: const Icon(Icons.close_rounded),
                     ),
                   ],
                 ),
-                Text(
+                AppText(
                   '${booking['venueName'] ?? 'Fitness venue'} · '
                   '${_fitnessBookingPrice(booking)} · '
                   '${fitnessPlanDurationLabel(planType)}',
-                  style: const TextStyle(
+                  style:  TextStyle(
                     color: _profileMuted,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
-                ),
+                 localize: true,),
                 const SizedBox(height: 4),
-                Text(
+                AppText(
                   '${_calendarDateLabel(startDate)} – '
                   '${_calendarDateLabel(endDate)}',
-                  style: const TextStyle(
+                  style:  TextStyle(
                     color: _profileInk,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
+                 localize: true,),
                 if (attendanceWarning != null) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -1704,13 +1747,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3E6),
+                      color: AppColors.softOrange,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
+                    child: AppText(
                       attendanceWarning,
-                      style: const TextStyle(
-                        color: Color(0xFF8A4C00),
+                      style: TextStyle(
+                        color: AppColors.warning,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1778,7 +1821,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         maxChildSize: .94,
         expand: false,
         builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
+          decoration:  BoxDecoration(
             color: _profilePage,
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
@@ -1798,14 +1841,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         'Upcoming bookings',
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileInk,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
-                      ),
+                       localize: true,),
                     ),
                     _smallPill('${_upcoming.length} approved'),
                     IconButton(
@@ -1844,13 +1887,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           _smallPill('#${index + 1}'),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: AppText(
               _isFitnessProfile
                   ? 'APPROVED FITNESS SESSION'
                   : _isEventProfile
                   ? 'APPROVED EVENT BOOKING'
                   : 'APPROVED BOOKING',
-              style: const TextStyle(
+              style: TextStyle(
                 color: _profileOrange,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
@@ -1861,14 +1904,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         ],
       ),
       const SizedBox(height: 10),
-      Text(
+      AppText(
         '${booking['venueName'] ?? 'Venue'}',
-        style: const TextStyle(
+        style:  TextStyle(
           color: _profileInk,
           fontSize: 15,
           fontWeight: FontWeight.w900,
         ),
-      ),
+       localize: true,),
       const SizedBox(height: 5),
       _bookingDetailLine(
         Icons.calendar_today_outlined,
@@ -1904,7 +1947,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
           ),
           icon: const Icon(Icons.confirmation_num_outlined, size: 16),
-          label: const Text('View ticket'),
+          label: const AppText('View ticket', localize: true),
         ),
       ),
     ],
@@ -1917,9 +1960,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Icon(icon, color: _profileMuted, size: 15),
         const SizedBox(width: 7),
         Expanded(
-          child: Text(
+          child: AppText(
             value,
-            style: const TextStyle(color: _profileMuted, fontSize: 11),
+            style:  TextStyle(color: _profileMuted, fontSize: 11),
           ),
         ),
       ],
@@ -1966,7 +2009,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Row(
           children: [
             Expanded(
-              child: Text(
+              child: AppText(
                 _isEventProfile ? 'EVENT VENUES VISITED' : 'VENUES VISITED',
                 style: TextStyle(
                   color: _profileOrange,
@@ -1977,7 +2020,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
             TextButton(
               onPressed: () => _showVisitedVenues(context),
-              child: const Text('View all'),
+              child: const AppText('View all', localize: true),
             ),
           ],
         ),
@@ -1986,7 +2029,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             padding: const EdgeInsets.only(top: 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
+              child: AppText(
                 _isFitnessProfile
                     ? 'No completed studio visits yet.'
                     : _isEventProfile
@@ -2075,7 +2118,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   height: 58,
                   child: image == null
                       ? ColoredBox(
-                          color: const Color(0xFFFFF1E4),
+                          color: AppColors.softOrangeAlt,
                           child: Icon(
                             _isFitnessProfile
                                 ? Icons.fitness_center_rounded
@@ -2089,7 +2132,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           image: image,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => ColoredBox(
-                            color: const Color(0xFFFFF1E4),
+                            color: AppColors.softOrangeAlt,
                             child: Icon(
                               _isFitnessProfile
                                   ? Icons.fitness_center_rounded
@@ -2107,45 +2150,45 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AppText(
                       venue.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style:  TextStyle(
                         color: _profileInk,
                         fontSize: 14,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AppText(
                       amount == null
                           ? _isEventProfile
                                 ? 'Event fee unavailable'
                                 : 'Hourly rate unavailable'
                           : 'PHP ${amount.toStringAsFixed(2)}'
                                 '${_isEventProfile ? ' / event' : ' / hour'}',
-                      style: const TextStyle(
-                        color: _profileNavy,
+                      style: TextStyle(
+                        color: _profileInk,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    AppText(
                       date.isEmpty ? 'Visit date unavailable' : 'Visited $date',
-                      style: const TextStyle(
+                      style:  TextStyle(
                         color: _profileMuted,
                         fontSize: 11,
                       ),
                     ),
                     if (details != null) ...[
                       const SizedBox(height: 3),
-                      Text(
+                      AppText(
                         details,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileMuted,
                           fontSize: 11,
                         ),
@@ -2162,7 +2205,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ],
               if (onTap != null) ...[
                 const SizedBox(width: 2),
-                const Icon(Icons.chevron_right_rounded, color: _profileMuted),
+                 Icon(Icons.chevron_right_rounded, color: _profileMuted),
               ],
             ],
           ),
@@ -2179,13 +2222,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         Row(
           children: [
             Expanded(
-              child: Text(
+              child: AppText(
                 _isFitnessProfile
                     ? 'FITNESS BOOKING HISTORY'
                     : _isEventProfile
                     ? 'EVENT BOOKING HISTORY'
                     : 'COURT MATCH HISTORY',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _profileOrange,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
@@ -2194,7 +2237,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ),
             TextButton(
               onPressed: () => _showCourtMatchHistory(context),
-              child: const Text('View all'),
+              child: const AppText('View all', localize: true),
             ),
           ],
         ),
@@ -2203,13 +2246,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             padding: EdgeInsets.only(top: 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
+              child: AppText(
                 _isFitnessProfile
                     ? 'Completed fitness bookings will appear here.'
                     : _isEventProfile
                     ? 'Completed event bookings will appear here.'
                     : 'Completed bookings will appear here.',
-                style: const TextStyle(
+                style:  TextStyle(
                   color: _profileInk,
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -2286,7 +2329,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(sheetContext).height * .82,
         ),
-        decoration: const BoxDecoration(
+        decoration:  BoxDecoration(
           color: _profilePage,
           borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
@@ -2309,33 +2352,33 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        AppText(
                           venue.name,
-                          style: const TextStyle(
+                          style:  TextStyle(
                             color: _profileInk,
                             fontSize: 19,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        Text(
+                        AppText(
                           '${venue.bookings.length} ${venue.bookings.length == 1 ? 'completed visit' : 'completed visits'}',
-                          style: const TextStyle(
+                          style:  TextStyle(
                             color: _profileMuted,
                             fontSize: 12,
                           ),
-                        ),
+                         localize: true,),
                       ],
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close venue visits',
+                    tooltip: appLanguageText('Close venue visits', 'Close venue visits'),
                     onPressed: () => Navigator.pop(sheetContext),
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1, color: _profileLine),
+             Divider(height: 1, color: _profileLine),
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
@@ -2356,7 +2399,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     ),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppColors.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: _profileLine),
                     ),
@@ -2374,13 +2417,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
+                              child: AppText(
                                 '${_isEventProfile ? 'Completed event' : 'Completed visit'} ${venue.bookings.length - index}',
-                                style: const TextStyle(
+                                style:  TextStyle(
                                   color: _profileInk,
                                   fontWeight: FontWeight.w900,
                                 ),
-                              ),
+                               localize: true,),
                             ),
                           ],
                         ),
@@ -2484,7 +2527,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         maxChildSize: .94,
         expand: false,
         builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
+          decoration:  BoxDecoration(
             color: _profilePage,
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
@@ -2504,9 +2547,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         title,
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileInk,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -2524,9 +2567,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               Expanded(
                 child: children.isEmpty
                     ? Center(
-                        child: Text(
+                        child: AppText(
                           emptyText,
-                          style: const TextStyle(color: _profileMuted),
+                          style:  TextStyle(color: _profileMuted),
                         ),
                       )
                     : ListView.separated(
@@ -2597,7 +2640,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(sheetContext).height * .88,
           ),
-          decoration: const BoxDecoration(
+          decoration:  BoxDecoration(
             color: _profilePage,
             borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
           ),
@@ -2624,7 +2667,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     height: 190,
                     child: image == null
                         ? ColoredBox(
-                            color: Color(0xFFFFF1E4),
+                            color: AppColors.softOrangeAlt,
                             child: Icon(
                               _isEventProfile
                                   ? Icons.celebration_outlined
@@ -2637,7 +2680,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             image: image,
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => ColoredBox(
-                              color: Color(0xFFFFF1E4),
+                              color: AppColors.softOrangeAlt,
                               child: Icon(
                                 _isEventProfile
                                     ? Icons.celebration_outlined
@@ -2653,26 +2696,26 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         '${booking['venueName'] ?? 'Venue'}',
-                        style: const TextStyle(
+                        style:  TextStyle(
                           color: _profileInk,
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
-                      ),
+                       localize: true,),
                     ),
                     _smallPill('#${index + 1}'),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AppText(
                   _isFitnessProfile
                       ? 'Completed fitness session'
                       : _isEventProfile
                       ? 'Completed event booking'
                       : 'Completed court match',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _profileOrange,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
@@ -2722,7 +2765,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Close'),
+                    child: const AppText('Close', localize: true),
                   ),
                 ),
               ],
@@ -2760,36 +2803,36 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     ),
     child: Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 'PLAYER FAST PASS',
                 style: TextStyle(
                   color: _profileOrange,
                   fontSize: 9,
                   fontWeight: FontWeight.w900,
                 ),
-              ),
+               localize: true,),
               SizedBox(height: 7),
-              Text(
+              AppText(
                 'Court Express Check-in',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
                 ),
-              ),
+               localize: true,),
               SizedBox(height: 4),
-              Text(
+              AppText(
                 'ID: #SLT-8824',
                 style: TextStyle(color: Colors.white70, fontSize: 10),
-              ),
+               localize: true,),
               SizedBox(height: 14),
-              Text(
+              AppText(
                 'Valid at 55 · Cebu Courts',
                 style: TextStyle(color: Colors.white70, fontSize: 10),
-              ),
+               localize: true,),
             ],
           ),
         ),
@@ -2812,10 +2855,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 minimumSize: const Size(0, 30),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: const Text(
+              child: const AppText(
                 'Scan at Venue',
                 style: TextStyle(fontSize: 10),
-              ),
+               localize: true,),
             ),
           ],
         ),
@@ -2831,22 +2874,22 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         children: [
           const _RoundIcon(icon: Icons.account_balance_wallet_outlined),
           const SizedBox(width: 10),
-          const Expanded(
+           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   'Available Balance',
                   style: TextStyle(color: _profileMuted, fontSize: 10),
-                ),
-                Text(
+                 localize: true,),
+                AppText(
                   '₱1,850.00',
                   style: TextStyle(
                     color: _profileInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
-                ),
+                 localize: true,),
               ],
             ),
           ),
@@ -2858,29 +2901,29 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 EdgeInsets.symmetric(horizontal: 14),
               ),
             ),
-            child: Text('＋ Top Up', style: TextStyle(fontSize: 10)),
+            child: AppText('＋ Top Up', style: TextStyle(fontSize: 10), localize: true),
           ),
         ],
       ),
       const Divider(height: 20),
-      const Row(
+       Row(
         children: [
           Icon(Icons.local_offer_outlined, color: _profileOrange, size: 15),
           SizedBox(width: 7),
           Expanded(
-            child: Text(
+            child: AppText(
               'Promo Court Credits',
               style: TextStyle(color: _profileMuted, fontSize: 10),
-            ),
+             localize: true,),
           ),
-          Text(
+          AppText(
             '₱350.00',
             style: TextStyle(
               color: _profileOrange,
               fontSize: 10,
               fontWeight: FontWeight.w800,
             ),
-          ),
+           localize: true,),
         ],
       ),
     ],
@@ -2892,15 +2935,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     children: [
       Row(
         children: [
-          const Expanded(
-            child: Text(
+          Expanded(
+            child: AppText(
               '● NEXT COURT MATCH',
               style: TextStyle(
                 color: _profileOrange,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
-            ),
+             localize: true,),
           ),
           _smallPill('Tonight'),
         ],
@@ -2911,10 +2954,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF1E4),
+              color: AppColors.softOrangeAlt,
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Text(
+            child: AppText(
               'OCT\n24',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -2922,26 +2965,26 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 fontWeight: FontWeight.w900,
                 fontSize: 11,
               ),
-            ),
+             localize: true,),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   'SLT Court · Court 1 (Outdoor)',
                   style: TextStyle(
                     color: _profileInk,
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
-                ),
+                 localize: true,),
                 SizedBox(height: 4),
-                Text(
+                AppText(
                   '7:00 PM - 8:30 PM · 1.5 hrs',
                   style: TextStyle(color: _profileMuted, fontSize: 10),
-                ),
+                 localize: true,),
               ],
             ),
           ),
@@ -2950,25 +2993,25 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       const SizedBox(height: 12),
       Row(
         children: [
-          const Icon(
+           Icon(
             Icons.location_on_outlined,
             color: _profileMuted,
             size: 14,
           ),
           const SizedBox(width: 4),
-          const Expanded(
-            child: Text(
+           Expanded(
+            child: AppText(
               'Minglanilla, Cebu',
               style: TextStyle(color: _profileMuted, fontSize: 10),
-            ),
+             localize: true,),
           ),
           TextButton(
             onPressed: () =>
                 _message(context, 'Your ticket details are ready.'),
-            child: const Text(
+            child: AppText(
               'View Ticket →',
               style: TextStyle(color: _profileOrange, fontSize: 10),
-            ),
+             localize: true,),
           ),
         ],
       ),
@@ -2981,7 +3024,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   }) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(18),
       border: Border.all(color: _profileLine),
     ),
@@ -2991,10 +3034,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   Widget _smallPill(String text) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: const Color(0xFFF1F4F8),
+      color: AppColors.surfaceVariant,
       borderRadius: BorderRadius.circular(12),
     ),
-    child: Text(text, style: const TextStyle(color: _profileNavy, fontSize: 9)),
+    child: AppText(text, style: TextStyle(color: _profileInk, fontSize: 9)),
   );
 
   Future<void> _logout(BuildContext context) async {
@@ -3013,6 +3056,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         FirebaseAuth.instance.signOut(),
         GoogleSignIn.instance.signOut(),
         AppSession.load().then((session) => session.clear()),
+        AppPreferences.instance.load(),
       ]);
     } catch (_) {
       if (context.mounted) {
@@ -3024,7 +3068,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   void _message(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: AppText(message)));
   }
 
   String _initials(String name) {
@@ -3039,7 +3083,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required IconData icon,
     Widget? suffixIcon,
   }) => InputDecoration(
-    labelText: label,
+    labelText: appLanguageText(label, label),
     prefixIcon: Icon(icon, color: _profileMuted, size: 20),
     suffixIcon: suffixIcon,
     filled: true,
@@ -3047,15 +3091,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: _profileLine),
+      borderSide:  BorderSide(color: _profileLine),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: _profileLine),
+      borderSide:  BorderSide(color: _profileLine),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: _profileOrange, width: 1.5),
+      borderSide: BorderSide(color: _profileOrange, width: 1.5),
     ),
   );
 
@@ -3087,15 +3131,15 @@ class _Stat extends StatelessWidget {
   Widget build(BuildContext context) => Expanded(
     child: Column(
       children: [
-        Text(
+        AppText(
           value,
-          style: const TextStyle(
+          style:  TextStyle(
             color: _profileInk,
             fontWeight: FontWeight.w900,
           ),
         ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: _profileMuted, fontSize: 9)),
+        AppText(label, style:  TextStyle(color: _profileMuted, fontSize: 9)),
       ],
     ),
   );

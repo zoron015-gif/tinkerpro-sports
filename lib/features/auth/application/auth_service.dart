@@ -1,4 +1,5 @@
 import '../../../app_session.dart';
+import '../../../app_preferences.dart';
 import '../../../auth_api.dart';
 
 abstract interface class AuthSessionStore {
@@ -31,6 +32,7 @@ class AppSessionAuthStore implements AuthSessionStore {
     await session.setApiToken(token);
     await session.setRole(role);
     await session.markAuthenticated();
+    await AppPreferences.instance.load(accountEmail: email);
   }
 }
 

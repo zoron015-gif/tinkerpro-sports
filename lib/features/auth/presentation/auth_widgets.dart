@@ -17,12 +17,12 @@ class _AuthModeToggle extends StatelessWidget {
     child: Row(
       children: [
         _ToggleOption(
-          label: 'Sign in',
+          label: appLanguageText('Sign in', 'Mag-sign in'),
           selected: mode == _AuthMode.login,
           onTap: () => onChanged(_AuthMode.login),
         ),
         _ToggleOption(
-          label: 'Register',
+          label: appLanguageText('Register', 'Mag-register'),
           selected: mode == _AuthMode.register,
           onTap: () => onChanged(_AuthMode.register),
         ),
@@ -55,7 +55,7 @@ class _ToggleOption extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Center(
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: selected ? _navy : _muted,
@@ -73,16 +73,18 @@ class _RoleCard extends StatelessWidget {
   const _RoleCard({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.selected,
     required this.onTap,
+    this.subtitle,
+    this.onNoticeTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onNoticeTap;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -107,24 +109,51 @@ class _RoleCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: selected ? Colors.white : _ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppText(
+                        title,
+                        localize: true,
+                        style: TextStyle(
+                          color: selected ? Colors.white : _ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (onNoticeTap != null)
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: IconButton(
+                          tooltip: appLanguageText('About merchant tools', 'About merchant tools'),
+                          onPressed: onNoticeTap,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            Icons.info_outline_rounded,
+                            color: selected ? Colors.white70 : _muted,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white.withValues(alpha: .65)
-                        : _muted,
-                    fontSize: 10,
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  AppText(
+                    subtitle!,
+                    localize: true,
+                    style: TextStyle(
+                      color: selected
+                          ? Colors.white.withValues(alpha: .65)
+                          : _muted,
+                      fontSize: 10,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -159,9 +188,10 @@ class _AuthField extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
+      AppText(
         label,
-        style: const TextStyle(
+        localize: true,
+        style: TextStyle(
           color: _ink,
           fontSize: 13,
           fontWeight: FontWeight.w800,
@@ -175,7 +205,7 @@ class _AuthField extends StatelessWidget {
         obscureText: obscureText,
         maxLength: maxLength,
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: appLanguageText(hint, hint),
           prefixIcon: Icon(icon, color: _muted, size: 20),
           suffixIcon: suffix,
           prefixIconConstraints: const BoxConstraints(
@@ -192,24 +222,24 @@ class _AuthField extends StatelessWidget {
           ),
           counterText: maxLength == null ? null : '',
           filled: true,
-          fillColor: Colors.white,
+          fillColor: AppColors.surface,
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),
-          labelStyle: const TextStyle(
+          labelStyle: TextStyle(
             color: _ink,
             fontSize: 13,
             fontWeight: FontWeight.w800,
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: _orange, width: 1.5),
+            borderSide: BorderSide(color: _orange, width: 1.5),
           ),
         ),
       ),
@@ -221,12 +251,12 @@ class _OrDivider extends StatelessWidget {
   const _OrDivider();
 
   @override
-  Widget build(BuildContext context) => const Row(
+  Widget build(BuildContext context) => Row(
     children: [
       Expanded(child: Divider(color: Color(0xFFDDE2EA))),
       Padding(
         padding: EdgeInsets.symmetric(horizontal: 12),
-        child: Text(
+        child: AppText(
           'OR CONTINUE WITH',
           style: TextStyle(
             color: _muted,
@@ -234,7 +264,7 @@ class _OrDivider extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: .8,
           ),
-        ),
+         localize: true,),
       ),
       Expanded(child: Divider(color: Color(0xFFDDE2EA))),
     ],
@@ -258,7 +288,7 @@ class _SocialButton extends StatelessWidget {
     onPressed: onTap,
     style: OutlinedButton.styleFrom(
       fixedSize: const Size.fromHeight(48),
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       foregroundColor: _ink,
       side: const BorderSide(color: Color(0xFFE1E6EE)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -274,9 +304,9 @@ class _SocialButton extends StatelessWidget {
           filterQuality: FilterQuality.high,
         ),
         const SizedBox(width: 10),
-        Text(
+        AppText(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: _ink,
             fontSize: 13,
             fontWeight: FontWeight.w800,

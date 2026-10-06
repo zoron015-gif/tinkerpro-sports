@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 import 'saved_icons.dart';
 
-const _navigationNavy = AppColors.navy;
-const _navigationOrange = AppColors.orange;
-const _navigationMuted = AppColors.muted;
+Color get _navigationInk => AppColors.ink;
+Color get _navigationOrange => AppColors.accent;
+Color get _navigationMuted => AppColors.muted;
 
 class AppBottomNavigation extends StatelessWidget {
   const AppBottomNavigation({
@@ -28,6 +29,12 @@ class AppBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      final languageCode = AppPreferences.instance.languageCode;
+      String label(String english, String filipino) => appLanguageText(
+        english,
+        filipino,
+        languageCode: languageCode,
+      );
       final width = constraints.maxWidth;
       final compact = AppResponsive.isCompact(width);
       final veryNarrow = width < AppResponsive.narrowPhone;
@@ -36,8 +43,8 @@ class AppBottomNavigation extends StatelessWidget {
       return Theme(
         data: Theme.of(context).copyWith(
           navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
+            backgroundColor: AppColors.surface,
+            surfaceTintColor: AppColors.surface,
             shadowColor: const Color(0x14000000),
             elevation: 2,
             height: barHeight,
@@ -52,7 +59,7 @@ class AppBottomNavigation extends StatelessWidget {
             labelTextStyle: WidgetStateProperty.resolveWith((states) {
               final selected = states.contains(WidgetState.selected);
               return TextStyle(
-                color: selected ? _navigationNavy : _navigationMuted,
+                color: selected ? _navigationInk : _navigationMuted,
                 fontSize: labelSize,
                 fontWeight: FontWeight.w700,
               );
@@ -71,36 +78,36 @@ class AppBottomNavigation extends StatelessWidget {
               : NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: onDestinationSelected,
           destinations: merchantMode
-              ? const [
+              ? [
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-dashboard'),
                 icon: Icon(Icons.dashboard_outlined),
                 selectedIcon: Icon(Icons.dashboard_rounded),
-                label: 'Dashboard',
+                label: label('Dashboard', 'Dashboard'),
               ),
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-add'),
                 icon: Icon(Icons.add_circle_outline),
                 selectedIcon: Icon(Icons.add_circle),
-                label: 'Add',
+                label: label('Add', 'Magdagdag'),
               ),
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-messages'),
                 icon: Icon(Icons.send_outlined),
                 selectedIcon: Icon(Icons.send_rounded),
-                label: 'Messages',
+                label: label('Messages', 'Mga mensahe'),
               ),
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-payouts'),
                 icon: Icon(Icons.payments_outlined),
                 selectedIcon: Icon(Icons.payments_rounded),
-                label: 'Payouts',
+                label: label('Payouts', 'Mga payout'),
               ),
               NavigationDestination(
                 key: ValueKey('merchant-dashboard-nav-profile'),
                 icon: Icon(Icons.person_outline_rounded),
                 selectedIcon: Icon(Icons.person_rounded),
-                label: 'Profile',
+                label: label('Profile', 'Profile'),
               ),
                 ]
               : [
@@ -112,31 +119,31 @@ class AppBottomNavigation extends StatelessWidget {
           selectedIcon: Icon(
             Icons.location_on_rounded,
           ),
-          label: 'Explore',
+          label: label('Explore', 'Mag-explore'),
         ),
         NavigationDestination(
           key: const ValueKey('news-feed-nav-saved'),
           icon: const Icon(savedItemIcon),
           selectedIcon: const Icon(savedItemSelectedIcon),
-          label: 'Saved',
+          label: label('Saved', 'Naka-save'),
         ),
         NavigationDestination(
           key: const ValueKey('news-feed-nav-messages'),
           icon: _countBadge(Icons.send_outlined, unreadMessageCount),
           selectedIcon: _countBadge(Icons.send_rounded, unreadMessageCount),
-          label: 'Messages',
+          label: label('Messages', 'Mga mensahe'),
         ),
         NavigationDestination(
           key: const ValueKey('news-feed-nav-bookings'),
           icon: _countBadge(Icons.calendar_today_outlined, unreadBookingCount),
           selectedIcon: _countBadge(Icons.calendar_today_rounded, unreadBookingCount),
-          label: 'Bookings',
+          label: label('Bookings', 'Mga booking'),
         ),
         NavigationDestination(
           key: const ValueKey('news-feed-nav-profile'),
           icon: const Icon(Icons.person_outline_rounded),
           selectedIcon: const Icon(Icons.person_rounded),
-          label: 'Profile',
+          label: label('Profile', 'Profile'),
         ),
                 ],
         ),
@@ -146,7 +153,7 @@ class AppBottomNavigation extends StatelessWidget {
 
   Widget _countBadge(IconData icon, int count) => Badge(
     isLabelVisible: count > 0,
-    label: Text(count > 99 ? '99+' : '$count'),
+    label: AppText(count > 99 ? '99+' : '$count'),
     child: Icon(icon, size: 24),
   );
 }

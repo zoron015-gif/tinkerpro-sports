@@ -1,4 +1,6 @@
+import './app_design_system.dart';
 import 'package:flutter/material.dart';
+import 'app_preferences.dart';
 
 DateTime fitnessPlanEndDate(DateTime startDate, String planType) {
   final start = DateUtils.dateOnly(startDate);
@@ -184,17 +186,17 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
           children: [
             IconButton(
               key: const ValueKey('fitness-calendar-previous-month'),
-              tooltip: 'Previous month',
+              tooltip: appLanguageText('Previous month', 'Previous month'),
               onPressed: () => _changeMonth(-1),
               icon: const Icon(Icons.chevron_left_rounded),
             ),
             Expanded(
-              child: Text(
+              child: AppText(
                 _monthTitle(_visibleMonth),
                 key: const ValueKey('fitness-calendar-visible-month'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF192B50),
+                style: TextStyle(
+                  color: AppColors.ink,
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -202,7 +204,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
             ),
             IconButton(
               key: const ValueKey('fitness-calendar-next-month'),
-              tooltip: 'Next month',
+              tooltip: appLanguageText('Next month', 'Next month'),
               onPressed: () => _changeMonth(1),
               icon: const Icon(Icons.chevron_right_rounded),
             ),
@@ -213,12 +215,12 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
             for (final weekday in _weekdayNames)
               Expanded(
                 child: Center(
-                  child: Text(
+                  child: AppText(
                     weekday,
                     style: TextStyle(
                       color: sundayUnavailable && weekday == 'Sun'
                           ? const Color(0xFF8993A2)
-                          : const Color(0xFF68748A),
+                          : AppColors.muted,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -274,14 +276,14 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                 ? const Color(0xFF8A55B8)
                 : isActive
                 ? const Color(0xFFFF8200)
-                : const Color(0xFF263247);
+                : AppColors.ink;
             final foreground = isPassed || isUnavailable
                 ? const Color(0xFF8993A2)
                 : highlightColor;
             final borderColor = status != null
                 ? highlightColor
                 : isSelected
-                ? const Color(0xFF192B50)
+                ? AppColors.ink
                 : isInPlan && (isActive || isStartDate || isEndDate)
                 ? highlightColor
                 : Colors.transparent;
@@ -317,7 +319,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
+                          AppText(
                             '$dayNumber',
                             style: TextStyle(
                               color: foreground,
@@ -327,9 +329,9 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                                   ? TextDecoration.lineThrough
                                   : TextDecoration.none,
                             ),
-                          ),
+                           localize: true,),
                           if (status != null)
-                            Text(
+                            AppText(
                               status == 'present' ? 'P' : 'A',
                               style: TextStyle(
                                 color: highlightColor,
@@ -339,21 +341,21 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                               ),
                             )
                           else if (isUnavailable)
-                            const Text(
+                             AppText(
                               'Closed',
                               style: TextStyle(
-                                color: Color(0xFF68748A),
+                                color: AppColors.muted,
                                 fontSize: 7,
                                 height: 1.1,
                                 fontWeight: FontWeight.w700,
                               ),
-                            ),
+                             localize: true,),
                         ],
                       ),
                       if (isStartDate || isEndDate)
                         Positioned(
                           top: 2,
-                          child: Text(
+                          child: AppText(
                             isStartDate && isEndDate
                                 ? 'START/END'
                                 : isStartDate
@@ -406,7 +408,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
           runSpacing: 8,
           children: [
             _legend(const Color(0xFFFF8200), 'Active'),
-            _legend(const Color(0xFFE8EBF0), 'Passed'),
+            _legend(AppColors.surfaceVariant, 'Passed'),
             if (widget.onAttendanceChanged != null) ...[
               _legend(const Color(0xFF21865A), 'Present'),
               _legend(const Color(0xFFD94A4A), 'Absent'),
@@ -414,9 +416,9 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
             _legend(const Color(0xFF22845A), 'Start'),
             _legend(const Color(0xFF8A55B8), 'End'),
             if (closesSunday)
-              _legend(const Color(0xFFE8EBF0), 'Sunday · Closed')
+              _legend(AppColors.surfaceVariant, 'Sunday · Closed')
             else if (availableWeekdays != null)
-              _legend(const Color(0xFFE8EBF0), 'Venue closed'),
+              _legend(AppColors.surfaceVariant, 'Venue closed'),
           ],
         ),
       ],
@@ -450,16 +452,16 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
       color: color.withValues(alpha: .1),
       borderRadius: BorderRadius.circular(12),
     ),
-    child: Text(
+    child: AppText(
       '$label · $count',
       style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800),
-    ),
+     localize: true,),
   );
 
   Widget _attendanceEditor(DateTime today, bool closesSunday) {
     final date = _selectedDate;
     if (date == null) {
-      return const Text('Select a booking date to record attendance.');
+      return const AppText('Select a booking date to record attendance.', localize: true);
     }
     final status = _attendance[fitnessDateKey(date)];
     final availableWeekdays = fitnessAvailableWeekdays(widget.availability);
@@ -472,31 +474,31 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FA),
+        color: AppColors.surfaceVariant,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             '${_monthTitle(date)} ${date.day} · '
             '${status == null
                 ? 'Not recorded'
                 : status == 'present'
                 ? 'Present'
                 : 'Absent'}',
-            style: const TextStyle(
-              color: Color(0xFF192B50),
+            style: TextStyle(
+              color: AppColors.ink,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 8),
           if (isClosed)
-            const Text(
+             AppText(
               'This venue is closed on this day.',
-              style: TextStyle(color: Color(0xFF68748A), fontSize: 11),
-            )
+              style: TextStyle(color: AppColors.muted, fontSize: 11),
+             localize: true,)
           else
             Wrap(
               spacing: 8,
@@ -511,7 +513,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                     Icons.check_circle_outline_rounded,
                     size: 16,
                   ),
-                  label: const Text('Present'),
+                  label: const AppText('Present', localize: true),
                 ),
                 OutlinedButton.icon(
                   key: const ValueKey('fitness-attendance-mark-absent'),
@@ -519,7 +521,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                       ? () => _saveAttendance(date, 'absent')
                       : null,
                   icon: const Icon(Icons.event_busy_outlined, size: 16),
-                  label: const Text('Absent'),
+                  label: const AppText('Absent', localize: true),
                 ),
                 if (status != null)
                   TextButton(
@@ -527,17 +529,17 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
                     onPressed: _savingAttendance
                         ? null
                         : () => _saveAttendance(date, null),
-                    child: const Text('Clear'),
+                    child: const AppText('Clear', localize: true),
                   ),
               ],
             ),
           if (date.isAfter(today) && !isClosed)
-            const Padding(
+             Padding(
               padding: EdgeInsets.only(top: 6),
-              child: Text(
+              child: AppText(
                 'Future dates can be marked absent, but not present.',
-                style: TextStyle(color: Color(0xFF68748A), fontSize: 10),
-              ),
+                style: TextStyle(color: AppColors.muted, fontSize: 10),
+               localize: true,),
             ),
         ],
       ),
@@ -562,7 +564,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
     } on Exception catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save attendance: $error')),
+          SnackBar(content: AppText('Could not save attendance: $error', localize: true)),
         );
       }
     } finally {
@@ -579,9 +581,9 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
       const SizedBox(width: 5),
-      Text(
+      AppText(
         label,
-        style: const TextStyle(color: Color(0xFF68748A), fontSize: 10),
+        style:  TextStyle(color: AppColors.muted, fontSize: 10),
       ),
     ],
   );

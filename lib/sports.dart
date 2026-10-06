@@ -15,6 +15,7 @@ import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'reviews.dart';
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 
 typedef SportsVenue = ({
   int id,
@@ -52,9 +53,29 @@ typedef SportsVenue = ({
   String merchantAvatarUrl,
 });
 
-const _sportsInk = AppColors.ink;
-const _sportsOrange = AppColors.orange;
-const _sportsMuted = AppColors.muted;
+Color get _sportsInk => AppColors.ink;
+Color get _sportsOrange => AppColors.accent;
+Color get _sportsMuted => AppColors.muted;
+
+IconData _sportTypeIcon(String sportType) {
+  final normalized = sportType.trim().toLowerCase();
+  if (normalized.contains('basketball')) {
+    return Icons.sports_basketball_rounded;
+  }
+  if (normalized.contains('volleyball')) {
+    return Icons.sports_volleyball_rounded;
+  }
+  if (normalized.contains('soccer') || normalized.contains('football')) {
+    return Icons.sports_soccer_rounded;
+  }
+  if (normalized.contains('baseball')) return Icons.sports_baseball_rounded;
+  if (normalized.contains('tennis') ||
+      normalized.contains('badminton') ||
+      normalized.contains('pickleball')) {
+    return Icons.sports_tennis_rounded;
+  }
+  return Icons.sports_rounded;
+}
 
 class SportsVenueDetailPage extends StatefulWidget {
   const SportsVenueDetailPage({
@@ -206,7 +227,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update saved count: $error')),
+        SnackBar(content: AppText('Could not update saved count: $error', localize: true)),
       );
     }
   }
@@ -218,7 +239,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
     final images = _usableImages(widget.venue);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: AppColors.surfaceVariant,
       body: SafeArea(
         top: true,
         child: SingleChildScrollView(
@@ -252,7 +273,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                               ),
                               fit: BoxFit.cover,
                               errorBuilder: (_, _, _) =>
-                                  Container(color: const Color(0xFFE5E7EB)),
+                                  Container(color: AppColors.surfaceVariant),
                             ),
                           ),
                         ),
@@ -301,14 +322,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                 color: Colors.black.withValues(alpha: 0.58),
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              child: Text(
+                              child: AppText(
                                 '${_imageIndex + 1}/${images.length}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
-                              ),
+                               localize: true,),
                             ),
                           ),
                       ],
@@ -319,8 +340,8 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                 offset: Offset(0, images.isNotEmpty ? -26 : 0),
                 child: Container(
                   key: const ValueKey('sports-venue-content-panel'),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(26),
                     ),
@@ -341,13 +362,13 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
+                              child: AppText(
                                 key: const ValueKey('sports-venue-title'),
                                 widget.venue.name,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF1B1C1E),
+                                style: TextStyle(
+                                  color: _sportsInk,
                                   fontSize: 24,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: -0.6,
@@ -368,14 +389,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                     size: 18,
                                   ),
                                   const SizedBox(width: 5),
-                                  Text(
+                                  AppText(
                                     '${widget.venue.heartCount}',
-                                    style: const TextStyle(
-                                      color: Color(0xFF1B1C1E),
+                                    style: TextStyle(
+                                      color: _sportsInk,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ),
-                                  ),
+                                   localize: true,),
                                 ],
                               ),
                             ),
@@ -385,11 +406,11 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
+                              child: AppText(
                                 widget.venue.address,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _sportsMuted,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
@@ -404,20 +425,18 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFE9FBF2),
+                                  color: AppColors.successSurface,
                                   borderRadius: BorderRadius.circular(99),
-                                  border: Border.all(
-                                    color: const Color(0xFFA7E5C2),
-                                  ),
+                                  border: Border.all(color: AppColors.success),
                                 ),
-                                child: const Text(
+                                child: AppText(
                                   'OPEN NOW',
                                   style: TextStyle(
-                                    color: Color(0xFF07854B),
+                                    color: AppColors.success,
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
                                   ),
-                                ),
+                                 localize: true,),
                               ),
                           ],
                         ),
@@ -426,22 +445,22 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           children: [
                             _ratingStars(widget.venue.averageRating),
                             const SizedBox(width: 5),
-                            Text(
+                            AppText(
                               widget.venue.averageRating == 0
                                   ? 'No ratings yet'
                                   : widget.venue.averageRating.toStringAsFixed(
                                       1,
                                     ),
-                              style: const TextStyle(
-                                color: Color(0xFF101B33),
+                              style: TextStyle(
+                                color: AppColors.ink,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const Text(
+                            AppText(
                               '  •  ',
-                              style: TextStyle(color: Color(0xFFCBD2DD)),
-                            ),
+                              style: TextStyle(color: AppColors.border),
+                             localize: true,),
                             TextButton(
                               key: const ValueKey('sports-venue-open-reviews'),
                               onPressed: widget.venue.id <= 0
@@ -454,17 +473,17 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 visualDensity: VisualDensity.compact,
                               ),
-                              child: Text(
+                              child: AppText(
                                 '${widget.venue.reviewCount} '
                                 '${widget.venue.reviewCount == 1 ? 'review' : 'reviews'} · '
                                 '${widget.venue.ratingUserCount} rated',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   decoration: TextDecoration.underline,
                                   decorationColor: _sportsOrange,
                                   fontWeight: FontWeight.w700,
                                 ),
-                              ),
+                               localize: true,),
                             ),
                           ],
                         ),
@@ -509,10 +528,10 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           ),
                         if (widget.venue.tags.isNotEmpty) ...[
                           const SizedBox(height: 2),
-                          Text(
+                          AppText(
                             widget.amenitiesHeading,
-                            style: const TextStyle(
-                              color: Color(0xFF8A97AA),
+                            style: TextStyle(
+                              color: _sportsMuted,
                               fontSize: 11,
                               letterSpacing: .8,
                               fontWeight: FontWeight.w800,
@@ -527,10 +546,12 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                 .map(
                                   (tag) => DecoratedBox(
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFFFEFE5),
+                                      color: AppColors.softOrangeAlt,
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: const Color(0x33FED7AA),
+                                        color: _sportsOrange.withValues(
+                                          alpha: .25,
+                                        ),
                                       ),
                                     ),
                                     child: Padding(
@@ -538,10 +559,10 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                         horizontal: 10,
                                         vertical: 6,
                                       ),
-                                      child: Text(
+                                      child: AppText(
                                         tag,
-                                        style: const TextStyle(
-                                          color: Color(0xFF263247),
+                                        style: TextStyle(
+                                          color: _sportsInk,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -554,48 +575,44 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         ],
                         const SizedBox(height: 12),
                         if (widget.venue.priceDay.trim().isNotEmpty)
-                          Text(
+                          AppText(
                             widget.venue.priceDay,
-                            style: const TextStyle(
-                              color: Color(0xFF101B33),
+                            style: TextStyle(
+                              color: AppColors.ink,
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         const SizedBox(height: 16),
-                        const Divider(color: Color(0xFFD8DDE5), thickness: 1),
+                        Divider(color: AppColors.border, thickness: 1),
                         const SizedBox(height: 14),
                         if (merchantName.isNotEmpty ||
                             widget.venue.merchantEmail.isNotEmpty ||
                             widget.venue.merchantPhone.isNotEmpty) ...[
-                          const Text(
+                          AppText(
                             'Hosted by merchant',
                             style: TextStyle(
-                              color: Color(0xFF1B1C1E),
+                              color: _sportsInk,
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
                             ),
-                          ),
+                           localize: true,),
                           const SizedBox(height: 3),
-                          const Text(
+                          AppText(
                             'Verified venue manager • Fast responding',
                             style: TextStyle(
-                              color: Color(0xFF778398),
+                              color: _sportsMuted,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
-                          ),
+                           localize: true,),
                           const SizedBox(height: 12),
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFF8FAFC), Color(0xFFFFF7ED)],
-                              ),
+                              gradient: AppGradients.warmSurface,
                               borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: const Color(0xFFE2E7EF),
-                              ),
+                              border: Border.all(color: AppColors.border),
                             ),
                             child: Column(
                               children: [
@@ -603,7 +620,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   children: [
                                     CircleAvatar(
                                       radius: 24,
-                                      backgroundColor: Colors.grey.shade300,
+                                      backgroundColor: AppColors.softSurface,
                                       backgroundImage:
                                           widget.venue.merchantAvatarUrl
                                               .trim()
@@ -616,19 +633,19 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                           widget.venue.merchantAvatarUrl
                                               .trim()
                                               .isEmpty
-                                          ? const Icon(
+                                          ? Icon(
                                               Icons.person,
-                                              color: Colors.white,
+                                              color: _sportsMuted,
                                             )
                                           : null,
                                     ),
                                     const SizedBox(width: 10),
                                     Expanded(
-                                      child: Text(
+                                      child: AppText(
                                         merchantName,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Color(0xFF1B1C1E),
+                                        style: TextStyle(
+                                          color: _sportsInk,
                                           fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                         ),
@@ -642,8 +659,8 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 12,
                                         ),
-                                        side: const BorderSide(
-                                          color: Color(0xFFD7DEE8),
+                                        side: BorderSide(
+                                          color: AppColors.border,
                                         ),
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
@@ -651,21 +668,21 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                           ),
                                         ),
                                       ),
-                                      child: const Text(
+                                      child: AppText(
                                         'Chat',
                                         style: TextStyle(
-                                          color: Color(0xFF263247),
+                                          color: _sportsInk,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
                                         ),
-                                      ),
+                                       localize: true,),
                                     ),
                                   ],
                                 ),
                                 if (widget.venue.merchantEmail.isNotEmpty ||
                                     widget.venue.merchantPhone.isNotEmpty) ...[
                                   const SizedBox(height: 10),
-                                  const Divider(height: 1),
+                                  Divider(height: 1, color: AppColors.border),
                                   const SizedBox(height: 8),
                                   if (widget.venue.merchantPhone.isNotEmpty)
                                     _contactChip(
@@ -687,14 +704,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         ],
                         const SizedBox(height: 14),
                         if (widget.venue.rateLabels.isNotEmpty) ...[
-                          const Text(
+                          AppText(
                             'Rates',
                             style: TextStyle(
-                              color: Color(0xFF1B1C1E),
+                              color: _sportsInk,
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
                             ),
-                          ),
+                           localize: true,),
                           const SizedBox(height: 6),
                           for (final rate in widget.venue.rateLabels)
                             _detailRow(Icons.payments_outlined, rate),
@@ -719,16 +736,16 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text(
+                                        content: AppText(
                                           'Could not open venue link.',
-                                        ),
+                                         localize: true,),
                                       ),
                                     );
                                   }
                                 }
                               },
                               icon: const Icon(Icons.open_in_new_rounded),
-                              label: const Text('Visit venue website'),
+                              label: const AppText('Visit venue website', localize: true),
                             ),
                           ),
                       ],
@@ -745,9 +762,9 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 10, 10, 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.97),
+            color: AppColors.surface.withValues(alpha: 0.97),
             borderRadius: BorderRadius.circular(20),
-            border: const Border(top: BorderSide(color: Color(0xFFE2E7EF))),
+            border: Border(top: BorderSide(color: AppColors.border)),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x24000000),
@@ -766,11 +783,11 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                     FittedBox(
                       alignment: Alignment.centerLeft,
                       fit: BoxFit.scaleDown,
-                      child: Text(
+                      child: AppText(
                         widget.venue.priceDay,
                         maxLines: 1,
-                        style: const TextStyle(
-                          color: Color(0xFF1B1C1E),
+                        style: TextStyle(
+                          color: _sportsInk,
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                         ),
@@ -778,18 +795,18 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                     ),
                     if (widget.venue.additionalPlayerFee > 0 &&
                         widget.venue.includedPlayers > 0)
-                      Text(
+                      AppText(
                         '${widget.venue.includedPlayers} included · '
                         'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
                         'per extra player',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.orange.shade900,
+                          color: AppColors.warning,
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                         ),
-                      ),
+                       localize: true,),
                   ],
                 ),
               ),
@@ -805,7 +822,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: Text(
+                  child: AppText(
                     widget.primaryActionLabel,
                     style: const TextStyle(
                       fontSize: 16,
@@ -829,7 +846,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
+        color: AppColors.surface.withValues(alpha: 0.96),
         shape: BoxShape.circle,
         boxShadow: const [
           BoxShadow(
@@ -842,7 +859,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
       child: IconButton(
         onPressed: onPressed,
         padding: EdgeInsets.zero,
-        icon: Icon(icon, size: 18, color: const Color(0xFF263247)),
+        icon: Icon(icon, size: 18, color: _sportsInk),
       ),
     );
   }
@@ -882,7 +899,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
   void _showMerchantMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: AppText(message)));
   }
 
   Future<void> _openImageViewer(List<String> images, int pageIndex) async {
@@ -942,7 +959,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                 : value >= star - .5
                 ? Icons.star_half_rounded
                 : Icons.star_outline_rounded,
-            color: const Color(0xFFF59E0B),
+            color: AppColors.warning,
             size: 16,
           ),
       ],
@@ -967,18 +984,18 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
         Container(
           width: 30,
           height: 30,
-          decoration: const BoxDecoration(
-            color: Color(0xFFF1F3F6),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceVariant,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 17, color: const Color(0xFF4D596D)),
+          child: Icon(icon, size: 17, color: AppColors.muted),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
+          child: AppText(
             text,
-            style: const TextStyle(
-              color: Color(0xFF263247),
+            style: TextStyle(
+              color: _sportsInk,
               fontSize: 13,
               height: 1.3,
               fontWeight: FontWeight.w600,
@@ -992,14 +1009,14 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
   Widget _contactChip(IconData icon, String value) => Row(
     mainAxisSize: MainAxisSize.max,
     children: [
-      Icon(icon, size: 18, color: const Color(0xFF68748A)),
+      Icon(icon, size: 18, color: AppColors.muted),
       const SizedBox(width: 6),
       Expanded(
-        child: Text(
+        child: AppText(
           value,
           softWrap: true,
-          style: const TextStyle(
-            color: Color(0xFF4D5666),
+          style: TextStyle(
+            color: AppColors.muted,
             fontSize: 13,
             height: 1.25,
             fontWeight: FontWeight.w500,
@@ -1365,7 +1382,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      backgroundColor: const Color(0xFFF8F9FF),
+      backgroundColor: AppColors.surface,
       builder: (modalContext) => StatefulBuilder(
         builder: (context, setModalState) {
           availabilityTimer ??= Timer.periodic(const Duration(seconds: 30), (
@@ -1429,26 +1446,26 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           Icons.arrow_back_rounded,
                           () => Navigator.of(modalContext).pop(),
                         ),
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             children: [
-                              Text(
+                              AppText(
                                 'Book Court',
                                 style: TextStyle(
                                   color: _sportsInk,
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,
                                 ),
-                              ),
+                               localize: true,),
                               SizedBox(height: 2),
-                              Text(
+                              AppText(
                                 'Step 2 of 2 • Checkout',
                                 style: TextStyle(
                                   color: _sportsMuted,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
-                              ),
+                               localize: true,),
                             ],
                           ),
                         ),
@@ -1460,9 +1477,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppColors.surface,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0xFFE8ECF3)),
+                        border: Border.all(color: AppColors.border),
                         boxShadow: const [
                           BoxShadow(
                             color: Color(0x0D0F172A),
@@ -1487,14 +1504,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFFF1E8),
+                                        color: AppColors.softOrangeAlt,
                                         borderRadius: BorderRadius.circular(99),
                                       ),
-                                      child: Text(
+                                      child: AppText(
                                         venue.sport.isEmpty
                                             ? 'VENUE'
                                             : venue.sport.toUpperCase(),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: _sportsOrange,
                                           fontSize: 10,
                                           fontWeight: FontWeight.w800,
@@ -1503,11 +1520,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                       ),
                                     ),
                                     const SizedBox(height: 7),
-                                    Text(
+                                    AppText(
                                       venue.name,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: _sportsInk,
                                         fontSize: 19,
                                         fontWeight: FontWeight.w900,
@@ -1516,14 +1533,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   ],
                                 ),
                               ),
-                              Text(
+                              AppText(
                                 'PHP ${rate.toStringAsFixed(2)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _sportsOrange,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w900,
                                 ),
-                              ),
+                               localize: true,),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -1543,7 +1560,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Text(
+                    AppText(
                       'CHOOSE SPORT AND SLOT',
                       style: TextStyle(
                         color: _sportsMuted,
@@ -1551,22 +1568,22 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
+                     localize: true,),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: selectedSportType,
                       decoration: _bookingInputDecoration(
-                        prefixIcon: const Icon(Icons.sports_tennis_rounded),
-                        labelText: 'Sport type',
+                        prefixIcon: Icon(_sportTypeIcon(selectedSportType)),
+                        labelText: appLanguageText('Sport type', 'Sport type'),
                       ),
                       items: [
                         for (final sport in venue.sportsSlots)
                           DropdownMenuItem(
                             value: '${sport['sportType']}',
-                            child: Text(
+                            child: AppText(
                               '${sport['sportType']} · PHP '
                               '${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr',
-                            ),
+                             localize: true,),
                           ),
                       ],
                       onChanged: (value) {
@@ -1611,19 +1628,31 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                       : Icons.check_circle_outline_rounded,
                                   size: 16,
                                   color: blocked
-                                      ? Colors.red.shade700
-                                      : Colors.green.shade700,
+                                      ? AppColors.errorText
+                                      : AppColors.success,
                                 ),
-                                label: Text(
+                                label: AppText(
                                   '$label · ${blocked ? 'Unavailable' : 'Open'}',
-                                ),
+                                 localize: true,),
                                 selectedColor: blocked
-                                    ? Colors.red.shade100
-                                    : Colors.green.shade100,
+                                    ? AppColors.error.withValues(alpha: .14)
+                                    : AppColors.successSurface,
+                                labelStyle: TextStyle(
+                                  color: selected
+                                      ? blocked
+                                            ? AppColors.errorText
+                                            : AppColors.success
+                                      : _sportsInk,
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 side: BorderSide(
                                   color: blocked
-                                      ? Colors.red.shade200
-                                      : Colors.green.shade200,
+                                      ? AppColors.errorText.withValues(
+                                          alpha: .55,
+                                        )
+                                      : AppColors.success.withValues(
+                                          alpha: .55,
+                                        ),
                                 ),
                               );
                             },
@@ -1631,15 +1660,15 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(
+                    AppText(
                       selectedSportIsFullStudio
                           ? 'This sport uses the whole studio; its bookings block every small slot.'
                           : 'PHP ${rate.toStringAsFixed(2)} per slot per hour. '
                                 'Different slots can be booked at the same time.',
-                      style: const TextStyle(color: _sportsMuted, fontSize: 12),
+                      style: TextStyle(color: _sportsMuted, fontSize: 12),
                     ),
                     const SizedBox(height: 18),
-                    const Text(
+                    AppText(
                       'CHOOSE DATE AND TIME',
                       style: TextStyle(
                         color: _sportsMuted,
@@ -1647,7 +1676,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
+                     localize: true,),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -1700,7 +1729,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                               }
                             },
                             icon: const Icon(Icons.calendar_today_outlined),
-                            label: Text(
+                            label: AppText(
                               MaterialLocalizations.of(context)
                                   .formatMediumDate(bookingDate),
                             ),
@@ -1720,36 +1749,36 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                               }
                             },
                             icon: const Icon(Icons.schedule_rounded),
-                            label: Text(bookingTime.format(context)),
+                            label: AppText(bookingTime.format(context)),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      'Select a time within the venue hours: ${venue.hours}.',
-                      style: const TextStyle(color: _sportsMuted, fontSize: 12),
-                    ),
+                    AppText(
+                      'Please choose a time within the venue’s opening hours (${venue.hours}).',
+                      style: TextStyle(color: _sportsMuted, fontSize: 12),
+                     localize: true,),
                     const SizedBox(height: 8),
                     if (availabilityLoading)
                       const LinearProgressIndicator()
                     else if (relevantBookings.isEmpty)
-                      Text(
+                      AppText(
                         'Selected slot is open for this date.',
                         style: TextStyle(
-                          color: Colors.green.shade700,
+                          color: AppColors.success,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
-                      )
+                       localize: true,)
                     else ...[
-                      Text(
+                      AppText(
                         'Selected slot schedule',
                         style: TextStyle(
-                          color: Colors.red.shade700,
+                          color: AppColors.errorText,
                           fontWeight: FontWeight.w800,
                         ),
-                      ),
+                       localize: true,),
                       const SizedBox(height: 4),
                       Wrap(
                         spacing: 6,
@@ -1760,17 +1789,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 avatar: Icon(
                                   Icons.event_busy_rounded,
                                   size: 16,
-                                  color: Colors.red.shade700,
+                                  color: AppColors.errorText,
                                 ),
-                                label: Text(
+                                label: AppText(
                                   _occupiedBookingLabel(
                                     booking,
                                     bookingDate: bookingDate,
                                     now: availabilityNow,
                                   ),
                                 ),
-                                backgroundColor: Colors.red.shade50,
-                                side: BorderSide(color: Colors.red.shade200),
+                                backgroundColor: AppColors.error.withValues(
+                                  alpha: .12,
+                                ),
+                                side: BorderSide(color: AppColors.errorText),
                               ),
                             )
                             .toList(),
@@ -1782,21 +1813,21 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.red.shade50,
+                          color: AppColors.error.withValues(alpha: .12),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.red.shade200),
+                          border: Border.all(color: AppColors.errorText),
                         ),
-                        child: Text(
-                          'This time overlaps an existing booking. Please choose another time.',
+                        child: AppText(
+                          'That time is already booked. Please choose another available time.',
                           style: TextStyle(
-                            color: Colors.red.shade800,
+                            color: AppColors.errorText,
                             fontWeight: FontWeight.w800,
                           ),
-                        ),
+                         localize: true,),
                       ),
                     ],
                     const SizedBox(height: 18),
-                    const Text(
+                    AppText(
                       'BOOKING CONFIGURATION',
                       style: TextStyle(
                         color: _sportsMuted,
@@ -1804,19 +1835,22 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
+                     localize: true,),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
                       initialValue: hours,
                       decoration: _bookingInputDecoration(
                         prefixIcon: Icon(Icons.schedule_rounded),
-                        labelText: 'Duration',
+                        labelText: appLanguageText('Duration', 'Duration'),
                       ),
                       items: [
                         for (var value = 1; value <= 8; value++)
                           DropdownMenuItem(
                             value: value,
-                            child: Text('$value hour${value == 1 ? '' : 's'}'),
+                            child: AppText(
+                              value == 1 ? '1 hour' : '$value hours',
+                              localize: true,
+                            ),
                           ),
                       ],
                       onChanged: (value) {
@@ -1828,15 +1862,15 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       initialValue: players,
                       decoration: _bookingInputDecoration(
                         prefixIcon: Icon(Icons.groups_rounded),
-                        labelText: 'Number of players',
+                        labelText: appLanguageText('Number of players', 'Number of players'),
                       ),
                       items: [
                         for (var value = 1; value <= 30; value++)
                           DropdownMenuItem(
                             value: value,
-                            child: Text(
+                            child: AppText(
                               '$value player${value == 1 ? '' : 's'}',
-                            ),
+                             localize: true,),
                           ),
                       ],
                       onChanged: (value) {
@@ -1849,19 +1883,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         selectedIncludedPlayers > 0)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: Text(
+                        child: AppText(
                           '$selectedIncludedPlayers players included; '
                           'each additional player costs PHP '
                           '${selectedAdditionalPlayerFee.toStringAsFixed(2)}.',
                           style: TextStyle(
-                            color: Colors.orange.shade900,
+                            color: AppColors.warning,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
-                        ),
+                         localize: true,),
                       ),
                     const SizedBox(height: 18),
-                    const Text(
+                    AppText(
                       'PAYMENT METHOD',
                       style: TextStyle(
                         color: _sportsMuted,
@@ -1869,14 +1903,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         letterSpacing: .9,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
+                     localize: true,),
                     const SizedBox(height: 8),
                     SegmentedButton<String>(
                       style: ButtonStyle(
                         backgroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
                               ? _sportsOrange
-                              : Colors.white,
+                              : AppColors.surface,
                         ),
                         foregroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
@@ -1884,18 +1918,18 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                               : _sportsInk,
                         ),
                         side: WidgetStateProperty.all(
-                          const BorderSide(color: Color(0xFFE2E7EF)),
+                          BorderSide(color: AppColors.border),
                         ),
                       ),
                       segments: const [
                         ButtonSegment(
                           value: 'online',
-                          label: Text('Online payment'),
+                          label: AppText('Online payment', localize: true),
                           icon: Icon(Icons.lock_rounded),
                         ),
                         ButtonSegment(
                           value: 'cash_on_arrival',
-                          label: Text('COA'),
+                          label: AppText('COA', localize: true),
                           icon: Icon(Icons.payments_outlined),
                         ),
                       ],
@@ -1905,13 +1939,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       },
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    AppText(
                       payment == 'cash_on_arrival'
                           ? 'Pay PHP ${cashOnArrival.toStringAsFixed(2)} now and '
                                 'PHP ${cashOnArrival.toStringAsFixed(2)} on arrival.'
                           : 'Pay securely online. Amount due: '
                                 'PHP ${total.toStringAsFixed(2)}.',
-                      style: const TextStyle(color: _sportsMuted),
+                      style: TextStyle(color: _sportsMuted),
                     ),
                     const Divider(height: 24),
                     _bookingAmountRow('Merchant rate', rate, '/ hour'),
@@ -1942,30 +1976,30 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       strong: true,
                     ),
                     if (payment == 'cash_on_arrival')
-                      Text(
+                      AppText(
                         'Cash on Arrival is fixed at 50% of the booking total.',
                         style: TextStyle(
-                          color: Colors.green.shade700,
+                          color: AppColors.success,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
-                      ),
+                       localize: true,),
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: AppColors.surfaceVariant,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E7EF)),
+                        border: Border.all(color: AppColors.border),
                       ),
-                      child: const Text(
+                      child: AppText(
                         'Cancellation Policy: Free cancellation up to 6 hours before the slot. Proper sports footwear is required.',
                         style: TextStyle(
                           color: _sportsMuted,
                           fontSize: 11,
                           height: 1.4,
                         ),
-                      ),
+                       localize: true,),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -1999,10 +2033,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           elevation: 5,
-                          shadowColor: const Color(0x55FF8200),
+                          shadowColor: _sportsOrange.withValues(alpha: .34),
                         ),
                         icon: const Icon(Icons.lock_outline_rounded),
-                        label: Text(
+                        label: AppText(
                           payment == 'cash_on_arrival'
                               ? 'Continue · PHP ${dueNow.toStringAsFixed(2)}'
                               : 'Pay · PHP ${dueNow.toStringAsFixed(2)}',
@@ -2028,7 +2062,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         onPressed: onPressed,
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
-          backgroundColor: const Color(0xFFF1F3F7),
+          backgroundColor: AppColors.surfaceVariant,
           foregroundColor: _sportsInk,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(11),
@@ -2045,17 +2079,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   }) {
     return InputDecoration(
       prefixIcon: prefixIcon,
-      labelText: labelText,
+      labelText: appLanguageText(labelText, labelText),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: AppColors.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+        borderSide: BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+        borderSide: BorderSide(color: AppColors.border),
       ),
     );
   }
@@ -2063,10 +2097,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   ButtonStyle _bookingChoiceStyle() {
     return OutlinedButton.styleFrom(
       foregroundColor: _sportsInk,
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      side: const BorderSide(color: Color(0xFFE2E7EF), width: 1.5),
+      side: BorderSide(color: AppColors.border, width: 1.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
     );
   }
@@ -2209,19 +2243,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         final useCashOnArrival = await showDialog<bool>(
           context: modalContext,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Online payment unavailable'),
-            content: const Text(
+            title: const AppText('Online payment unavailable', localize: true),
+            content: const AppText(
               'Online payments are not configured yet. No booking has been '
               'created. You can choose Cash on Arrival or try again later.',
-            ),
+             localize: true,),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
+                child: const AppText('Cancel', localize: true),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Use Cash on Arrival'),
+                child: const AppText('Use Cash on Arrival', localize: true),
               ),
             ],
           ),
@@ -2306,18 +2340,18 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   Future<String?> _chooseOnlineProvider() => showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Choose online payment'),
-      content: const Text('Select a payment provider to continue securely.'),
+      title: const AppText('Choose online payment', localize: true),
+      content: const AppText('Select a payment provider to continue securely.', localize: true),
       actions: [
         TextButton.icon(
           onPressed: () => Navigator.pop(dialogContext, 'gcash'),
           icon: const Icon(Icons.account_balance_wallet_rounded),
-          label: const Text('GCash'),
+          label: const AppText('GCash', localize: true),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
           icon: const Icon(Icons.payments_rounded),
-          label: const Text('PayMaya'),
+          label: const AppText('PayMaya', localize: true),
         ),
       ],
     ),
@@ -2345,16 +2379,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm booking details'),
+        title: const AppText('Confirm booking details', localize: true),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              AppText(
                 'Please check that all information is correct before continuing.',
                 style: TextStyle(color: _sportsMuted),
-              ),
+               localize: true,),
               const SizedBox(height: 16),
               _confirmationRow('Venue', venue.name),
               _confirmationRow('Sport', sportType),
@@ -2388,11 +2422,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Edit details'),
+            child: const AppText('Edit details', localize: true),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Confirm and continue'),
+            child: const AppText('Confirm and continue', localize: true),
           ),
         ],
       ),
@@ -2407,9 +2441,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       children: [
         SizedBox(
           width: 98,
-          child: Text(
+          child: AppText(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: _sportsMuted,
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -2417,9 +2451,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ),
         ),
         Expanded(
-          child: Text(
+          child: AppText(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: _sportsInk,
               fontSize: 12,
               fontWeight: FontWeight.w800,
@@ -2450,7 +2484,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     child: Row(
       children: [
         Expanded(
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: _sportsMuted,
@@ -2458,7 +2492,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             ),
           ),
         ),
-        Text(
+        AppText(
           label == 'Duration'
               ? '${amount.toStringAsFixed(0)}$suffix'
               : 'PHP ${amount.toStringAsFixed(2)}$suffix',
@@ -2478,11 +2512,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         Icon(icon, size: 15, color: _sportsMuted),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(
+          child: AppText(
             text.isEmpty ? 'Not provided' : text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _sportsMuted, fontSize: 12),
+            style: TextStyle(color: _sportsMuted, fontSize: 12),
           ),
         ),
       ],
@@ -2498,20 +2532,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(
       children: [
-        const Expanded(
-          child: Text(
+        Expanded(
+          child: AppText(
             'Schedule',
             style: TextStyle(color: _sportsMuted, fontWeight: FontWeight.w600),
-          ),
+           localize: true,),
         ),
-        Text(
+        AppText(
           '${MaterialLocalizations.of(context).formatShortDate(date)} · '
           '${time.format(context)} · $hours hr',
-          style: const TextStyle(
-            color: _sportsInk,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+          style: TextStyle(color: _sportsInk, fontWeight: FontWeight.w800),
+         localize: true,),
       ],
     ),
   );
@@ -2519,6 +2550,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: AppText(message)));
   }
 }

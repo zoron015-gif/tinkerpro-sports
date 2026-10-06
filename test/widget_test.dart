@@ -7,6 +7,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/app_design_system.dart';
+import 'package:myapp/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:myapp/main.dart';
@@ -152,5 +154,44 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Create account'), findsOneWidget);
+  });
+
+  testWidgets('Marketplace dashboard content remains readable in dark mode', (
+    tester,
+  ) async {
+    await AppPreferences.instance.update(darkMode: true);
+    addTearDown(() => AppPreferences.instance.update(darkMode: false));
+
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('Made for the way you play'),
+      180,
+      scrollable: scrollable,
+    );
+    expect(
+      tester.widget<Text>(find.text('Made for the way you play')).style!.color,
+      AppColors.darkInk,
+    );
+
+    final featureCard = tester.widget<Container>(
+      find.byKey(const ValueKey('overview-feature-card-Easy discovery')),
+    );
+    expect(
+      (featureCard.decoration! as BoxDecoration).color,
+      AppColors.darkSurface,
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Ready to make a plan?'),
+      180,
+      scrollable: scrollable,
+    );
+    expect(
+      tester.widget<Text>(find.text('Ready to make a plan?')).style!.color,
+      AppColors.darkInk,
+    );
   });
 }

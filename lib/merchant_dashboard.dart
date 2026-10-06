@@ -12,18 +12,60 @@ import 'core/booking_status.dart';
 import 'merchant_add_page.dart';
 import 'merchant_profile_dashboard.dart';
 import 'messages_dashboard.dart';
+import 'skeleton_loader.dart';
 import 'app_card_styles.dart';
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 
 part 'merchant_dashboard_analytics.dart';
 part 'merchant_dashboard_analytics_section.dart';
 
 const _merchantNavy = AppColors.navy;
-const _merchantInk = AppColors.ink;
-const _merchantOrange = AppColors.orange;
-const _merchantPage = AppColors.page;
-const _merchantMuted = AppColors.muted;
-const _merchantLine = AppColors.border;
+Color get _merchantInk => AppColors.ink;
+Color get _merchantOrange => AppColors.accent;
+Color get _merchantPage => AppColors.page;
+Color get _merchantMuted => AppColors.muted;
+Color get _merchantLine => AppColors.border;
+
+class _MerchantDashboardLoadingSkeleton extends StatelessWidget {
+  const _MerchantDashboardLoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    key: const ValueKey('merchant-dashboard-loading-skeleton'),
+    padding: const EdgeInsets.all(16),
+    children: [
+      const Row(
+        children: [
+          SkeletonBlock(width: 54, height: 54, borderRadius: 27),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBlock(width: 170, height: 18),
+                SizedBox(height: 8),
+                SkeletonBlock(width: 110, height: 12),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      const Row(
+        children: [
+          Expanded(child: SkeletonBlock(height: 92, borderRadius: 16)),
+          SizedBox(width: 12),
+          Expanded(child: SkeletonBlock(height: 92, borderRadius: 16)),
+        ],
+      ),
+      const SizedBox(height: 16),
+      const SkeletonBlock(height: 230, borderRadius: 18),
+      const SizedBox(height: 16),
+      const SkeletonBlock(height: 170, borderRadius: 18),
+    ],
+  );
+}
 
 class MerchantDashboardPage extends StatefulWidget {
   const MerchantDashboardPage({super.key, this.onLogout, this.api});
@@ -49,6 +91,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   final _contactEmail = TextEditingController();
   final _designation = TextEditingController();
   final _venueSearchController = TextEditingController();
+  final _payoutSearchController = TextEditingController();
   final _selectedCategories = <String>{};
   final _imagePicker = ImagePicker();
   String _facilityType = 'Indoor';
@@ -66,6 +109,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   int _merchantTab = 0;
   int _payoutTab = 0;
   String _payoutBookingType = 'All';
+  String _payoutSearchQuery = '';
   Timer? _payoutRefreshTimer;
 
   String _analyticsPeriod = 'Daily';
@@ -136,6 +180,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       _contactEmail,
       _designation,
       _venueSearchController,
+      _payoutSearchController,
     ]) {
       controller.dispose();
     }
@@ -241,8 +286,34 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: AppText(message)));
   }
+
+  Widget _merchantSectionNotice({
+    required String key,
+    required String title,
+    required String message,
+  }) => IconButton(
+    key: ValueKey(key),
+    tooltip: appLanguageText('About $title', 'About $title'),
+    visualDensity: VisualDensity.compact,
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+    icon: const Icon(Icons.info_outline_rounded, size: 19),
+    onPressed: () => showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: AppText(title),
+        content: AppText(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const AppText('Got it', localize: true),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Future<Map<String, dynamic>?> _openMerchantEditPanel() async {
     var panelProfileImage = _profileImage;
@@ -257,7 +328,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             builder: (panelContext, setPanelState) => Align(
               alignment: Alignment.centerRight,
               child: Material(
-                color: Colors.white,
+                color: AppColors.surface,
                 child: SizedBox(
                   width: MediaQuery.sizeOf(panelContext).width * .88,
                   height: double.infinity,
@@ -268,20 +339,20 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                           padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
                           child: Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.storefront_outlined,
                                 color: _merchantOrange,
                               ),
                               const SizedBox(width: 10),
-                              const Expanded(
-                                child: Text(
+                               Expanded(
+                                child: AppText(
                                   'Edit merchant profile',
                                   style: TextStyle(
                                     color: _merchantInk,
                                     fontSize: 19,
                                     fontWeight: FontWeight.w900,
                                   ),
-                                ),
+                                 localize: true,),
                               ),
                               IconButton(
                                 onPressed: () =>
@@ -305,12 +376,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                 },
                                 child: CircleAvatar(
                                   radius: 42,
-                                  backgroundColor: const Color(0xFFFFE8D2),
+                                  backgroundColor: AppColors.softOrange,
                                   backgroundImage: _imageProvider(
                                     panelProfileImage,
                                   ),
                                   child: panelProfileImage == null
-                                      ? const Icon(
+                                      ? Icon(
                                           Icons.add_a_photo_outlined,
                                           color: _merchantOrange,
                                           size: 25,
@@ -319,13 +390,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
+                               AppText(
                                 'Tap to upload avatar',
                                 style: TextStyle(
                                   color: _merchantMuted,
                                   fontSize: 11,
                                 ),
-                              ),
+                               localize: true,),
                               const SizedBox(height: 12),
                               Expanded(
                                 child: Form(
@@ -390,7 +461,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                       child: OutlinedButton(
                                         onPressed: () =>
                                             Navigator.pop(panelContext, false),
-                                        child: const Text('Cancel'),
+                                        child: const AppText('Cancel', localize: true),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -409,7 +480,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                                   );
                                                 }
                                               },
-                                        child: const Text('Save changes'),
+                                        child: const AppText('Save changes', localize: true),
                                       ),
                                     ),
                                   ],
@@ -456,14 +527,32 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         title: _merchantTab == 1
             ? Row(
                 children: [
-                  const Expanded(
-                    child: Text('Add business', style: AppTypography.pageTitle),
+                  Expanded(
+                    child: Row(
+                      children: [
+                         Flexible(
+                          child: AppText(
+                            'Add business',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.pageTitle,
+                           localize: true,),
+                        ),
+                        const SizedBox(width: 4),
+                        _merchantSectionNotice(
+                          key: 'merchant-add-info',
+                          title: 'Add business',
+                          message: 'Complete a News Card for each business before its Booking Card is published.',
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: () =>
                         _merchantAddPageKey.currentState?.openAddBusinessForm(),
                     icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add'),
+                    label: const AppText('Add', localize: true),
                     style: FilledButton.styleFrom(
                       backgroundColor: _merchantOrange,
                       minimumSize: const Size(0, 38),
@@ -477,7 +566,18 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   ),
                 ],
               )
-            : Text(switch (_merchantTab) {
+            : _merchantTab == 3
+            ? Row(
+                children: [
+                   AppText('Payouts', style: AppTypography.pageTitle, localize: true),
+                  _merchantSectionNotice(
+                    key: 'merchant-payouts-info',
+                    title: 'Payouts',
+                    message: 'Manage booking requests and track your earnings.',
+                  ),
+                ],
+              )
+            : AppText(switch (_merchantTab) {
                 0 => 'Merchant Dashboard',
                 1 => 'Add business',
                 3 => 'Payouts',
@@ -491,7 +591,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       ),
       bottomNavigationBar: _merchantBottomNavigation(),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const _MerchantDashboardLoadingSkeleton()
           : _merchantContent(),
     );
   }
@@ -519,23 +619,26 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     onRefresh: _loadBookings,
     child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
-        Text(
-          'Manage booking requests and track your earnings.',
-          style: TextStyle(color: Colors.grey.shade700),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(flex: 2, child: _payoutTypeFilter()),
+            const SizedBox(width: 8),
+            Expanded(flex: 3, child: _payoutSearchBar()),
+          ],
         ),
-        const SizedBox(height: 20),
-        _payoutTypeFilter(),
         const SizedBox(height: 12),
         SegmentedButton<int>(
           key: const ValueKey('merchant-payout-tabs'),
           style: _analyticsFilterStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(value: 0, label: Text('Booking requests')),
-            ButtonSegment(value: 1, label: Text('Active bookings')),
-            ButtonSegment(value: 2, label: Text('Payout track')),
+            ButtonSegment(value: 0, label: AppText('Booking requests', localize: true)),
+            ButtonSegment(value: 1, label: AppText('Active bookings', localize: true)),
+            ButtonSegment(value: 2, label: AppText('Payout track', localize: true)),
           ],
           selected: {_payoutTab},
           onSelectionChanged: (selection) {
@@ -597,12 +700,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
+         Padding(
           padding: EdgeInsets.only(bottom: 12),
-          child: Text(
+          child: AppText(
             'Approved bookings finish automatically at their scheduled end.',
             style: TextStyle(color: _merchantMuted, fontSize: 13),
-          ),
+           localize: true,),
         ),
         for (final booking in active) ...[
           _payoutBookingCard(booking),
@@ -613,25 +716,78 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   List<Map<String, dynamic>> get _filteredPayoutBookings {
-    if (_payoutBookingType == 'All') return _bookings;
-    return _bookings
-        .where((booking) => booking['businessType'] == _payoutBookingType)
-        .toList();
+    return _bookings.where((booking) {
+      final matchesType =
+          _payoutBookingType == 'All' ||
+          booking['businessType'] == _payoutBookingType;
+      if (!matchesType || _payoutSearchQuery.isEmpty) return matchesType;
+      final searchable = [
+        booking['customerName'],
+        booking['customerEmail'],
+        booking['venueName'],
+        booking['businessName'],
+        booking['businessType'],
+        booking['date'],
+        booking['status'],
+        booking['id'],
+      ].whereType<Object>().join(' ').toLowerCase();
+      return searchable.contains(_payoutSearchQuery);
+    }).toList();
   }
+
+  Widget _payoutSearchBar() => TextField(
+    key: const ValueKey('merchant-payout-search'),
+    controller: _payoutSearchController,
+    onChanged: (value) =>
+        setState(() => _payoutSearchQuery = value.trim().toLowerCase()),
+    textInputAction: TextInputAction.search,
+    decoration: InputDecoration(
+      hintText: appLanguageText('Search bookings', 'Search bookings'),
+      hintStyle: const TextStyle(fontSize: 12),
+      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+      prefixIconConstraints: const BoxConstraints(minWidth: 36),
+      suffixIcon: _payoutSearchQuery.isEmpty
+          ? null
+          : IconButton(
+              tooltip: appLanguageText('Clear search', 'Clear search'),
+              onPressed: () {
+                _payoutSearchController.clear();
+                setState(() => _payoutSearchQuery = '');
+              },
+              icon: const Icon(Icons.clear_rounded, size: 18),
+              visualDensity: VisualDensity.compact,
+            ),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
+      border:  OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantLine),
+      ),
+      enabledBorder:  OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantLine),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantOrange, width: 1.5),
+      ),
+    ),
+  );
 
   Widget _payoutTypeFilter() {
     return DropdownButtonFormField<String>(
       key: const ValueKey('merchant-payout-type-filter'),
       initialValue: _payoutBookingType,
       isExpanded: true,
-      style: const TextStyle(
+      style:  TextStyle(
         color: _merchantInk,
         fontSize: 12,
         fontWeight: FontWeight.w700,
       ),
       iconSize: 18,
-      decoration: const InputDecoration(
-        hintText: 'All booking types',
+      decoration:  InputDecoration(
+        hintText: appLanguageText('All booking types', 'All booking types'),
         prefixIcon: Icon(Icons.filter_list_rounded, size: 18),
         isDense: true,
         contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -652,13 +808,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       items: const [
         DropdownMenuItem(
           value: 'All',
-          child: Text('All booking types', maxLines: 1),
+          child: AppText('All booking types', maxLines: 1, localize: true),
         ),
-        DropdownMenuItem(value: 'Sports', child: Text('Sports', maxLines: 1)),
-        DropdownMenuItem(value: 'Event', child: Text('Event', maxLines: 1)),
+        DropdownMenuItem(value: 'Sports', child: AppText('Sports', maxLines: 1, localize: true)),
+        DropdownMenuItem(value: 'Event', child: AppText('Event', maxLines: 1, localize: true)),
         DropdownMenuItem(
           value: 'Fitness & Wellness',
-          child: Text('Fitness & Wellness', maxLines: 1),
+          child: AppText('Fitness & Wellness', maxLines: 1, localize: true),
         ),
       ],
       onChanged: (value) {
@@ -670,7 +826,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _emptyPayoutCard(IconData icon, String title, String message) {
     return Card(
       elevation: 0,
-      color: const Color(0xFFFFE8D2),
+      color: AppColors.softOrange,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -681,15 +837,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  AppText(
                     title,
-                    style: const TextStyle(
+                    style:  TextStyle(
                       color: _merchantInk,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(message, style: const TextStyle(color: _merchantInk)),
+                  AppText(message, style:  TextStyle(color: _merchantInk)),
                 ],
               ),
             ),
@@ -717,7 +873,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final finished = _isFinishedBooking(booking);
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -726,44 +882,44 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     '${booking['venueName'] ?? 'Venue'} · '
                     '${booking['customerName'] ?? 'Customer'}',
-                    style: const TextStyle(
+                    style:  TextStyle(
                       color: _merchantInk,
                       fontWeight: FontWeight.w800,
                     ),
-                  ),
+                   localize: true,),
                 ),
                 Chip(
-                  label: Text(finished ? 'Finished' : 'Active'),
+                  label: AppText(finished ? 'Finished' : 'Active'),
                   backgroundColor: finished
                       ? const Color(0xFFE4F5E9)
-                      : const Color(0xFFFFE8D2),
+                      : AppColors.softOrange,
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
+            AppText(
               '${_bookingServiceLabel(booking)} · '
               '${booking['date']} ${booking['startTime']} · '
               '${_bookingVisitLabel(booking)}',
               style: TextStyle(color: Colors.grey.shade700),
-            ),
+             localize: true,),
             const SizedBox(height: 12),
-            Text('Total: PHP ${total.toStringAsFixed(2)}'),
+            AppText('Total: PHP ${total.toStringAsFixed(2)}', localize: true),
             if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty)
-              Text(
+              AppText(
                 'Plan: PHP ${_bookingAmount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
                 '${'${booking['fitnessCoachName'] ?? ''}'.isEmpty ? '' : ' · Coach ${booking['fitnessCoachName']}: PHP ${_bookingAmount(booking['fitnessCoachPrice']).toStringAsFixed(2)}'}',
-              ),
+               localize: true,),
             if (_bookingAmount(booking['extraPlayerCharge']) > 0)
-              Text(
+              AppText(
                 'Extra-player fee: PHP '
                 '${_bookingAmount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
-              ),
-            Text('Downpayment received: PHP ${downpayment.toStringAsFixed(2)}'),
-            Text('Remaining balance: PHP ${balance.toStringAsFixed(2)}'),
+               localize: true,),
+            AppText('Downpayment received: PHP ${downpayment.toStringAsFixed(2)}', localize: true),
+            AppText('Remaining balance: PHP ${balance.toStringAsFixed(2)}', localize: true),
           ],
         ),
       ),
@@ -818,6 +974,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             .toList();
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: EdgeInsets.fromLTRB(wide ? 24 : 16, 8, wide ? 24 : 16, 28),
           children: [
             const SizedBox(height: 12),
@@ -842,12 +999,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           setState(() => _venueSearchQuery = value.trim().toLowerCase()),
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
-        hintText: 'Search your venues...',
+        hintText: appLanguageText('Search your venues...', 'Search your venues...'),
         prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: _venueSearchQuery.isEmpty
             ? null
             : IconButton(
-                tooltip: 'Clear search',
+                tooltip: appLanguageText('Clear search', 'Clear search'),
                 onPressed: () {
                   _venueSearchController.clear();
                   setState(() => _venueSearchQuery = '');
@@ -855,19 +1012,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 icon: const Icon(Icons.clear_rounded),
               ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.surface,
         contentPadding: const EdgeInsets.symmetric(vertical: 15),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _merchantLine),
+          borderSide:  BorderSide(color: _merchantLine),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _merchantLine),
+          borderSide:  BorderSide(color: _merchantLine),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: _merchantOrange, width: 1.5),
+          borderSide: BorderSide(color: _merchantOrange, width: 1.5),
         ),
       ),
     );
@@ -889,20 +1046,20 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _pendingBookingsCard(List<Map<String, dynamic>> pending) {
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+             AppText(
               'Booking requests',
               style: TextStyle(
                 color: _merchantInk,
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
-            ),
+             localize: true,),
             const SizedBox(height: 8),
             for (final booking in pending)
               ListTile(
@@ -910,25 +1067,25 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 leading: const CircleAvatar(
                   child: Icon(Icons.person_outline_rounded),
                 ),
-                title: Text(
+                title: AppText(
                   booking['customerName'] as String? ?? 'Customer',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                subtitle: Text(
+                subtitle: AppText(
                   '${booking['venueName'] ?? 'Venue'} · '
                   '${_bookingServiceLabel(booking)} · '
                   '${booking['date']} ${booking['startTime']} · '
                   '${_bookingVisitLabel(booking)} · '
                   'PHP ${booking['total']}',
-                ),
+                 localize: true,),
                 trailing: _isPendingBooking(booking)
                     ? FilledButton(
                         onPressed: () => _approveMerchantBooking(
                           (booking['id'] as num).toInt(),
                         ),
-                        child: const Text('Approve'),
+                        child: const AppText('Approve', localize: true),
                       )
-                    : const Chip(label: Text('Active')),
+                    : const Chip(label: AppText('Active', localize: true)),
               ),
           ],
         ),
@@ -964,19 +1121,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _emptyBusinesses() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 28),
     child: Column(
-      children: const [
+      children:  [
         Icon(Icons.storefront_outlined, size: 42, color: _merchantMuted),
         SizedBox(height: 8),
-        Text(
+        AppText(
           'No businesses added yet',
           style: TextStyle(color: _merchantInk, fontWeight: FontWeight.w800),
-        ),
+         localize: true,),
         SizedBox(height: 4),
-        Text(
+        AppText(
           'Add a venue to publish it for customers.',
           textAlign: TextAlign.center,
           style: TextStyle(color: _merchantMuted),
-        ),
+         localize: true,),
       ],
     ),
   );
@@ -985,11 +1142,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final selected = await showDialog<String?>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('Switch booking type'),
+        title: const AppText('Switch booking type', localize: true),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, ''),
-            child: const Text('All booking types'),
+            child: const AppText('All booking types', localize: true),
           ),
           for (final type in const ['Sports', 'Fitness & Wellness', 'Event'])
             SimpleDialogOption(
@@ -1005,7 +1162,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     color: _merchantOrange,
                   ),
                   const SizedBox(width: 10),
-                  Text(type == 'Fitness & Wellness' ? 'Fitness' : type),
+                  AppText(type == 'Fitness & Wellness' ? 'Fitness' : type),
                   const Spacer(),
                   if (_selectedBookingType == type)
                     const Icon(Icons.check_rounded, color: Colors.green),
@@ -1024,7 +1181,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _venueSwitcher() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppColors.surface,
       border: Border.all(color: _merchantLine),
       borderRadius: BorderRadius.circular(14),
     ),
@@ -1036,28 +1193,28 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           size: 9,
         ),
         const SizedBox(width: 7),
-        Text(
+        AppText(
           '${_liveBusinesses.length} Live ${_liveBusinesses.length == 1 ? 'Venue' : 'Venues'}',
-          style: const TextStyle(
+          style:  TextStyle(
             color: _merchantInk,
             fontSize: 13,
             fontWeight: FontWeight.w800,
           ),
-        ),
+         localize: true,),
         const SizedBox(width: 8),
-        Text(
+        AppText(
           _visibleBusinesses.length == _liveBusinesses.length
               ? '• Live on App'
               : '• Setup needed',
-          style: const TextStyle(color: _merchantMuted, fontSize: 11.5),
+          style:  TextStyle(color: _merchantMuted, fontSize: 11.5),
         ),
         const Spacer(),
         OutlinedButton(
           onPressed: _switchBookingType,
           style: OutlinedButton.styleFrom(
             foregroundColor: _merchantOrange,
-            backgroundColor: Colors.white,
-            side: const BorderSide(color: _merchantLine),
+            backgroundColor: AppColors.surface,
+            side:  BorderSide(color: _merchantLine),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             minimumSize: const Size(0, 34),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1067,7 +1224,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          child: Text(
+          child: AppText(
             _selectedBookingType == 'Fitness & Wellness'
                 ? 'Fitness'
                 : _selectedBookingType ?? 'Switch Type',
@@ -1098,7 +1255,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
-      color: Colors.white,
+      color: AppColors.surface,
       shape: AppCardStyles.merchantShape,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1110,8 +1267,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               fit: StackFit.expand,
               children: [
                 images.isEmpty
-                    ? const ColoredBox(
-                        color: Color(0xFFFFE8D2),
+                    ?  ColoredBox(
+                        color: AppColors.softOrange,
                         child: Icon(
                           Icons.storefront_rounded,
                           size: 48,
@@ -1135,11 +1292,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style:  TextStyle(
                     color: _merchantInk,
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
@@ -1201,20 +1358,20 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   hasRatePeriods: ratePeriods.isNotEmpty,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                 AppText(
                   'Amenities',
                   style: TextStyle(
                     color: _merchantMuted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
+                 localize: true,),
                 const SizedBox(height: 5),
                 if (tags.isEmpty)
-                  const Text(
+                   AppText(
                     'No amenities listed',
                     style: TextStyle(color: _merchantMuted, fontSize: 12),
-                  )
+                   localize: true,)
                 else
                   Wrap(
                     spacing: 6,
@@ -1228,7 +1385,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                       child: OutlinedButton.icon(
                         onPressed: () => _showMessage('Opening $name'),
                         icon: const Icon(Icons.language, size: 15),
-                        label: const Text('Visit'),
+                        label: const AppText('Visit', localize: true),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _merchantNavy,
                           side: const BorderSide(color: _merchantNavy),
@@ -1242,7 +1399,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         onPressed: () =>
                             _showMessage('Booking $name is ready.'),
                         icon: const Icon(Icons.calendar_month, size: 15),
-                        label: const Text('Book now'),
+                        label: const AppText('Book now', localize: true),
                         style: FilledButton.styleFrom(
                           backgroundColor: _merchantOrange,
                           minimumSize: const Size(0, 36),
@@ -1377,7 +1534,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      child: Text(
+      child: AppText(
         isLive ? 'LIVE' : 'NOT LIVE',
         style: TextStyle(
           color: isLive ? Colors.green : _merchantOrange,
@@ -1393,14 +1550,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         width: double.infinity,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFFFAFBFD),
+          color: AppColors.surface,
           border: Border.all(color: _merchantLine),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
             Expanded(
-              child: Text(
+              child: AppText(
                 hasRatePeriods
                     ? 'Rate schedule'
                     : type == 'Fitness & Wellness'
@@ -1408,16 +1565,16 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     : type == 'Event'
                     ? 'Event package'
                     : 'Price / hour',
-                style: const TextStyle(
+                style:  TextStyle(
                   color: _merchantMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            Text(
+            AppText(
               price,
-              style: const TextStyle(
+              style:  TextStyle(
                 color: _merchantInk,
                 fontWeight: FontWeight.w900,
               ),
@@ -1428,14 +1585,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   Widget _tag(String label) => DecoratedBox(
     decoration: BoxDecoration(
-      color: const Color(0xFFFFF1E4),
+      color: AppColors.softOrangeAlt,
       borderRadius: BorderRadius.circular(14),
     ),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      child: Text(
+      child: AppText(
         label,
-        style: const TextStyle(color: _merchantInk, fontSize: 10),
+        style:  TextStyle(color: _merchantInk, fontSize: 10),
       ),
     ),
   );
@@ -1448,11 +1605,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         Icon(icon, size: 16, color: _merchantMuted),
         const SizedBox(width: 6),
         Expanded(
-          child: Text(
+          child: AppText(
             text,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _merchantMuted, fontSize: 12),
+            style:  TextStyle(color: _merchantMuted, fontSize: 12),
           ),
         ),
       ],
@@ -1581,7 +1738,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add business'),
+          title: const AppText('Add business', localize: true),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1592,21 +1749,21 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     children: [
                       DropdownButtonFormField<String>(
                         initialValue: type,
-                        decoration: const InputDecoration(
-                          labelText: 'Booking type',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Booking type', 'Booking type'),
                         ),
                         items: const [
                           DropdownMenuItem(
                             value: 'Sports',
-                            child: Text('Sports'),
+                            child: AppText('Sports', localize: true),
                           ),
                           DropdownMenuItem(
                             value: 'Event',
-                            child: Text('Event'),
+                            child: AppText('Event', localize: true),
                           ),
                           DropdownMenuItem(
                             value: 'Fitness & Wellness',
-                            child: Text('Fitness & Wellness'),
+                            child: AppText('Fitness & Wellness', localize: true),
                           ),
                         ],
                         onChanged: (value) {
@@ -1622,8 +1779,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                       ),
                       DropdownButtonFormField<String>(
                         initialValue: category,
-                        decoration: const InputDecoration(
-                          labelText: 'Category',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Category', 'Category'),
                         ),
                         items:
                             <String>{
@@ -1634,7 +1791,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                 .map(
                                   (value) => DropdownMenuItem<String>(
                                     value: value,
-                                    child: Text(value),
+                                    child: AppText(value),
                                   ),
                                 )
                                 .toList(),
@@ -1646,20 +1803,20 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                       ),
                       TextFormField(
                         controller: name,
-                        decoration: const InputDecoration(
-                          labelText: 'Business name',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Business name', 'Business name'),
                         ),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
-                            ? 'Enter a business name'
+                            ? 'Please enter a name for your business.'
                             : null,
                       ),
                       TextFormField(
                         controller: address,
-                        decoration: const InputDecoration(labelText: 'Address'),
+                        decoration: InputDecoration(labelText: appLanguageText('Address', 'Address')),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
-                            ? 'Enter an address'
+                            ? 'Please add your business address.'
                             : null,
                       ),
                       TextFormField(
@@ -1667,35 +1824,35 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(
-                          labelText: 'Price per hour',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Price per hour', 'Price per hour'),
                           prefixText: '₱ ',
                           hintText: '300.00',
                         ),
                         validator: (value) {
                           final price = double.tryParse(value?.trim() ?? '');
                           return price == null || price <= 0
-                              ? 'Enter a price greater than 0'
+                              ? 'Enter a price greater than ₱0.'
                               : null;
                         },
                       ),
                       DropdownButtonFormField<String>(
                         initialValue: facility,
-                        decoration: const InputDecoration(
-                          labelText: 'Facility type',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Facility type', 'Facility type'),
                         ),
                         items: const [
                           DropdownMenuItem(
                             value: 'Indoor',
-                            child: Text('Indoor'),
+                            child: AppText('Indoor', localize: true),
                           ),
                           DropdownMenuItem(
                             value: 'Outdoor',
-                            child: Text('Outdoor'),
+                            child: AppText('Outdoor', localize: true),
                           ),
                           DropdownMenuItem(
                             value: 'Covered',
-                            child: Text('Covered'),
+                            child: AppText('Covered', localize: true),
                           ),
                         ],
                         onChanged: (value) {
@@ -1707,8 +1864,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                       TextField(
                         controller: details,
                         maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Details (optional)',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Details (optional)', 'Details (optional)'),
                         ),
                       ),
                       TextButton.icon(
@@ -1724,7 +1881,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                           setDialogState(() => image = _dataUri(bytes));
                         },
                         icon: const Icon(Icons.add_a_photo_outlined),
-                        label: Text(
+                        label: AppText(
                           image == null ? 'Add image' : 'Image selected',
                         ),
                       ),
@@ -1737,7 +1894,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: const AppText('Cancel', localize: true),
             ),
             FilledButton(
               onPressed: () async {
@@ -1770,7 +1927,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   Navigator.of(dialogContext).pop(true);
                 }
               },
-              child: const Text('Add business'),
+              child: const AppText('Add business', localize: true),
             ),
           ],
         ),
@@ -1870,8 +2027,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             itemBuilder: (_, index) => Image(
               image: _imageProvider(images[index % images.length])!,
               fit: BoxFit.cover,
-              errorBuilder: (_, error, stack) => const ColoredBox(
-                color: Color(0xFFFFE8D2),
+              errorBuilder: (_, error, stack) =>  ColoredBox(
+                color: AppColors.softOrange,
                 child: Icon(
                   Icons.broken_image_outlined,
                   color: _merchantOrange,
@@ -1892,14 +2049,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   horizontal: 10,
                   vertical: 5,
                 ),
-                child: Text(
+                child: AppText(
                   '${currentIndex + 1} of ${images.length}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
-                ),
+                 localize: true,),
               ),
             ),
           ),
@@ -1952,13 +2109,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                           horizontal: 12,
                           vertical: 6,
                         ),
-                        child: Text(
+                        child: AppText(
                           '${currentIndex + 1} of ${images.length}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                           ),
-                        ),
+                         localize: true,),
                       ),
                     ),
                   ),
@@ -1992,20 +2149,19 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     maxLines: maxLines,
     keyboardType: keyboardType,
     decoration: InputDecoration(
-      labelText: label,
-      hintText: hint,
+      labelText: appLanguageText(label, label),
+      hintText: appLanguageText(hint, hint),
       filled: true,
       fillColor: _merchantPage,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _merchantLine),
+        borderSide:  BorderSide(color: _merchantLine),
       ),
     ),
     validator: required
         ? (value) => value == null || value.trim().isEmpty
-              ? '$label is required'
+              ? 'Please enter $label.'
               : null
         : null,
   );
-
 }

@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/app_preferences.dart';
 import 'package:myapp/app_session.dart';
 import 'package:myapp/app_startup.dart';
 import 'package:myapp/main.dart';
@@ -66,5 +68,30 @@ void main() {
     retryAttempt.complete(await AppSession.load());
     await tester.pumpAndSettle();
     expect(find.byType(OverviewPage), findsOneWidget);
+  });
+
+  testWidgets('loads preferences for the authenticated startup account', (
+    tester,
+  ) async {
+    final session = await AppSession.load();
+    await session.setAccountEmail('alice@example.com');
+    await session.markAuthenticated();
+    await AppPreferences.instance.load(accountEmail: session.accountEmail);
+    await AppPreferences.instance.update(
+      palette: AppPalette.violet,
+      languageCode: 'ko',
+    );
+    await AppPreferences.instance.load();
+
+    await tester.pumpWidget(
+      AppStartup(
+        appBuilder: (_) => const SizedBox.shrink(),
+        initialize: () async => session,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(AppPreferences.instance.palette, AppPalette.violet);
+    expect(AppPreferences.instance.languageCode, 'ko');
   });
 }

@@ -1,0 +1,2456 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum AppPalette {
+  navy('navy', Color(0xFF192B50)),
+  orange('orange', Color(0xFFFF8200)),
+  violet('violet', Color(0xFF8B5CF6)),
+  blue('blue', Color(0xFF3B82F6)),
+  rose('rose', Color(0xFFEC4899)),
+  green('green', Color(0xFF10B981));
+
+  const AppPalette(this.key, this.color);
+
+  final String key;
+  final Color color;
+
+  static AppPalette fromKey(String? key) => AppPalette.values.firstWhere(
+    (palette) => palette.key == key,
+    orElse: () => AppPalette.orange,
+  );
+}
+
+enum AppLanguage {
+  english('en', 'English', 'English'),
+  filipino('fil', 'Filipino', 'Filipino'),
+  korean('ko', 'Korean', '한국어'),
+  japanese('ja', 'Japanese', '日本語'),
+  chinese('zh', 'Chinese (Simplified)', '简体中文');
+
+  const AppLanguage(this.code, this.englishName, this.nativeName);
+
+  final String code;
+  final String englishName;
+  final String nativeName;
+
+  Locale get locale => switch (this) {
+    AppLanguage.chinese => const Locale('zh', 'CN'),
+    _ => Locale(code),
+  };
+
+  static AppLanguage fromCode(String? code) => AppLanguage.values.firstWhere(
+    (language) => language.code == code,
+    orElse: () => AppLanguage.english,
+  );
+
+  static List<Locale> get supportedLocales =>
+      AppLanguage.values.map((language) => language.locale).toList();
+}
+
+const _additionalLanguageText = <String, Map<String, String>>{
+  'About data analytics': {
+    'fil': 'Tungkol sa data analytics',
+    'ko': '데이터 분석 정보',
+    'ja': 'データ分析について',
+    'zh': '关于数据分析',
+  },
+  'About merchant profile': {
+    'fil': 'Tungkol sa profile ng merchant',
+    'ko': '판매자 프로필 정보',
+    'ja': '加盟店プロフィールについて',
+    'zh': '关于商家资料',
+  },
+  'About merchant tools': {
+    'fil': 'Tungkol sa mga tool ng merchant',
+    'ko': '판매자 도구 정보',
+    'ja': '加盟店ツールについて',
+    'zh': '关于商家工具',
+  },
+  'About this venue list': {
+    'fil': 'Tungkol sa listahan ng mga venue na ito',
+    'ko': '장소 목록 정보',
+    'ja': '施設リストについて',
+    'zh': '关于此场地列表',
+  },
+  'Add a short update about this venue': {
+    'fil': 'Magdagdag ng maikling update tungkol sa venue na ito',
+    'ko': '이 장소에 대한 간단한 소식 추가',
+    'ja': 'この施設について短いお知らせを追加',
+    'zh': '添加此场地的简短动态',
+  },
+  'Address': {'fil': 'Address', 'ko': '주소', 'ja': '住所', 'zh': '地址'},
+  'Attach image': {
+    'fil': 'Mag-attach ng larawan',
+    'ko': '이미지 첨부',
+    'ja': '画像を添付',
+    'zh': '附加图片',
+  },
+  'Back to inbox': {
+    'fil': 'Bumalik sa inbox',
+    'ko': '받은 편지함으로 돌아가기',
+    'ja': '受信トレイに戻る',
+    'zh': '返回收件箱',
+  },
+  'Back to reservations': {
+    'fil': 'Bumalik sa mga reservation',
+    'ko': '예약 목록으로 돌아가기',
+    'ja': '予約一覧に戻る',
+    'zh': '返回预订列表',
+  },
+  'Booking card': {
+    'fil': 'Booking card',
+    'ko': '예약 카드',
+    'ja': '予約カード',
+    'zh': '预订卡片',
+  },
+  'Booking type': {
+    'fil': 'Uri ng booking',
+    'ko': '예약 유형',
+    'ja': '予約タイプ',
+    'zh': '预订类型',
+  },
+  'Business name': {
+    'fil': 'Pangalan ng negosyo',
+    'ko': '업체명',
+    'ja': '事業者名',
+    'zh': '商家名称',
+  },
+  'Category': {
+    'fil': 'Kategorya',
+    'ko': '카테고리',
+    'ja': 'カテゴリ',
+    'zh': '类别',
+  },
+  'Category / activity': {
+    'fil': 'Kategorya / aktibidad',
+    'ko': '카테고리 / 활동',
+    'ja': 'カテゴリ／アクティビティ',
+    'zh': '类别 / 活动',
+  },
+  'Clear date filter': {
+    'fil': 'I-clear ang filter ng petsa',
+    'ko': '날짜 필터 지우기',
+    'ja': '日付フィルターをクリア',
+    'zh': '清除日期筛选',
+  },
+  'Clear search': {
+    'fil': 'I-clear ang paghahanap',
+    'ko': '검색 지우기',
+    'ja': '検索をクリア',
+    'zh': '清除搜索',
+  },
+  'Close booking calendar': {
+    'fil': 'Isara ang booking calendar',
+    'ko': '예약 달력 닫기',
+    'ja': '予約カレンダーを閉じる',
+    'zh': '关闭预订日历',
+  },
+  'Close filters': {
+    'fil': 'Isara ang mga filter',
+    'ko': '필터 닫기',
+    'ja': 'フィルターを閉じる',
+    'zh': '关闭筛选',
+  },
+  'Close full chart': {
+    'fil': 'Isara ang buong chart',
+    'ko': '전체 차트 닫기',
+    'ja': '全体グラフを閉じる',
+    'zh': '关闭完整图表',
+  },
+  'Close profile photo': {
+    'fil': 'Isara ang larawan sa profile',
+    'ko': '프로필 사진 닫기',
+    'ja': 'プロフィール写真を閉じる',
+    'zh': '关闭头像',
+  },
+  'Close settings': {
+    'fil': 'Isara ang settings',
+    'ko': '설정 닫기',
+    'ja': '設定を閉じる',
+    'zh': '关闭设置',
+  },
+  'Close venue activity': {
+    'fil': 'Isara ang aktibidad ng venue',
+    'ko': '장소 활동 닫기',
+    'ja': '施設のアクティビティを閉じる',
+    'zh': '关闭场地活动',
+  },
+  'Close venue visits': {
+    'fil': 'Isara ang mga pagbisita sa venue',
+    'ko': '장소 방문 기록 닫기',
+    'ja': '施設の訪問履歴を閉じる',
+    'zh': '关闭场地到访记录',
+  },
+  'Coach (optional)': {
+    'fil': 'Coach (opsyonal)',
+    'ko': '코치 (선택)',
+    'ja': 'コーチ（任意）',
+    'zh': '教练（可选）',
+  },
+  'Coach monthly price (required)': {
+    'fil': 'Buwanang presyo ng coach (kinakailangan)',
+    'ko': '코치 월 요금 (필수)',
+    'ja': 'コーチの月額料金（必須）',
+    'zh': '教练月费（必填）',
+  },
+  'Coach name (required)': {
+    'fil': 'Pangalan ng coach (kinakailangan)',
+    'ko': '코치 이름 (필수)',
+    'ja': 'コーチ名（必須）',
+    'zh': '教练姓名（必填）',
+  },
+  'Comment': {
+    'fil': 'Komento',
+    'ko': '댓글',
+    'ja': 'コメント',
+    'zh': '评论',
+  },
+  'Comment (optional)': {
+    'fil': 'Komento (opsyonal)',
+    'ko': '댓글 (선택)',
+    'ja': 'コメント（任意）',
+    'zh': '评论（可选）',
+  },
+  'Conversation settings': {
+    'fil': 'Mga setting ng usapan',
+    'ko': '대화 설정',
+    'ja': '会話の設定',
+    'zh': '对话设置',
+  },
+  'Custom category (required)': {
+    'fil': 'Custom na kategorya (kinakailangan)',
+    'ko': '사용자 지정 카테고리 (필수)',
+    'ja': 'カスタムカテゴリ（必須）',
+    'zh': '自定义类别（必填）',
+  },
+  'Customers open this link from Visit.': {
+    'fil': 'Binubuksan ng mga customer ang link na ito mula sa Visit.',
+    'ko': '고객은 방문 메뉴에서 이 링크를 엽니다.',
+    'ja': 'お客様は「訪問」からこのリンクを開きます。',
+    'zh': '客户可通过“访问”打开此链接。',
+  },
+  'Details (optional)': {
+    'fil': 'Mga detalye (opsyonal)',
+    'ko': '세부정보 (선택)',
+    'ja': '詳細（任意）',
+    'zh': '详情（可选）',
+  },
+  'Dismiss validation message': {
+    'fil': 'Isara ang mensahe ng validation',
+    'ko': '유효성 검사 메시지 닫기',
+    'ja': '入力確認メッセージを閉じる',
+    'zh': '关闭验证提示',
+  },
+  'Enter another event type': {
+    'fil': 'Maglagay ng ibang uri ng event',
+    'ko': '다른 이벤트 유형 입력',
+    'ja': '別のイベントタイプを入力',
+    'zh': '输入其他活动类型',
+  },
+  'Enter the venue category': {
+    'fil': 'Ilagay ang kategorya ng venue',
+    'ko': '장소 카테고리 입력',
+    'ja': '施設のカテゴリを入力',
+    'zh': '输入场地类别',
+  },
+  'Facility type': {
+    'fil': 'Uri ng pasilidad',
+    'ko': '시설 유형',
+    'ja': '施設タイプ',
+    'zh': '设施类型',
+  },
+  'Fee / extra player (optional)': {
+    'fil': 'Bayad / dagdag na manlalaro (opsyonal)',
+    'ko': '요금 / 추가 선수 (선택)',
+    'ja': '料金／追加プレイヤー（任意）',
+    'zh': '费用 / 额外球员（可选）',
+  },
+  'Fee per event booking (required)': {
+    'fil': 'Bayad sa bawat event booking (kinakailangan)',
+    'ko': '이벤트 예약당 요금 (필수)',
+    'ja': 'イベント予約ごとの料金（必須）',
+    'zh': '每次活动预订费用（必填）',
+  },
+  'Fitness category': {
+    'fil': 'Kategorya ng fitness',
+    'ko': '피트니스 카테고리',
+    'ja': 'フィットネスカテゴリ',
+    'zh': '健身类别',
+  },
+  'Group name (optional)': {
+    'fil': 'Pangalan ng grupo (opsyonal)',
+    'ko': '그룹 이름 (선택)',
+    'ja': 'グループ名（任意）',
+    'zh': '群组名称（可选）',
+  },
+  'Included players (optional)': {
+    'fil': 'Kasamang mga manlalaro (opsyonal)',
+    'ko': '포함 선수 수 (선택)',
+    'ja': '含まれるプレイヤー（任意）',
+    'zh': '包含球员数（可选）',
+  },
+  'Maximum guests (required)': {
+    'fil': 'Pinakamaraming bisita (kinakailangan)',
+    'ko': '최대 방문객 수 (필수)',
+    'ja': '最大ゲスト数（必須）',
+    'zh': '最多宾客数（必填）',
+  },
+  'Minimum guests (required)': {
+    'fil': 'Pinakakaunting bisita (kinakailangan)',
+    'ko': '최소 방문객 수 (필수)',
+    'ja': '最小ゲスト数（必須）',
+    'zh': '最少宾客数（必填）',
+  },
+  'New conversation': {
+    'fil': 'Bagong usapan',
+    'ko': '새 대화',
+    'ja': '新しい会話',
+    'zh': '新建对话',
+  },
+  'Next month': {
+    'fil': 'Susunod na buwan',
+    'ko': '다음 달',
+    'ja': '翌月',
+    'zh': '下个月',
+  },
+  'Number of players': {
+    'fil': 'Bilang ng mga manlalaro',
+    'ko': '선수 수',
+    'ja': 'プレイヤー数',
+    'zh': '球员人数',
+  },
+  'Number of small slots': {
+    'fil': 'Bilang ng maliliit na slot',
+    'ko': '소규모 시간대 수',
+    'ja': '小規模枠の数',
+    'zh': '小型时段数量',
+  },
+  'Other amenity': {
+    'fil': 'Iba pang amenity',
+    'ko': '기타 편의시설',
+    'ja': 'その他の設備',
+    'zh': '其他设施',
+  },
+  'Other event type': {
+    'fil': 'Ibang uri ng event',
+    'ko': '기타 이벤트 유형',
+    'ja': 'その他のイベントタイプ',
+    'zh': '其他活动类型',
+  },
+  'Other fitness category': {
+    'fil': 'Ibang kategorya ng fitness',
+    'ko': '기타 피트니스 카테고리',
+    'ja': 'その他のフィットネスカテゴリ',
+    'zh': '其他健身类别',
+  },
+  'Other sport (optional)': {
+    'fil': 'Ibang sport (opsyonal)',
+    'ko': '기타 스포츠 (선택)',
+    'ja': 'その他のスポーツ（任意）',
+    'zh': '其他体育项目（可选）',
+  },
+  'Previous month': {
+    'fil': 'Nakaraang buwan',
+    'ko': '지난달',
+    'ja': '前月',
+    'zh': '上个月',
+  },
+  'Price per hour': {
+    'fil': 'Presyo kada oras',
+    'ko': '시간당 가격',
+    'ja': '時間単価',
+    'zh': '每小时价格',
+  },
+  'Price per hour (required)': {
+    'fil': 'Presyo kada oras (kinakailangan)',
+    'ko': '시간당 가격 (필수)',
+    'ja': '時間単価（必須）',
+    'zh': '每小时价格（必填）',
+  },
+  'QR code': {
+    'fil': 'QR code',
+    'ko': 'QR 코드',
+    'ja': 'QRコード',
+    'zh': '二维码',
+  },
+  'Remove coach': {
+    'fil': 'Alisin ang coach',
+    'ko': '코치 삭제',
+    'ja': 'コーチを削除',
+    'zh': '移除教练',
+  },
+  'Search activity...': {
+    'fil': 'Maghanap ng aktibidad...',
+    'ko': '활동 검색...',
+    'ja': 'アクティビティを検索...',
+    'zh': '搜索活动...',
+  },
+  'Search bookings': {
+    'fil': 'Maghanap ng booking',
+    'ko': '예약 검색',
+    'ja': '予約を検索',
+    'zh': '搜索预订',
+  },
+  'Search businesses': {
+    'fil': 'Maghanap ng mga negosyo',
+    'ko': '업체 검색',
+    'ja': '事業者を検索',
+    'zh': '搜索商家',
+  },
+  'Search messages': {
+    'fil': 'Maghanap ng mga mensahe',
+    'ko': '메시지 검색',
+    'ja': 'メッセージを検索',
+    'zh': '搜索消息',
+  },
+  'Search people': {
+    'fil': 'Maghanap ng mga tao',
+    'ko': '사람 검색',
+    'ja': '人を検索',
+    'zh': '搜索联系人',
+  },
+  'Search venues, sports, and locations': {
+    'fil': 'Maghanap ng mga venue, sport, at lokasyon',
+    'ko': '장소, 스포츠 및 위치 검색',
+    'ja': '施設、スポーツ、場所を検索',
+    'zh': '搜索场地、体育项目和地点',
+  },
+  'Search fitness studios, classes, and locations': {
+    'fil': 'Maghanap ng fitness studio, klase, at lokasyon',
+    'ko': '피트니스 스튜디오, 수업 및 위치 검색',
+    'ja': 'フィットネススタジオ、クラス、場所を検索',
+    'zh': '搜索健身工作室、课程和地点',
+  },
+  'Select event type': {
+    'fil': 'Pumili ng uri ng event',
+    'ko': '이벤트 유형 선택',
+    'ja': 'イベントタイプを選択',
+    'zh': '选择活动类型',
+  },
+  'Example: Water station': {
+    'fil': 'Halimbawa: Water station',
+    'ko': '예: 급수대',
+    'ja': '例：給水所',
+    'zh': '例如：饮水站',
+  },
+  'Search your venues...': {
+    'fil': 'Maghanap sa iyong mga venue...',
+    'ko': '내 장소 검색...',
+    'ja': '自分の施設を検索...',
+    'zh': '搜索你的场地...',
+  },
+  'Short venue news': {
+    'fil': 'Maikling balita tungkol sa venue',
+    'ko': '장소 소식',
+    'ja': '施設のお知らせ',
+    'zh': '场地简讯',
+  },
+  'Space used by this sport': {
+    'fil': 'Espasyong ginagamit ng sport na ito',
+    'ko': '이 스포츠가 사용하는 공간',
+    'ja': 'このスポーツで使用するスペース',
+    'zh': '此体育项目使用的空间',
+  },
+  'Sport type': {
+    'fil': 'Uri ng sport',
+    'ko': '스포츠 유형',
+    'ja': 'スポーツの種類',
+    'zh': '体育项目类型',
+  },
+  'Total small slots (required)': {
+    'fil': 'Kabuuang maliliit na slot (kinakailangan)',
+    'ko': '소규모 시간대 총수 (필수)',
+    'ja': '小規模枠の合計（必須）',
+    'zh': '小型时段总数（必填）',
+  },
+  'Venue address (required)': {
+    'fil': 'Address ng venue (kinakailangan)',
+    'ko': '장소 주소 (필수)',
+    'ja': '施設住所（必須）',
+    'zh': '场地地址（必填）',
+  },
+  'Venue name (required)': {
+    'fil': 'Pangalan ng venue (kinakailangan)',
+    'ko': '장소 이름 (필수)',
+    'ja': '施設名（必須）',
+    'zh': '场地名称（必填）',
+  },
+  'Visit link (optional)': {
+    'fil': 'Visit link (opsyonal)',
+    'ko': '방문 링크 (선택)',
+    'ja': '訪問リンク（任意）',
+    'zh': '访问链接（可选）',
+  },
+  'Write a message...': {
+    'fil': 'Magsulat ng mensahe...',
+    'ko': '메시지 작성...',
+    'ja': 'メッセージを入力...',
+    'zh': '撰写消息...',
+  },
+  'Yearly offer (optional)': {
+    'fil': 'Taunang alok (opsyonal)',
+    'ko': '연간 혜택 (선택)',
+    'ja': '年間プラン（任意）',
+    'zh': '年度优惠（可选）',
+  },
+  'About {title}': {
+    'fil': 'Tungkol sa {title}',
+    'ko': '{title} 정보',
+    'ja': '{title}について',
+    'zh': '关于{title}',
+  },
+  'Rate {star} out of 5 stars': {
+    'fil': 'Bigyan ng {star} sa 5 bituin',
+    'ko': '별점 5점 만점에 {star}점',
+    'ja': '5つ星中{star}つ',
+    'zh': '五星评分：{star} 星',
+  },
+  'Cancel': {
+    'fil': 'Kanselahin',
+    'ko': '취소',
+    'ja': 'キャンセル',
+    'zh': '取消',
+  },
+  'Got it': {
+    'fil': 'Naintindihan ko',
+    'ko': '확인',
+    'ja': '了解',
+    'zh': '知道了',
+  },
+  'Delete': {'fil': 'Tanggalin', 'ko': '삭제', 'ja': '削除', 'zh': '删除'},
+  'Edit': {'fil': 'I-edit', 'ko': '수정', 'ja': '編集', 'zh': '编辑'},
+  'View all': {
+    'fil': 'Tingnan lahat',
+    'ko': '모두 보기',
+    'ja': 'すべて表示',
+    'zh': '查看全部',
+  },
+  'Try again': {
+    'fil': 'Subukan muli',
+    'ko': '다시 시도',
+    'ja': '再試行',
+    'zh': '重试',
+  },
+  'Reset': {'fil': 'I-reset', 'ko': '초기화', 'ja': 'リセット', 'zh': '重置'},
+  'Save changes': {
+    'fil': 'I-save ang mga pagbabago',
+    'ko': '변경사항 저장',
+    'ja': '変更を保存',
+    'zh': '保存更改',
+  },
+  'Retry': {'fil': 'Subukan muli', 'ko': '재시도', 'ja': '再試行', 'zh': '重试'},
+  'Save': {'fil': 'I-save', 'ko': '저장', 'ja': '保存', 'zh': '保存'},
+  'Back': {'fil': 'Bumalik', 'ko': '뒤로', 'ja': '戻る', 'zh': '返回'},
+  'Close': {'fil': 'Isara', 'ko': '닫기', 'ja': '閉じる', 'zh': '关闭'},
+  'Continue': {
+    'fil': 'Magpatuloy',
+    'ko': '계속',
+    'ja': '続行',
+    'zh': '继续',
+  },
+  'Clear': {'fil': 'I-clear', 'ko': '지우기', 'ja': 'クリア', 'zh': '清除'},
+  'Publish': {
+    'fil': 'I-publish',
+    'ko': '게시',
+    'ja': '公開',
+    'zh': '发布',
+  },
+  'Refresh': {'fil': 'I-refresh', 'ko': '새로고침', 'ja': '更新', 'zh': '刷新'},
+  'Approve': {'fil': 'Aprubahan', 'ko': '승인', 'ja': '承認', 'zh': '批准'},
+  'Archive': {'fil': 'I-archive', 'ko': '보관', 'ja': 'アーカイブ', 'zh': '归档'},
+  'Complete': {'fil': 'Kumpleto', 'ko': '완료', 'ja': '完了', 'zh': '完成'},
+  'Dismiss': {'fil': 'I-dismiss', 'ko': '닫기', 'ja': '閉じる', 'zh': '关闭'},
+  'Present': {'fil': 'Present', 'ko': '출석', 'ja': '出席', 'zh': '出席'},
+  'Absent': {'fil': 'Absent', 'ko': '결석', 'ja': '欠席', 'zh': '缺席'},
+  'Active': {'fil': 'Aktibo', 'ko': '활성', 'ja': '有効', 'zh': '进行中'},
+  'Blocked': {'fil': 'Naka-block', 'ko': '차단됨', 'ja': 'ブロック済み', 'zh': '已屏蔽'},
+  'Closed': {'fil': 'Sarado', 'ko': '마감', 'ja': '閉店', 'zh': '已关闭'},
+  'Approved': {'fil': 'Naaprubahan', 'ko': '승인됨', 'ja': '承認済み', 'zh': '已批准'},
+  'New': {'fil': 'Bago', 'ko': '신규', 'ja': '新着', 'zh': '新'},
+  'Seen': {'fil': 'Nakita', 'ko': '읽음', 'ja': '既読', 'zh': '已读'},
+  'Sports': {'fil': 'Sports', 'ko': '스포츠', 'ja': 'スポーツ', 'zh': '体育'},
+  'Event': {'fil': 'Event', 'ko': '이벤트', 'ja': 'イベント', 'zh': '活动'},
+  'Events': {'fil': 'Mga event', 'ko': '이벤트', 'ja': 'イベント', 'zh': '活动'},
+  'Fitness & Wellness': {
+    'fil': 'Fitness at Wellness',
+    'ko': '피트니스 및 웰니스',
+    'ja': 'フィットネスとウェルネス',
+    'zh': '健身与健康',
+  },
+  'All booking types': {
+    'fil': 'Lahat ng uri ng booking',
+    'ko': '모든 예약 유형',
+    'ja': 'すべての予約タイプ',
+    'zh': '所有预订类型',
+  },
+  'Book Court': {
+    'fil': 'Mag-book ng court',
+    'ko': '코트 예약',
+    'ja': 'コートを予約',
+    'zh': '预订球场',
+  },
+  'Book Event': {
+    'fil': 'Mag-book ng event',
+    'ko': '이벤트 예약',
+    'ja': 'イベントを予約',
+    'zh': '预订活动',
+  },
+  'Book Fitness': {
+    'fil': 'Mag-book ng fitness',
+    'ko': '피트니스 예약',
+    'ja': 'フィットネスを予約',
+    'zh': '预订健身',
+  },
+  'Book now': {
+    'fil': 'Mag-book ngayon',
+    'ko': '지금 예약',
+    'ja': '今すぐ予約',
+    'zh': '立即预订',
+  },
+  'Confirm booking': {
+    'fil': 'Kumpirmahin ang booking',
+    'ko': '예약 확인',
+    'ja': '予約を確定',
+    'zh': '确认预订',
+  },
+  'Confirm event booking': {
+    'fil': 'Kumpirmahin ang event booking',
+    'ko': '이벤트 예약 확인',
+    'ja': 'イベント予約を確定',
+    'zh': '确认活动预订',
+  },
+  'Confirm Fitness booking': {
+    'fil': 'Kumpirmahin ang fitness booking',
+    'ko': '피트니스 예약 확인',
+    'ja': 'フィットネス予約を確定',
+    'zh': '确认健身预订',
+  },
+  'Booking details': {
+    'fil': 'Mga detalye ng booking',
+    'ko': '예약 세부정보',
+    'ja': '予約の詳細',
+    'zh': '预订详情',
+  },
+  'Booking information you entered': {
+    'fil': 'Impormasyong inilagay mo sa booking',
+    'ko': '입력한 예약 정보',
+    'ja': '入力した予約情報',
+    'zh': '您填写的预订信息',
+  },
+  'Booking session': {
+    'fil': 'Session ng booking',
+    'ko': '예약 세션',
+    'ja': '予約セッション',
+    'zh': '预订时段',
+  },
+  'Booking requests': {
+    'fil': 'Mga kahilingan sa booking',
+    'ko': '예약 요청',
+    'ja': '予約リクエスト',
+    'zh': '预订请求',
+  },
+  'Upcoming bookings': {
+    'fil': 'Mga paparating na booking',
+    'ko': '예정된 예약',
+    'ja': '今後の予約',
+    'zh': '即将进行的预订',
+  },
+  'Booking cards': {
+    'fil': 'Mga booking card',
+    'ko': '예약 카드',
+    'ja': '予約カード',
+    'zh': '预订卡片',
+  },
+  'Booking ticket is available in Messages.': {
+    'fil': 'Makikita ang booking ticket sa Mga Mensahe.',
+    'ko': '예약 티켓은 메시지에서 확인할 수 있습니다.',
+    'ja': '予約チケットはメッセージで確認できます。',
+    'zh': '预订票可在消息中查看。',
+  },
+  'Explore bookings': {
+    'fil': 'Tuklasin ang mga booking',
+    'ko': '예약 둘러보기',
+    'ja': '予約を探す',
+    'zh': '浏览预订',
+  },
+  'View booking details': {
+    'fil': 'Tingnan ang mga detalye ng booking',
+    'ko': '예약 세부정보 보기',
+    'ja': '予約の詳細を表示',
+    'zh': '查看预订详情',
+  },
+  'View ticket': {
+    'fil': 'Tingnan ang ticket',
+    'ko': '티켓 보기',
+    'ja': 'チケットを表示',
+    'zh': '查看票券',
+  },
+  'View Ticket': {
+    'fil': 'Tingnan ang ticket',
+    'ko': '티켓 보기',
+    'ja': 'チケットを表示',
+    'zh': '查看票券',
+  },
+  'Choose your booking type': {
+    'fil': 'Piliin ang uri ng booking',
+    'ko': '예약 유형 선택',
+    'ja': '予約タイプを選択',
+    'zh': '选择预订类型',
+  },
+  'Choose a sport or event and we’ll take care of the rest.': {
+    'fil': 'Pumili ng sport o event at kami na ang bahala sa iba.',
+    'ko': '스포츠나 이벤트를 선택하면 나머지는 저희가 도와드립니다.',
+    'ja': 'スポーツまたはイベントを選べば、あとはお任せください。',
+    'zh': '选择体育项目或活动，其余交给我们。',
+  },
+  'Choose a sport or event from a local business today.': {
+    'fil': 'Mag-book ngayon ng sport o event mula sa lokal na negosyo.',
+    'ko': '오늘 지역 업체의 스포츠나 이벤트를 예약하세요.',
+    'ja': '地域のお店のスポーツやイベントを今すぐ予約しましょう。',
+    'zh': '立即预订本地商家的体育项目或活动。',
+  },
+  'Please check that all information is correct before continuing.': {
+    'fil': 'Tiyaking tama ang lahat ng impormasyon bago magpatuloy.',
+    'ko': '계속하기 전에 모든 정보가 올바른지 확인하세요.',
+    'ja': '続行する前に、すべての情報が正しいことを確認してください。',
+    'zh': '继续前请确认所有信息均正确。',
+  },
+  'Select a payment provider to continue securely.': {
+    'fil': 'Pumili ng payment provider upang magpatuloy nang secure.',
+    'ko': '안전하게 계속하려면 결제 제공업체를 선택하세요.',
+    'ja': '安全に続行するには決済サービスを選択してください。',
+    'zh': '选择支付服务商以安全继续。',
+  },
+  'Online payment unavailable': {
+    'fil': 'Hindi available ang online payment',
+    'ko': '온라인 결제를 사용할 수 없음',
+    'ja': 'オンライン決済は利用できません',
+    'zh': '在线支付不可用',
+  },
+  'Choose online payment': {
+    'fil': 'Pumili ng online payment',
+    'ko': '온라인 결제 선택',
+    'ja': 'オンライン決済を選択',
+    'zh': '选择在线支付',
+  },
+  'Online payment': {
+    'fil': 'Online payment',
+    'ko': '온라인 결제',
+    'ja': 'オンライン決済',
+    'zh': '在线支付',
+  },
+  'Use Cash on Arrival': {
+    'fil': 'Gumamit ng Cash on Arrival',
+    'ko': '현장 결제 사용',
+    'ja': '現地払いを利用',
+    'zh': '使用到店付款',
+  },
+  'Amenities': {'fil': 'Mga amenity', 'ko': '편의시설', 'ja': '設備', 'zh': '设施'},
+  'Venue information': {
+    'fil': 'Impormasyon ng venue',
+    'ko': '장소 정보',
+    'ja': '施設情報',
+    'zh': '场地信息',
+  },
+  'Venue comparisons will appear when venues are added.': {
+    'fil': 'Lalabas ang paghahambing kapag may naidagdag nang venue.',
+    'ko': '장소가 추가되면 비교 정보가 표시됩니다.',
+    'ja': '施設が追加されると比較情報が表示されます。',
+    'zh': '添加场地后将显示比较信息。',
+  },
+  'No amenities listed': {
+    'fil': 'Walang nakalistang amenity',
+    'ko': '등록된 편의시설이 없습니다',
+    'ja': '設備情報はありません',
+    'zh': '暂无设施信息',
+  },
+  'Image unavailable': {
+    'fil': 'Hindi available ang larawan',
+    'ko': '이미지를 사용할 수 없습니다',
+    'ja': '画像を表示できません',
+    'zh': '图片不可用',
+  },
+  'Filter venues': {
+    'fil': 'I-filter ang mga venue',
+    'ko': '장소 필터',
+    'ja': '施設を絞り込む',
+    'zh': '筛选场地',
+  },
+  'No businesses in this category': {
+    'fil': 'Walang negosyo sa kategoryang ito',
+    'ko': '이 카테고리에 업체가 없습니다',
+    'ja': 'このカテゴリに事業者はありません',
+    'zh': '此类别中没有商家',
+  },
+  'No venues match your filters or search.': {
+    'fil': 'Walang venue na tumutugma sa iyong filter o paghahanap.',
+    'ko': '필터 또는 검색과 일치하는 장소가 없습니다.',
+    'ja': '条件や検索に一致する施設はありません。',
+    'zh': '没有符合筛选条件或搜索内容的场地。',
+  },
+  'No highest-rated venues available yet.': {
+    'fil': 'Wala pang available na venue na may pinakamataas na rating.',
+    'ko': '아직 최고 평점 장소가 없습니다.',
+    'ja': '現在、最高評価の施設はありません。',
+    'zh': '目前暂无评分最高的场地。',
+  },
+  'No popular venues available yet.': {
+    'fil': 'Wala pang available na sikat na venue.',
+    'ko': '아직 인기 장소가 없습니다.',
+    'ja': '現在、人気の施設はありません。',
+    'zh': '目前暂无热门场地。',
+  },
+  'Explore live availability and find the right experience.': {
+    'fil': 'Tingnan ang live availability at hanapin ang tamang karanasan.',
+    'ko': '실시간 예약 가능 여부를 확인하고 원하는 경험을 찾아보세요.',
+    'ja': '空き状況を確認して、ぴったりの体験を見つけましょう。',
+    'zh': '查看实时空位，找到适合的体验。',
+  },
+  'Getting your courts ready...': {
+    'fil': 'Inihahanda ang iyong mga court...',
+    'ko': '코트를 준비하고 있습니다...',
+    'ja': 'コートを準備しています...',
+    'zh': '正在为您准备球场...',
+  },
+  'A simple marketplace for clients to book and merchants to grow.': {
+    'fil': 'Isang marketplace para makapag-book ang mga kliyente at umunlad ang mga merchant.',
+    'ko': '고객은 예약하고 판매자는 성장할 수 있는 간편한 마켓플레이스입니다.',
+    'ja': 'お客様は予約し、加盟店は成長できるシンプルなマーケットプレイスです。',
+    'zh': '让客户轻松预订、商家持续发展的便捷平台。',
+  },
+  'Active bookings': {
+    'fil': 'Mga aktibong booking',
+    'ko': '진행 중인 예약',
+    'ja': '有効な予約',
+    'zh': '进行中的预订',
+  },
+  'Add a business first to create its News Card.': {
+    'fil': 'Magdagdag muna ng negosyo para makagawa ng News Card nito.',
+    'ko': '뉴스 카드를 만들려면 먼저 업체를 추가하세요.',
+    'ja': 'ニュースカードを作成するには、先に事業者を追加してください。',
+    'zh': '请先添加商家，再创建其新闻卡片。',
+  },
+  'Add a venue to publish it for customers.': {
+    'fil': 'Magdagdag ng venue para mailathala ito sa mga customer.',
+    'ko': '고객에게 게시하려면 장소를 추가하세요.',
+    'ja': 'お客様に公開するには施設を追加してください。',
+    'zh': '添加场地后即可向客户发布。',
+  },
+  'Add business': {
+    'fil': 'Magdagdag ng negosyo',
+    'ko': '업체 추가',
+    'ja': '事業者を追加',
+    'zh': '添加商家',
+  },
+  'Add coach': {
+    'fil': 'Magdagdag ng coach',
+    'ko': '코치 추가',
+    'ja': 'コーチを追加',
+    'zh': '添加教练',
+  },
+  'Add other category': {
+    'fil': 'Magdagdag ng ibang kategorya',
+    'ko': '다른 카테고리 추가',
+    'ja': '別のカテゴリを追加',
+    'zh': '添加其他类别',
+  },
+  'Add other sport': {
+    'fil': 'Magdagdag ng ibang sport',
+    'ko': '다른 스포츠 추가',
+    'ja': '別のスポーツを追加',
+    'zh': '添加其他体育项目',
+  },
+  'Add up to 20 coaches with optional profile photos and individual monthly prices.': {
+    'fil': 'Magdagdag ng hanggang 20 coach, opsyonal ang profile photo at buwanang presyo ng bawat isa.',
+    'ko': '최대 20명의 코치를 추가하고 프로필 사진과 개별 월 요금을 설정할 수 있습니다.',
+    'ja': '最大20名のコーチを追加できます。プロフィール写真と個別の月額料金は任意です。',
+    'zh': '最多可添加 20 位教练，并可为每位教练设置头像和月费。',
+  },
+  'Allow notifications and exact alarms to receive match alerts.': {
+    'fil': 'Payagan ang mga notification at eksaktong alarm para makatanggap ng mga alerto sa laro.',
+    'ko': '경기 알림을 받으려면 알림과 정확한 알람을 허용하세요.',
+    'ja': '試合通知を受け取るには、通知と正確なアラームを許可してください。',
+    'zh': '允许通知和精准闹钟，以接收比赛提醒。',
+  },
+  'Annual': {'fil': 'Taunan', 'ko': '연간', 'ja': '年間', 'zh': '年度'},
+  'Approved bookings finish automatically at their scheduled end.': {
+    'fil': 'Awtomatikong matatapos ang mga aprubadong booking sa nakatakdang oras.',
+    'ko': '승인된 예약은 예정된 종료 시간에 자동으로 완료됩니다.',
+    'ja': '承認済みの予約は予定終了時刻に自動で完了します。',
+    'zh': '已批准的预订将在预定结束时间自动完成。',
+  },
+  'Availability / booking schedule': {
+    'fil': 'Availability / iskedyul ng booking',
+    'ko': '예약 가능 시간 / 예약 일정',
+    'ja': '空き状況／予約スケジュール',
+    'zh': '可用情况 / 预订日程',
+  },
+  'Available Balance': {
+    'fil': 'Available na balanse',
+    'ko': '사용 가능 잔액',
+    'ja': '利用可能残高',
+    'zh': '可用余额',
+  },
+  'Available days (required · choose at least one)': {
+    'fil': 'Mga available na araw (kinakailangan · pumili ng kahit isa)',
+    'ko': '이용 가능 요일 (필수 · 하나 이상 선택)',
+    'ja': '利用可能な曜日（必須・1つ以上選択）',
+    'zh': '可用日期（必填 · 至少选择一项）',
+  },
+  'BOOKING CONFIGURATION': {
+    'fil': 'PAG-SETUP NG BOOKING',
+    'ko': '예약 설정',
+    'ja': '予約設定',
+    'zh': '预订设置',
+  },
+  'BOOKING REFERENCE': {
+    'fil': 'REFERENCE NG BOOKING',
+    'ko': '예약 참조 번호',
+    'ja': '予約参照番号',
+    'zh': '预订编号',
+  },
+  'Book a sport or event from a local business today.': {
+    'fil': 'Mag-book ngayon ng sport o event mula sa lokal na negosyo.',
+    'ko': '오늘 지역 업체의 스포츠나 이벤트를 예약하세요.',
+    'ja': '地域のお店のスポーツやイベントを今すぐ予約しましょう。',
+    'zh': '立即预订本地商家的体育项目或活动。',
+  },
+  'Browse real merchant listings with details, availability, photos, and pricing before you decide.': {
+    'fil': 'Tingnan muna ang totoong listing ng mga merchant, kasama ang detalye, availability, mga larawan, at presyo.',
+    'ko': '결정하기 전에 실제 업체의 상세정보, 예약 가능 여부, 사진 및 가격을 확인하세요.',
+    'ja': '決定する前に、加盟店の詳細、空き状況、写真、料金をご確認ください。',
+    'zh': '预订前可查看真实商家的详情、空位、图片和价格。',
+  },
+  'CHOOSE DATE AND TIME': {
+    'fil': 'PUMILI NG PETSA AT ORAS',
+    'ko': '날짜 및 시간 선택',
+    'ja': '日時を選択',
+    'zh': '选择日期和时间',
+  },
+  'CHOOSE SPORT AND SLOT': {
+    'fil': 'PUMILI NG SPORT AT SLOT',
+    'ko': '스포츠 및 시간대 선택',
+    'ja': 'スポーツと時間枠を選択',
+    'zh': '选择体育项目和时段',
+  },
+  'COMING SOON': {
+    'fil': 'PAPARATING NA',
+    'ko': '출시 예정',
+    'ja': '近日公開',
+    'zh': '即将推出',
+  },
+  'CONFIRMED REVENUE': {
+    'fil': 'NAKUMPIRMANG KITA',
+    'ko': '확정된 매출',
+    'ja': '確定売上',
+    'zh': '已确认收入',
+  },
+  'Cancellation Policy: Free cancellation up to 6 hours before the slot. Proper sports footwear is required.': {
+    'fil': 'Patakaran sa pagkansela: Libre ang pagkansela hanggang 6 na oras bago ang slot. Kinakailangan ang angkop na sapatos pang-sports.',
+    'ko': '취소 정책: 예약 시간 6시간 전까지 무료 취소가 가능합니다. 적절한 운동화를 착용해야 합니다.',
+    'ja': 'キャンセルポリシー：予約枠の6時間前まで無料でキャンセルできます。適切なスポーツシューズが必要です。',
+    'zh': '取消政策：时段开始前 6 小时内可免费取消。请穿着合适的运动鞋。',
+  },
+  'Cash on Arrival is fixed at 50% of the booking total.': {
+    'fil': 'Nakatakda sa 50% ng kabuuang booking ang Cash on Arrival.',
+    'ko': '현장 결제 금액은 예약 총액의 50%로 고정됩니다.',
+    'ja': '現地払いは予約合計額の50%に固定されています。',
+    'zh': '到店付款金额固定为预订总额的 50%。',
+  },
+  'Cash on Arrival is fixed at 50% of the event fee.': {
+    'fil': 'Nakatakda sa 50% ng event fee ang Cash on Arrival.',
+    'ko': '현장 결제 금액은 이벤트 요금의 50%로 고정됩니다.',
+    'ja': '現地払いはイベント料金の50%に固定されています。',
+    'zh': '到店付款金额固定为活动费用的 50%。',
+  },
+  'Chat': {'fil': 'Makipag-chat', 'ko': '채팅', 'ja': 'チャット', 'zh': '聊天'},
+  'Chats': {'fil': 'Mga chat', 'ko': '채팅', 'ja': 'チャット', 'zh': '聊天'},
+  'Check your inbox': {
+    'fil': 'Tingnan ang iyong inbox',
+    'ko': '받은 편지함을 확인하세요',
+    'ja': '受信トレイを確認してください',
+    'zh': '请查看收件箱',
+  },
+  'Checking first-visit availability...': {
+    'fil': 'Sinusuri ang availability para sa unang pagbisita...',
+    'ko': '첫 방문 가능 여부를 확인하고 있습니다...',
+    'ja': '初回利用の空き状況を確認しています...',
+    'zh': '正在检查首次到访的可用情况...',
+  },
+  'Choose at least one activity (up to 20), then set its session, monthly, and yearly prices. Yearly offers may include an optional discount.': {
+    'fil': 'Pumili ng kahit isang activity (hanggang 20), pagkatapos ay itakda ang presyo para sa session, buwanan, at taun-taon. Maaaring maglagay ng opsyonal na diskuwento sa taunang alok.',
+    'ko': '활동을 하나 이상(최대 20개) 선택한 뒤 회당, 월간 및 연간 요금을 설정하세요. 연간 요금에는 선택적으로 할인을 적용할 수 있습니다.',
+    'ja': 'アクティビティを1つ以上（最大20個）選び、セッション・月額・年額料金を設定してください。年額プランには任意で割引を設定できます。',
+    'zh': '至少选择一项活动（最多 20 项），然后设置单次、月度和年度价格。年度方案可选设置折扣。',
+  },
+  'Choose at least one sport. Each selected sport needs its own rate and slot setup.': {
+    'fil': 'Pumili ng kahit isang sport. Kailangan ng sariling rate at slot setup ang bawat napiling sport.',
+    'ko': '스포츠를 하나 이상 선택하세요. 선택한 각 스포츠마다 별도의 요금과 시간대를 설정해야 합니다.',
+    'ja': 'スポーツを1つ以上選択してください。選択したスポーツごとに料金と時間枠の設定が必要です。',
+    'zh': '请至少选择一项体育项目。每项所选项目都需要单独设置价格和时段。',
+  },
+  'Choose your event details and payment method. ': {
+    'fil': 'Piliin ang mga detalye ng event at paraan ng pagbabayad。',
+    'ko': '이벤트 세부정보와 결제 방법을 선택하세요.',
+    'ja': 'イベントの詳細と支払い方法を選択してください。',
+    'zh': '请选择活动详情和付款方式。',
+  },
+  'Clear pin': {
+    'fil': 'Alisin ang pin',
+    'ko': '핀 지우기',
+    'ja': 'ピンをクリア',
+    'zh': '清除标记',
+  },
+  'Client account': {
+    'fil': 'Account ng kliyente',
+    'ko': '고객 계정',
+    'ja': '顧客アカウント',
+    'zh': '客户账户',
+  },
+  'Coach profile photo (optional)': {
+    'fil': 'Larawan ng profile ng coach (opsyonal)',
+    'ko': '코치 프로필 사진 (선택)',
+    'ja': 'コーチのプロフィール写真（任意）',
+    'zh': '教练头像（可选）',
+  },
+  'Confirm and continue': {
+    'fil': 'Kumpirmahin at magpatuloy',
+    'ko': '확인 후 계속',
+    'ja': '確認して続行',
+    'zh': '确认并继续',
+  },
+  'Confirm booking details': {
+    'fil': 'Kumpirmahin ang mga detalye ng booking',
+    'ko': '예약 세부정보 확인',
+    'ja': '予約内容を確認',
+    'zh': '确认预订详情',
+  },
+  'Contact owner': {
+    'fil': 'Kontakin ang may-ari',
+    'ko': '소유자에게 문의',
+    'ja': 'オーナーに連絡',
+    'zh': '联系业主',
+  },
+  'Could not load reviews.': {
+    'fil': 'Hindi ma-load ang mga review.',
+    'ko': '후기를 불러올 수 없습니다.',
+    'ja': 'レビューを読み込めませんでした。',
+    'zh': '无法加载评价。',
+  },
+  'Could not open venue link.': {
+    'fil': 'Hindi mabuksan ang link ng venue.',
+    'ko': '장소 링크를 열 수 없습니다.',
+    'ja': '施設のリンクを開けませんでした。',
+    'zh': '无法打开场地链接。',
+  },
+  'Covered': {'fil': 'May bubong', 'ko': '실내', 'ja': '屋内', 'zh': '有顶棚'},
+  'Daily': {'fil': 'Araw-araw', 'ko': '일간', 'ja': '日次', 'zh': '每日'},
+  'Data analytics': {
+    'fil': 'Data analytics',
+    'ko': '데이터 분석',
+    'ja': 'データ分析',
+    'zh': '数据分析',
+  },
+  'Delete business': {
+    'fil': 'Tanggalin ang negosyo',
+    'ko': '업체 삭제',
+    'ja': '事業者を削除',
+    'zh': '删除商家',
+  },
+  'Delete business?': {
+    'fil': 'Tanggalin ang negosyo?',
+    'ko': '업체를 삭제하시겠습니까?',
+    'ja': '事業者を削除しますか？',
+    'zh': '确定删除商家吗？',
+  },
+  'Delete conversation for you?': {
+    'fil': 'Tanggalin ang usapan para sa iyo?',
+    'ko': '내 대화 목록에서 삭제하시겠습니까?',
+    'ja': '自分の画面から会話を削除しますか？',
+    'zh': '要从你的列表中删除此对话吗？',
+  },
+  'Delete for me': {
+    'fil': 'Tanggalin para sa akin',
+    'ko': '나에게서 삭제',
+    'ja': '自分から削除',
+    'zh': '为我删除',
+  },
+  'Delete message?': {
+    'fil': 'Tanggalin ang mensahe?',
+    'ko': '메시지를 삭제하시겠습니까?',
+    'ja': 'メッセージを削除しますか？',
+    'zh': '确定删除消息吗？',
+  },
+  'Discover and book experiences.': {
+    'fil': 'Tumuklas at mag-book ng mga karanasan.',
+    'ko': '새로운 경험을 찾아 예약하세요.',
+    'ja': '体験を見つけて予約しましょう。',
+    'zh': '发现并预订精彩体验。',
+  },
+  'Discover what’s new': {
+    'fil': 'Tuklasin ang mga bago',
+    'ko': '새로운 소식 둘러보기',
+    'ja': '新着情報を見る',
+    'zh': '发现新内容',
+  },
+  'Duration': {'fil': 'Tagal', 'ko': '기간', 'ja': '所要時間', 'zh': '时长'},
+  'Edit details': {
+    'fil': 'I-edit ang mga detalye',
+    'ko': '세부정보 수정',
+    'ja': '詳細を編集',
+    'zh': '编辑详情',
+  },
+  'Edit merchant profile': {
+    'fil': 'I-edit ang profile ng merchant',
+    'ko': '판매자 프로필 수정',
+    'ja': '加盟店プロフィールを編集',
+    'zh': '编辑商家资料',
+  },
+  'Enter your email to receive a verification code, then choose a new password.': {
+    'fil': 'Ilagay ang iyong email para makatanggap ng verification code, pagkatapos ay pumili ng bagong password.',
+    'ko': '인증 코드를 받을 이메일을 입력한 다음 새 비밀번호를 설정하세요.',
+    'ja': '認証コードを受け取るメールアドレスを入力し、新しいパスワードを設定してください。',
+    'zh': '输入邮箱以接收验证码，然后设置新密码。',
+  },
+  'Event booking': {
+    'fil': 'Event booking',
+    'ko': '이벤트 예약',
+    'ja': 'イベント予約',
+    'zh': '活动预订',
+  },
+  'Event types this venue can hold (required)': {
+    'fil': 'Mga uri ng event na maaaring idaos sa venue na ito (kinakailangan)',
+    'ko': '이 장소에서 개최할 수 있는 이벤트 유형 (필수)',
+    'ja': 'この施設で開催できるイベントの種類（必須）',
+    'zh': '此场地可举办的活动类型（必填）',
+  },
+  'Everything in one place': {
+    'fil': 'Lahat sa iisang lugar',
+    'ko': '모든 것을 한곳에서',
+    'ja': 'すべてを一か所に',
+    'zh': '一站式体验',
+  },
+  'Explore venue': {
+    'fil': 'Tuklasin ang venue',
+    'ko': '장소 둘러보기',
+    'ja': '施設を見る',
+    'zh': '探索场地',
+  },
+  'FIRST VISIT': {
+    'fil': 'UNANG PAGBISITA',
+    'ko': '첫 방문',
+    'ja': '初回利用',
+    'zh': '首次到访',
+  },
+  'FITNESS CONFIGURATION': {
+    'fil': 'PAG-SETUP NG FITNESS',
+    'ko': '피트니스 설정',
+    'ja': 'フィットネス設定',
+    'zh': '健身设置',
+  },
+  'Find the right place for your plan': {
+    'fil': 'Hanapin ang tamang lugar para sa iyong plano',
+    'ko': '계획에 맞는 장소를 찾아보세요',
+    'ja': '予定に合った場所を見つけましょう',
+    'zh': '找到适合你计划的场地',
+  },
+  'Find your next game': {
+    'fil': 'Hanapin ang susunod mong laro',
+    'ko': '다음 경기를 찾아보세요',
+    'ja': '次の試合を見つけましょう',
+    'zh': '寻找你的下一场比赛',
+  },
+  'Forgot your password?': {
+    'fil': 'Nakalimutan ang iyong password?',
+    'ko': '비밀번호를 잊으셨나요?',
+    'ja': 'パスワードをお忘れですか？',
+    'zh': '忘记密码了吗？',
+  },
+  'Free months': {
+    'fil': 'Mga libreng buwan',
+    'ko': '무료 개월',
+    'ja': '無料期間（月）',
+    'zh': '免费月数',
+  },
+  'Full view': {'fil': 'Buong view', 'ko': '전체 보기', 'ja': '全体表示', 'zh': '完整视图'},
+  'Future dates can be marked absent, but not present.': {
+    'fil': 'Maaaring markahang absent ang mga susunod na petsa, pero hindi present.',
+    'ko': '미래 날짜는 결석으로 표시할 수 있지만 출석으로 표시할 수는 없습니다.',
+    'ja': '未来の日付は欠席として記録できますが、出席にはできません。',
+    'zh': '未来日期可标记为缺席，但不能标记为出席。',
+  },
+  'Get alerts when a match starts and ends.': {
+    'fil': 'Makakuha ng alerto kapag nagsimula at natapos ang laro.',
+    'ko': '경기 시작과 종료 시 알림을 받으세요.',
+    'ja': '試合の開始時と終了時に通知を受け取れます。',
+    'zh': '比赛开始和结束时接收提醒。',
+  },
+  'Get directions': {
+    'fil': 'Kumuha ng direksyon',
+    'ko': '길찾기',
+    'ja': '道順を表示',
+    'zh': '获取路线',
+  },
+  'Gym name': {'fil': 'Pangalan ng gym', 'ko': '체육관 이름', 'ja': 'ジム名', 'zh': '健身房名称'},
+  'Hosted by merchant': {
+    'fil': 'Pinangasiwaan ng merchant',
+    'ko': '판매자 주최',
+    'ja': '加盟店主催',
+    'zh': '由商家主办',
+  },
+  'How was your completed booking?': {
+    'fil': 'Kumusta ang natapos mong booking?',
+    'ko': '완료된 예약은 어떠셨나요?',
+    'ja': '完了した予約はいかがでしたか？',
+    'zh': '这次预订体验如何？',
+  },
+  'I am joining as': {
+    'fil': 'Sasali ako bilang',
+    'ko': '다음 역할로 가입합니다',
+    'ja': '次の役割で参加します',
+    'zh': '我将以此身份加入',
+  },
+  'Indoor': {'fil': 'Indoor', 'ko': '실내', 'ja': '屋内', 'zh': '室内'},
+  'Instant confirmation · No upfront payment required': {
+    'fil': 'Agarang kumpirmasyon · Hindi kailangan ng paunang bayad',
+    'ko': '즉시 확인 · 선결제 불필요',
+    'ja': '即時確定・事前払い不要',
+    'zh': '即时确认 · 无需预付款',
+  },
+  'Made for the way you play': {
+    'fil': 'Ginawa para sa paraan ng paglalaro mo',
+    'ko': '당신의 플레이 방식에 맞춰',
+    'ja': 'あなたのプレイスタイルに合わせて',
+    'zh': '为你的运动方式而设计',
+  },
+  'Manage your account and keep track of your venues.': {
+    'fil': 'Pamahalaan ang account mo at subaybayan ang iyong mga venue.',
+    'ko': '계정을 관리하고 장소 현황을 확인하세요.',
+    'ja': 'アカウントを管理し、施設の状況を確認できます。',
+    'zh': '管理账户并跟踪你的场地。',
+  },
+  'Match notifications': {
+    'fil': 'Mga notification sa laro',
+    'ko': '경기 알림',
+    'ja': '試合通知',
+    'zh': '比赛通知',
+  },
+  'Merchant dashboard': {
+    'fil': 'Dashboard ng merchant',
+    'ko': '판매자 대시보드',
+    'ja': '加盟店ダッシュボード',
+    'zh': '商家控制面板',
+  },
+  'Monthly': {'fil': 'Buwan-buwan', 'ko': '월간', 'ja': '月額', 'zh': '每月'},
+  'Needs your attention': {
+    'fil': 'Kailangan ng iyong pansin',
+    'ko': '확인이 필요합니다',
+    'ja': '確認が必要です',
+    'zh': '需要你处理',
+  },
+  'New message': {
+    'fil': 'Bagong mensahe',
+    'ko': '새 메시지',
+    'ja': '新しいメッセージ',
+    'zh': '新消息',
+  },
+  'News Feed': {
+    'fil': 'News Feed',
+    'ko': '뉴스 피드',
+    'ja': 'ニュースフィード',
+    'zh': '资讯动态',
+  },
+  'News Feed preview': {
+    'fil': 'Preview ng News Feed',
+    'ko': '뉴스 피드 미리보기',
+    'ja': 'ニュースフィードのプレビュー',
+    'zh': '资讯动态预览',
+  },
+  'News cards': {
+    'fil': 'Mga news card',
+    'ko': '뉴스 카드',
+    'ja': 'ニュースカード',
+    'zh': '资讯卡片',
+  },
+  'No active fitness bookings yet.': {
+    'fil': 'Wala pang aktibong fitness booking.',
+    'ko': '진행 중인 피트니스 예약이 없습니다.',
+    'ja': '有効なフィットネス予約はまだありません。',
+    'zh': '暂无进行中的健身预订。',
+  },
+  'No businesses added yet': {
+    'fil': 'Wala pang naidaragdag na negosyo',
+    'ko': '아직 추가된 업체가 없습니다',
+    'ja': '事業者はまだ追加されていません',
+    'zh': '尚未添加商家',
+  },
+  'No coach': {
+    'fil': 'Walang coach',
+    'ko': '코치 없음',
+    'ja': 'コーチなし',
+    'zh': '无教练',
+  },
+  'No discount': {
+    'fil': 'Walang diskuwento',
+    'ko': '할인 없음',
+    'ja': '割引なし',
+    'zh': '无折扣',
+  },
+  'No ratings yet': {
+    'fil': 'Wala pang rating',
+    'ko': '아직 평점이 없습니다',
+    'ja': '評価はまだありません',
+    'zh': '暂无评分',
+  },
+  'OPEN NOW': {
+    'fil': 'BUKAS NGAYON',
+    'ko': '영업 중',
+    'ja': '営業中',
+    'zh': '营业中',
+  },
+  'Outdoor': {'fil': 'Outdoor', 'ko': '실외', 'ja': '屋外', 'zh': '室外'},
+  'PAYMENT METHOD': {
+    'fil': 'PARAAN NG PAGBABAYAD',
+    'ko': '결제 방법',
+    'ja': '支払い方法',
+    'zh': '付款方式',
+  },
+  'PLAY MORE. PLAN LESS.': {
+    'fil': 'MAS MAGLARO. MAS KAUNTING PLANO.',
+    'ko': '더 많이 즐기고, 계획은 간편하게.',
+    'ja': 'もっと楽しんで、計画はシンプルに。',
+    'zh': '尽情畅玩，轻松规划。',
+  },
+  'Payout track': {
+    'fil': 'Kasaysayan ng payout',
+    'ko': '정산 내역',
+    'ja': '支払い履歴',
+    'zh': '收款记录',
+  },
+  'Percentage off': {
+    'fil': 'Porsyento ng diskuwento',
+    'ko': '할인율',
+    'ja': '割引率',
+    'zh': '折扣百分比',
+  },
+  'Pin court location': {
+    'fil': 'I-pin ang lokasyon ng court',
+    'ko': '코트 위치 표시',
+    'ja': 'コートの場所を指定',
+    'zh': '标记球场位置',
+  },
+  'Players': {'fil': 'Mga manlalaro', 'ko': '선수', 'ja': 'プレイヤー', 'zh': '玩家'},
+  'Press enter after each hobby': {
+    'fil': 'Pindutin ang enter pagkatapos ng bawat hobby',
+    'ko': '취미를 입력한 후 Enter 키를 누르세요',
+    'ja': '趣味を入力するたびにEnterキーを押してください',
+    'zh': '每输入一项爱好后按回车键',
+  },
+  'Price': {'fil': 'Presyo', 'ko': '가격', 'ja': '料金', 'zh': '价格'},
+  'Promo Court Credits': {
+    'fil': 'Promo Court Credits',
+    'ko': '프로모션 코트 크레딧',
+    'ja': 'プロモーションコートクレジット',
+    'zh': '促销球场积分',
+  },
+  'Rates': {'fil': 'Mga rate', 'ko': '요금', 'ja': '料金', 'zh': '价格'},
+  'Ready to make a plan?': {
+    'fil': 'Handa ka na bang magplano?',
+    'ko': '계획을 세울 준비가 되셨나요?',
+    'ja': '予定を立てる準備はできましたか？',
+    'zh': '准备好制定计划了吗？',
+  },
+  'Resend code': {
+    'fil': 'Ipadala muli ang code',
+    'ko': '코드 다시 보내기',
+    'ja': 'コードを再送信',
+    'zh': '重新发送验证码',
+  },
+  'Reserve experience': {
+    'fil': 'Mag-reserve ng karanasan',
+    'ko': '체험 예약',
+    'ja': '体験を予約',
+    'zh': '预订体验',
+  },
+  'Reset password': {
+    'fil': 'I-reset ang password',
+    'ko': '비밀번호 재설정',
+    'ja': 'パスワードをリセット',
+    'zh': '重置密码',
+  },
+  'Review booking requests': {
+    'fil': 'Suriin ang mga booking request',
+    'ko': '예약 요청 검토',
+    'ja': '予約リクエストを確認',
+    'zh': '审核预订请求',
+  },
+  'Sales': {'fil': 'Benta', 'ko': '매출', 'ja': '売上', 'zh': '销售额'},
+  'Scan at Venue': {
+    'fil': 'I-scan sa venue',
+    'ko': '장소에서 스캔',
+    'ja': '施設でスキャン',
+    'zh': '在场地扫码',
+  },
+  'Schedule': {'fil': 'Iskedyul', 'ko': '일정', 'ja': 'スケジュール', 'zh': '日程'},
+  'Select a booking date to record attendance.': {
+    'fil': 'Pumili ng petsa ng booking para itala ang pagdalo.',
+    'ko': '출석을 기록하려면 예약 날짜를 선택하세요.',
+    'ja': '出席を記録する予約日を選択してください。',
+    'zh': '选择预订日期以记录出席情况。',
+  },
+  'Select a conversation to start.': {
+    'fil': 'Pumili ng usapan para magsimula.',
+    'ko': '대화를 선택하여 시작하세요.',
+    'ja': '会話を選択して開始してください。',
+    'zh': '选择一个对话以开始。',
+  },
+  'Selected slot is open for this date.': {
+    'fil': 'Available ang napiling slot sa petsang ito.',
+    'ko': '선택한 날짜에 해당 시간대를 예약할 수 있습니다.',
+    'ja': '選択した日時の枠は空いています。',
+    'zh': '所选时段在该日期可用。',
+  },
+  'Selected slot schedule': {
+    'fil': 'Iskedyul ng napiling slot',
+    'ko': '선택한 시간대 일정',
+    'ja': '選択した枠のスケジュール',
+    'zh': '所选时段安排',
+  },
+  'Send code again': {
+    'fil': 'Ipadala muli ang code',
+    'ko': '코드 다시 보내기',
+    'ja': 'コードを再送信',
+    'zh': '重新发送验证码',
+  },
+  'Set the studio capacity, then configure each sport. Full-studio sports block all slots.': {
+    'fil': 'Itakda ang kapasidad ng studio, pagkatapos ay i-configure ang bawat sport. Hinaharangan ng mga sport na gumagamit sa buong studio ang lahat ng slot.',
+    'ko': '스튜디오 수용 인원을 설정한 다음 각 스포츠를 구성하세요. 스튜디오 전체를 사용하는 스포츠는 모든 시간대를 차단합니다.',
+    'ja': 'スタジオの定員を設定し、各スポーツを構成してください。スタジオ全体を使うスポーツはすべての枠を占有します。',
+    'zh': '先设置工作室容量，再配置各项体育活动。需要使用整个工作室的项目会占用所有时段。',
+  },
+  'Small slots': {
+    'fil': 'Maliliit na slot',
+    'ko': '소규모 시간대',
+    'ja': '短い枠',
+    'zh': '小型时段',
+  },
+  'Submit rating': {
+    'fil': 'Isumite ang rating',
+    'ko': '평점 제출',
+    'ja': '評価を送信',
+    'zh': '提交评分',
+  },
+  'Switch booking type': {
+    'fil': 'Palitan ang uri ng booking',
+    'ko': '예약 유형 전환',
+    'ja': '予約タイプを切り替え',
+    'zh': '切换预订类型',
+  },
+  'Tap or drag across the chart to inspect exact values.': {
+    'fil': 'I-tap o i-drag sa chart para makita ang eksaktong mga halaga.',
+    'ko': '차트를 탭하거나 드래그하여 정확한 값을 확인하세요.',
+    'ja': 'グラフをタップまたはドラッグして正確な値を確認してください。',
+    'zh': '点击或拖动图表以查看准确数值。',
+  },
+  'Tap photo to change': {
+    'fil': 'I-tap ang larawan para palitan',
+    'ko': '사진을 탭하여 변경',
+    'ja': '写真をタップして変更',
+    'zh': '点击照片以更换',
+  },
+  'Tap to upload avatar': {
+    'fil': 'I-tap para mag-upload ng avatar',
+    'ko': '탭하여 프로필 사진 업로드',
+    'ja': 'タップしてプロフィール画像をアップロード',
+    'zh': '点击上传头像',
+  },
+  'That time is already booked. Please choose another available time.': {
+    'fil': 'Naka-book na ang oras na iyon. Pumili ng ibang available na oras.',
+    'ko': '해당 시간은 이미 예약되었습니다. 다른 가능한 시간을 선택하세요.',
+    'ja': 'その時間はすでに予約されています。別の空き時間を選択してください。',
+    'zh': '该时段已被预订，请选择其他可用时间。',
+  },
+  'The address is pinned automatically. Tap the map to adjust it to the exact venue entrance.': {
+    'fil': 'Awtomatikong naka-pin ang address. I-tap ang mapa para itama ito sa eksaktong pasukan ng venue.',
+    'ko': '주소가 자동으로 표시됩니다. 지도를 탭하여 장소 입구 위치를 정확히 조정하세요.',
+    'ja': '住所は自動でピン留めされます。地図をタップして施設の入口に合わせて調整してください。',
+    'zh': '地址已自动标记。点击地图，将位置调整到场地入口。',
+  },
+  'The selected term is charged once at checkout.': {
+    'fil': 'Isang beses lang sisingilin ang napiling termino sa checkout.',
+    'ko': '선택한 기간 요금은 결제 시 한 번만 청구됩니다.',
+    'ja': '選択した期間の料金はチェックアウト時に1回だけ請求されます。',
+    'zh': '所选期限的费用将在结账时一次性收取。',
+  },
+  'The venue link could not be opened.': {
+    'fil': 'Hindi mabuksan ang link ng venue.',
+    'ko': '장소 링크를 열 수 없습니다.',
+    'ja': '施設のリンクを開けませんでした。',
+    'zh': '无法打开场地链接。',
+  },
+  'This court is currently unavailable. Booking cannot proceed.': {
+    'fil': 'Hindi available ang court na ito ngayon. Hindi maipagpapatuloy ang booking.',
+    'ko': '현재 이 코트를 이용할 수 없어 예약을 진행할 수 없습니다.',
+    'ja': 'このコートは現在利用できないため、予約を続行できません。',
+    'zh': '该球场目前不可用，无法继续预订。',
+  },
+  'This merchant is not available for messages yet.': {
+    'fil': 'Hindi pa available sa mga mensahe ang merchant na ito.',
+    'ko': '이 판매자는 아직 메시지를 사용할 수 없습니다.',
+    'ja': 'この加盟店はまだメッセージを利用できません。',
+    'zh': '此商家暂时无法接收消息。',
+  },
+  'This message will be permanently deleted.': {
+    'fil': 'Permanenteng tatanggalin ang mensaheng ito.',
+    'ko': '이 메시지는 영구 삭제됩니다.',
+    'ja': 'このメッセージは完全に削除されます。',
+    'zh': '此消息将被永久删除。',
+  },
+  'This removes the conversation from your inbox only. ': {
+    'fil': 'Aalisin lang nito ang usapan sa inbox mo.',
+    'ko': '이 작업은 받은 편지함에서만 대화를 삭제합니다.',
+    'ja': 'この操作では受信トレイからのみ会話が削除されます。',
+    'zh': '此操作只会从你的收件箱中移除此对话。',
+  },
+  'This time overlaps a booking. Choose another visit time.': {
+    'fil': 'Nag-o-overlap ang oras na ito sa ibang booking. Pumili ng ibang oras ng pagbisita.',
+    'ko': '이 시간은 다른 예약과 겹칩니다. 다른 방문 시간을 선택하세요.',
+    'ja': 'この時間は別の予約と重複しています。別の時間を選択してください。',
+    'zh': '该时段与其他预订冲突，请选择其他到访时间。',
+  },
+  'This venue has no business type.': {
+    'fil': 'Walang uri ng negosyo ang venue na ito.',
+    'ko': '이 장소에는 업체 유형이 설정되지 않았습니다.',
+    'ja': 'この施設には事業者タイプが設定されていません。',
+    'zh': '此场地未设置商家类型。',
+  },
+  'This venue has no priced plans available for this category.': {
+    'fil': 'Walang planong may presyo para sa kategoryang ito sa venue na ito.',
+    'ko': '이 장소에는 해당 카테고리의 가격이 설정된 플랜이 없습니다.',
+    'ja': 'この施設には該当カテゴリの料金プランがありません。',
+    'zh': '此场地没有适用于该类别的定价方案。',
+  },
+  'This venue is closed on this day.': {
+    'fil': 'Sarado ang venue sa araw na ito.',
+    'ko': '이 장소는 해당 요일에 운영하지 않습니다.',
+    'ja': 'この施設は当日休業です。',
+    'zh': '此场地当天不营业。',
+  },
+  'This venue is currently unavailable and cannot be booked.': {
+    'fil': 'Hindi available ang venue na ito ngayon at hindi ito ma-book.',
+    'ko': '현재 이 장소를 이용할 수 없어 예약할 수 없습니다.',
+    'ja': 'この施設は現在利用できないため予約できません。',
+    'zh': '此场地目前不可用，无法预订。',
+  },
+  'OR CONTINUE WITH': {
+    'fil': 'O MAGPATULOY GAMIT ANG',
+    'ko': '또는 다음으로 계속',
+    'ja': 'または次の方法で続行',
+    'zh': '或使用以下方式继续',
+  },
+  'PLAN': {'fil': 'PLANO', 'ko': '플랜', 'ja': 'プラン', 'zh': '方案'},
+  'Step 2 of 2 · Checkout': {
+    'fil': 'Hakbang 2 sa 2 · Checkout',
+    'ko': '2단계 중 2단계 · 결제',
+    'ja': '全2段階中2段階目・お支払い',
+    'zh': '第 2 步，共 2 步 · 结账',
+  },
+  'Step 2 of 2 • Checkout': {
+    'fil': 'Hakbang 2 sa 2 · Checkout',
+    'ko': '2단계 중 2단계 · 결제',
+    'ja': '全2段階中2段階目・お支払い',
+    'zh': '第 2 步，共 2 步 · 结账',
+  },
+  'TICKET CODE': {
+    'fil': 'CODE NG TICKET',
+    'ko': '티켓 코드',
+    'ja': 'チケットコード',
+    'zh': '票券码',
+  },
+  'TRANSACTION ID': {
+    'fil': 'ID NG TRANSAKSIYON',
+    'ko': '거래 ID',
+    'ja': '取引ID',
+    'zh': '交易编号',
+  },
+  'Today’s performance': {
+    'fil': 'Performance ngayong araw',
+    'ko': '오늘의 실적',
+    'ja': '本日の実績',
+    'zh': '今日表现',
+  },
+  'UNAVAILABLE · Booking disabled': {
+    'fil': 'HINDI AVAILABLE · Naka-disable ang booking',
+    'ko': '이용 불가 · 예약 비활성화',
+    'ja': '利用不可・予約停止中',
+    'zh': '不可用 · 已禁用预订',
+  },
+  'Use this location': {
+    'fil': 'Gamitin ang lokasyong ito',
+    'ko': '이 위치 사용',
+    'ja': 'この場所を使用',
+    'zh': '使用此位置',
+  },
+  'VENUE AMENITIES': {
+    'fil': 'MGA AMENITY NG VENUE',
+    'ko': '장소 편의시설',
+    'ja': '施設の設備',
+    'zh': '场地设施',
+  },
+  'Venue performance will appear when bookings come in.': {
+    'fil': 'Lalabas ang performance ng venue kapag may mga booking na.',
+    'ko': '예약이 들어오면 장소 실적이 표시됩니다.',
+    'ja': '予約が入ると施設の実績が表示されます。',
+    'zh': '收到预订后将显示场地表现。',
+  },
+  'Verified Host': {
+    'fil': 'Beripikadong host',
+    'ko': '인증된 호스트',
+    'ja': '認証済みホスト',
+    'zh': '已认证主办方',
+  },
+  'Verified venue manager • Fast responding': {
+    'fil': 'Beripikadong venue manager • Mabilis tumugon',
+    'ko': '인증된 장소 관리자 • 빠른 응답',
+    'ja': '認証済み施設管理者・迅速に対応',
+    'zh': '已认证场地管理员 · 快速响应',
+  },
+  'View Ticket →': {
+    'fil': 'Tingnan ang ticket →',
+    'ko': '티켓 보기 →',
+    'ja': 'チケットを表示 →',
+    'zh': '查看票券 →',
+  },
+  'View info: Booking Card': {
+    'fil': 'Tingnan ang impormasyon: Booking Card',
+    'ko': '정보 보기: 예약 카드',
+    'ja': '情報を見る：予約カード',
+    'zh': '查看信息：预订卡片',
+  },
+  'Visit venue website': {
+    'fil': 'Bisitahin ang website ng venue',
+    'ko': '장소 웹사이트 방문',
+    'ja': '施設のウェブサイトを見る',
+    'zh': '访问场地网站',
+  },
+  'Weekly': {'fil': 'Lingguhan', 'ko': '주간', 'ja': '週間', 'zh': '每周'},
+  'Whole court': {
+    'fil': 'Buong court',
+    'ko': '코트 전체',
+    'ja': 'コート全体',
+    'zh': '整片球场',
+  },
+  'Write the first message.': {
+    'fil': 'Isulat ang unang mensahe.',
+    'ko': '첫 메시지를 작성하세요.',
+    'ja': '最初のメッセージを書きましょう。',
+    'zh': '发送第一条消息。',
+  },
+  'You blocked this person. Unblock them from chat options to send messages.': {
+    'fil': 'Naka-block ang taong ito. I-unblock siya sa mga opsyon ng chat para makapagpadala ng mensahe.',
+    'ko': '이 사용자를 차단했습니다. 메시지를 보내려면 채팅 옵션에서 차단을 해제하세요.',
+    'ja': 'このユーザーをブロックしています。メッセージを送るにはチャットのオプションから解除してください。',
+    'zh': '你已屏蔽此用户。请在聊天选项中取消屏蔽后再发送消息。',
+  },
+  'Your rating was submitted.': {
+    'fil': 'Naipadala na ang iyong rating.',
+    'ko': '평점이 제출되었습니다.',
+    'ja': '評価を送信しました。',
+    'zh': '评分已提交。',
+  },
+  'TinkerPro brings sports and events together in one marketplace. Discover local businesses, compare what they offer, and book in a few taps.': {
+    'fil': 'Pinagsasama ng TinkerPro ang sports at mga event sa iisang marketplace. Tumuklas ng mga lokal na negosyo, ihambing ang mga alok nila, at mag-book sa ilang tap lang.',
+    'ko': 'TinkerPro는 스포츠와 이벤트를 하나의 마켓플레이스에 모았습니다. 지역 업체를 둘러보고, 제공 서비스를 비교한 뒤 몇 번의 탭으로 예약하세요.',
+    'ja': 'TinkerProはスポーツとイベントを1つのマーケットプレイスに集約。地域のお店を見つけ、内容を比較し、数回のタップで予約できます。',
+    'zh': 'TinkerPro 将体育和活动汇集于一站式平台。发现本地商家、比较服务，只需轻点几下即可预订。',
+  },
+  'Track sales, customers, and venue performance.': {
+    'fil': 'Subaybayan ang benta, mga customer, at performance ng venue.',
+    'ko': '매출, 고객 및 장소 실적을 추적하세요.',
+    'ja': '売上、顧客、施設の実績を確認できます。',
+    'zh': '跟踪销售额、客户和场地表现。',
+  },
+  'Your sport.\nYour event.\nYour place.': {
+    'fil': 'Iyong sport.\nIyong event.\nIyong lugar.',
+    'ko': '당신의 스포츠.\n당신의 이벤트.\n당신의 장소.',
+    'ja': 'あなたのスポーツ。\nあなたのイベント。\nあなたの場所。',
+    'zh': '你的运动。\n你的活动。\n你的场地。',
+  },
+  'TinkerPro could not start': {
+    'fil': 'Hindi masimulan ang TinkerPro',
+    'ko': 'TinkerPro를 시작할 수 없습니다',
+    'ja': 'TinkerProを起動できませんでした',
+    'zh': 'TinkerPro 无法启动',
+  },
+  'ACTIVE BOOKING SESSION': {
+    'fil': 'AKTIBONG BOOKING SESSION',
+    'ko': '진행 중인 예약',
+    'ja': '有効な予約セッション',
+    'zh': '进行中的预订时段',
+  },
+  'EVENT': {'fil': 'EVENT', 'ko': '이벤트', 'ja': 'イベント', 'zh': '活动'},
+  'FOOTBALL': {
+    'fil': 'FOOTBALL',
+    'ko': '축구',
+    'ja': 'サッカー',
+    'zh': '足球',
+  },
+  'PLAYER FAST PASS': {
+    'fil': 'PLAYER FAST PASS',
+    'ko': '플레이어 빠른 이용권',
+    'ja': 'プレイヤーファストパス',
+    'zh': '玩家快速通行证',
+  },
+  '＋ Top Up': {
+    'fil': '＋ Magdagdag ng balanse',
+    'ko': '＋ 충전',
+    'ja': '＋ チャージ',
+    'zh': '＋ 充值',
+  },
+  'Event type': {
+    'fil': 'Uri ng event',
+    'ko': '이벤트 유형',
+    'ja': 'イベントタイプ',
+    'zh': '活动类型',
+  },
+  'Select time': {
+    'fil': 'Pumili ng oras',
+    'ko': '시간 선택',
+    'ja': '時間を選択',
+    'zh': '选择时间',
+  },
+  'Free months (1–11)': {
+    'fil': 'Libreng buwan (1–11)',
+    'ko': '무료 개월 수 (1–11)',
+    'ja': '無料期間（月）（1～11）',
+    'zh': '免费月数（1–11）',
+  },
+  'Discount percentage (1–100%)': {
+    'fil': 'Porsyento ng diskuwento (1–100%)',
+    'ko': '할인율 (1–100%)',
+    'ja': '割引率（1～100%）',
+    'zh': '折扣百分比（1–100%）',
+  },
+  'Session price (required)': {
+    'fil': 'Presyo ng session (kinakailangan)',
+    'ko': '회당 가격 (필수)',
+    'ja': 'セッション料金（必須）',
+    'zh': '单次价格（必填）',
+  },
+  'Monthly price (required)': {
+    'fil': 'Buwanang presyo (kinakailangan)',
+    'ko': '월간 가격 (필수)',
+    'ja': '月額料金（必須）',
+    'zh': '月度价格（必填）',
+  },
+  'Yearly price (required)': {
+    'fil': 'Taunang presyo (kinakailangan)',
+    'ko': '연간 가격 (필수)',
+    'ja': '年額料金（必須）',
+    'zh': '年度价格（必填）',
+  },
+  'Player': {'fil': 'Manlalaro', 'ko': '플레이어', 'ja': 'プレイヤー', 'zh': '玩家'},
+  'Book and play': {
+    'fil': 'Mag-book at maglaro',
+    'ko': '예약하고 즐기기',
+    'ja': '予約してプレイ',
+    'zh': '预订并畅玩',
+  },
+  'Manage facilities': {
+    'fil': 'Pamahalaan ang mga pasilidad',
+    'ko': '시설 관리',
+    'ja': '施設を管理',
+    'zh': '管理设施',
+  },
+  'Expected guests': {
+    'fil': 'Inaasahang bisita',
+    'ko': '예상 방문객 수',
+    'ja': '予定ゲスト数',
+    'zh': '预计宾客人数',
+  },
+  'Verify email': {
+    'fil': 'I-verify ang email',
+    'ko': '이메일 인증',
+    'ja': 'メールを認証',
+    'zh': '验证邮箱',
+  },
+  'Visit': {'fil': 'Bisitahin', 'ko': '방문', 'ja': '訪問', 'zh': '访问'},
+  'STEP 1 OF 3': {
+    'fil': 'HAKBANG 1 SA 3',
+    'ko': '3단계 중 1단계',
+    'ja': '全3段階中1段階目',
+    'zh': '第 1 步，共 3 步',
+  },
+  'Today\'s performance': {
+    'fil': 'Performance ngayong araw',
+    'ko': '오늘의 실적',
+    'ja': '本日の実績',
+    'zh': '今日表现',
+  },
+  'Valid after venue approval': {
+    'fil': 'Valid pagkatapos aprubahan ng venue',
+    'ko': '장소 승인 후 유효',
+    'ja': '施設の承認後に有効',
+    'zh': '场地批准后生效',
+  },
+  'Online payments are not configured yet. No booking has been ': {
+    'fil': 'Hindi pa naka-configure ang online payment. Walang booking na ',
+    'ko': '온라인 결제가 아직 설정되지 않았습니다. 예약이 ',
+    'ja': 'オンライン決済はまだ設定されていません。予約は',
+    'zh': '在线支付尚未配置。预订尚未',
+  },
+  'Court Express Check-in': {
+    'fil': 'Court Express Check-in',
+    'ko': '코트 간편 체크인',
+    'ja': 'コート簡単チェックイン',
+    'zh': '球场快捷签到',
+  },
+  'Extra-player fee: PHP {amount}': {
+    'fil': 'Bayad para sa dagdag na manlalaro: PHP {amount}',
+    'ko': '추가 선수 요금: PHP {amount}',
+    'ja': '追加プレイヤー料金：PHP {amount}',
+    'zh': '额外球员费用：PHP {amount}',
+  },
+  'Includes extra-player fee: PHP {amount}': {
+    'fil': 'Kasama ang bayad para sa dagdag na manlalaro: PHP {amount}',
+    'ko': '추가 선수 요금 포함: PHP {amount}',
+    'ja': '追加プレイヤー料金込み：PHP {amount}',
+    'zh': '含额外球员费用：PHP {amount}',
+  },
+  'Could not load bookings: {error}': {
+    'fil': 'Hindi ma-load ang mga booking: {error}',
+    'ko': '예약을 불러올 수 없습니다: {error}',
+    'ja': '予約を読み込めませんでした：{error}',
+    'zh': '无法加载预订：{error}',
+  },
+  'Could not save attendance: {error}': {
+    'fil': 'Hindi ma-save ang pagdalo: {error}',
+    'ko': '출석을 저장할 수 없습니다: {error}',
+    'ja': '出席を保存できませんでした：{error}',
+    'zh': '无法保存出席记录：{error}',
+  },
+  'Could not save your settings: {error}': {
+    'fil': 'Hindi ma-save ang iyong settings: {error}',
+    'ko': '설정을 저장할 수 없습니다: {error}',
+    'ja': '設定を保存できませんでした：{error}',
+    'zh': '无法保存设置：{error}',
+  },
+  'Could not update saved count: {error}': {
+    'fil': 'Hindi ma-update ang bilang ng naka-save: {error}',
+    'ko': '저장 수를 업데이트할 수 없습니다: {error}',
+    'ja': '保存数を更新できませんでした：{error}',
+    'zh': '无法更新收藏数量：{error}',
+  },
+  'Could not update business status: {error}': {
+    'fil': 'Hindi ma-update ang status ng negosyo: {error}',
+    'ko': '업체 상태를 업데이트할 수 없습니다: {error}',
+    'ja': '事業者のステータスを更新できませんでした：{error}',
+    'zh': '无法更新商家状态：{error}',
+  },
+  'Could not update heart: {error}': {
+    'fil': 'Hindi ma-update ang heart: {error}',
+    'ko': '좋아요를 업데이트할 수 없습니다: {error}',
+    'ja': 'お気に入りを更新できませんでした：{error}',
+    'zh': '无法更新点赞：{error}',
+  },
+  'Could not update Saved: {error}': {
+    'fil': 'Hindi ma-update ang naka-save: {error}',
+    'ko': '저장 항목을 업데이트할 수 없습니다: {error}',
+    'ja': '保存項目を更新できませんでした：{error}',
+    'zh': '无法更新收藏：{error}',
+  },
+  'Could not open venue page: {error}': {
+    'fil': 'Hindi mabuksan ang pahina ng venue: {error}',
+    'ko': '장소 페이지를 열 수 없습니다: {error}',
+    'ja': '施設ページを開けませんでした：{error}',
+    'zh': '无法打开场地页面：{error}',
+  },
+  'Could not open map directions for {name}.': {
+    'fil': 'Hindi mabuksan ang direksyon papunta sa {name}.',
+    'ko': '{name}의 길찾기를 열 수 없습니다.',
+    'ja': '{name}への道順を開けませんでした。',
+    'zh': '无法打开前往 {name} 的路线。',
+  },
+  'Could not contact the owner: {error}': {
+    'fil': 'Hindi makontak ang may-ari: {error}',
+    'ko': '소유자에게 연락할 수 없습니다: {error}',
+    'ja': 'オーナーに連絡できませんでした：{error}',
+    'zh': '无法联系业主：{error}',
+  },
+  'Could not delete business: {error}': {
+    'fil': 'Hindi matanggal ang negosyo: {error}',
+    'ko': '업체를 삭제할 수 없습니다: {error}',
+    'ja': '事業者を削除できませんでした：{error}',
+    'zh': '无法删除商家：{error}',
+  },
+  '"{name}" was deleted.': {
+    'fil': 'Natanggal na ang "{name}".',
+    'ko': '"{name}" 항목을 삭제했습니다.',
+    'ja': '「{name}」を削除しました。',
+    'zh': '已删除“{name}”。',
+  },
+  'Could not load news posts: {error}': {
+    'fil': 'Hindi ma-load ang mga news post: {error}',
+    'ko': '뉴스 게시물을 불러올 수 없습니다: {error}',
+    'ja': 'ニュース投稿を読み込めませんでした：{error}',
+    'zh': '无法加载资讯：{error}',
+  },
+  '{dashboard} dashboard is not available yet.': {
+    'fil': 'Hindi pa available ang dashboard na {dashboard}.',
+    'ko': '{dashboard} 대시보드는 아직 사용할 수 없습니다.',
+    'ja': '{dashboard}ダッシュボードはまだ利用できません。',
+    'zh': '{dashboard}仪表板暂不可用。',
+  },
+  '{provider} sign in will be connected soon.': {
+    'fil': 'Malapit nang maging available ang pag-sign in gamit ang {provider}.',
+    'ko': '{provider} 로그인 기능이 곧 제공됩니다.',
+    'ja': '{provider}でのサインインは近日対応予定です。',
+    'zh': '即将支持使用 {provider} 登录。',
+  },
+  '1 hour': {
+    'fil': '1 oras',
+    'ko': '1시간',
+    'ja': '1時間',
+    'zh': '1 小时',
+  },
+  '{count} hours': {
+    'fil': '{count} oras',
+    'ko': '{count}시간',
+    'ja': '{count}時間',
+    'zh': '{count} 小时',
+  },
+  'Rate {venue}': {
+    'fil': 'I-rate ang {venue}',
+    'ko': '{venue} 평가하기',
+    'ja': '{venue}を評価',
+    'zh': '评价 {venue}',
+  },
+  'Show {count} venues': {
+    'fil': 'Ipakita ang {count} venue',
+    'ko': '장소 {count}개 보기',
+    'ja': '施設を{count}件表示',
+    'zh': '显示 {count} 个场地',
+  },
+  'See all ({count})': {
+    'fil': 'Tingnan lahat ({count})',
+    'ko': '모두 보기 ({count})',
+    'ja': 'すべて表示（{count}）',
+    'zh': '查看全部（{count}）',
+  },
+  'Total: PHP {amount}': {
+    'fil': 'Kabuuan: PHP {amount}',
+    'ko': '합계: PHP {amount}',
+    'ja': '合計：PHP {amount}',
+    'zh': '总计：PHP {amount}',
+  },
+  'Downpayment received: PHP {amount}': {
+    'fil': 'Natanggap na paunang bayad: PHP {amount}',
+    'ko': '선금 수령: PHP {amount}',
+    'ja': '前金受領額：PHP {amount}',
+    'zh': '已收定金：PHP {amount}',
+  },
+  'Remaining balance: PHP {amount}': {
+    'fil': 'Natitirang balanse: PHP {amount}',
+    'ko': '잔액: PHP {amount}',
+    'ja': '残額：PHP {amount}',
+    'zh': '剩余金额：PHP {amount}',
+  },
+  'Sports, events, and local experiences': {
+    'fil': 'Sports, event, at mga lokal na karanasan',
+    'ko': '스포츠, 이벤트 및 지역 체험',
+    'ja': 'スポーツ、イベント、地域の体験',
+    'zh': '体育、活动和本地体验',
+  },
+  'Dashboard': {
+    'fil': 'Dashboard',
+    'ko': '대시보드',
+    'ja': 'ダッシュボード',
+    'zh': '仪表板',
+  },
+  'Add': {'fil': 'Magdagdag', 'ko': '추가', 'ja': '追加', 'zh': '添加'},
+  'Messages': {
+    'fil': 'Mga mensahe',
+    'ko': '메시지',
+    'ja': 'メッセージ',
+    'zh': '消息',
+  },
+  'Payouts': {
+    'fil': 'Mga payout',
+    'ko': '정산',
+    'ja': '支払い',
+    'zh': '收款',
+  },
+  'Profile': {
+    'fil': 'Profile',
+    'ko': '프로필',
+    'ja': 'プロフィール',
+    'zh': '个人资料',
+  },
+  'Explore': {
+    'fil': 'Mag-explore',
+    'ko': '둘러보기',
+    'ja': '探す',
+    'zh': '探索',
+  },
+  'Saved': {'fil': 'Naka-save', 'ko': '저장됨', 'ja': '保存済み', 'zh': '已收藏'},
+  'Bookings': {
+    'fil': 'Mga booking',
+    'ko': '예약',
+    'ja': '予約',
+    'zh': '预订',
+  },
+  'Settings': {
+    'fil': 'Mga Setting',
+    'ko': '설정',
+    'ja': '設定',
+    'zh': '设置',
+  },
+  'Merchant Profile': {
+    'fil': 'Profile ng Merchant',
+    'ko': '판매자 프로필',
+    'ja': '加盟店プロフィール',
+    'zh': '商家资料',
+  },
+  'Player Profile': {
+    'fil': 'Profile ng Manlalaro',
+    'ko': '플레이어 프로필',
+    'ja': 'プレイヤープロフィール',
+    'zh': '玩家资料',
+  },
+  'Edit profile': {
+    'fil': 'I-edit ang profile',
+    'ko': '프로필 수정',
+    'ja': 'プロフィールを編集',
+    'zh': '编辑资料',
+  },
+  'Activity log': {
+    'fil': 'Tala ng aktibidad',
+    'ko': '활동 기록',
+    'ja': 'アクティビティログ',
+    'zh': '活动记录',
+  },
+  'Log out': {
+    'fil': 'Mag-log out',
+    'ko': '로그아웃',
+    'ja': 'ログアウト',
+    'zh': '退出登录',
+  },
+  'ACCOUNT': {'fil': 'ACCOUNT', 'ko': '계정', 'ja': 'アカウント', 'zh': '账户'},
+  'SUPPORT': {'fil': 'TULONG', 'ko': '지원', 'ja': 'サポート', 'zh': '支持'},
+  'Help Center': {
+    'fil': 'Help Center',
+    'ko': '도움말 센터',
+    'ja': 'ヘルプセンター',
+    'zh': '帮助中心',
+  },
+  'Court Rules': {
+    'fil': 'Mga Patakaran sa Court',
+    'ko': '코트 규칙',
+    'ja': 'コートのルール',
+    'zh': '场地规则',
+  },
+  'Make the app feel like yours.': {
+    'ko': '앱을 나에게 맞게 설정하세요.',
+    'ja': 'アプリを自分好みにカスタマイズしましょう。',
+    'zh': '根据您的喜好定制应用。',
+  },
+  'Dark mode': {'ko': '다크 모드', 'ja': 'ダークモード', 'zh': '深色模式'},
+  'Use a darker look that is easier on the eyes at night.': {
+    'ko': '밤에 눈이 편하도록 어두운 화면을 사용합니다.',
+    'ja': '夜間に目に優しい暗い表示を使用します。',
+    'zh': '使用深色外观，夜间观看更护眼。',
+  },
+  'Theme color': {'ko': '테마 색상', 'ja': 'テーマカラー', 'zh': '主题颜色'},
+  'Choose an accent color for app controls.': {
+    'ko': '앱 컨트롤에 사용할 강조 색상을 선택하세요.',
+    'ja': 'アプリの操作部分に使うアクセントカラーを選択します。',
+    'zh': '选择应用控件的强调色。',
+  },
+  'Text size': {'ko': '텍스트 크기', 'ja': '文字サイズ', 'zh': '文字大小'},
+  'Adjust text throughout the app.': {
+    'ko': '앱 전체의 텍스트 크기를 조정합니다.',
+    'ja': 'アプリ全体の文字サイズを調整します。',
+    'zh': '调整整个应用的文字大小。',
+  },
+  'Small': {'ko': '작게', 'ja': '小', 'zh': '小'},
+  'Default': {'ko': '기본', 'ja': '標準', 'zh': '默认'},
+  'Large': {'ko': '크게', 'ja': '大', 'zh': '大'},
+  'Language': {'ko': '언어', 'ja': '言語', 'zh': '语言'},
+  'Choose your preferred app language.': {
+    'ko': '원하는 앱 언어를 선택하세요.',
+    'ja': 'アプリで使用する言語を選択します。',
+    'zh': '选择您偏好的应用语言。',
+  },
+  'Welcome back': {'ko': '다시 오신 것을 환영합니다', 'ja': 'おかえりなさい', 'zh': '欢迎回来'},
+  'Create your account': {'ko': '계정 만들기', 'ja': 'アカウントを作成', 'zh': '创建账户'},
+  'Sign in to book sports, events, and local experiences.': {
+    'ko': '로그인하여 스포츠, 이벤트 및 지역 체험을 예약하세요.',
+    'ja': 'ログインしてスポーツ、イベント、地域の体験を予約しましょう。',
+    'zh': '登录以预订体育、活动和本地体验。',
+  },
+  'Join the marketplace for sports, events, and local businesses.': {
+    'ko': '스포츠, 이벤트 및 지역 비즈니스 마켓플레이스에 참여하세요.',
+    'ja': 'スポーツ、イベント、地域ビジネスのマーケットプレイスに参加しましょう。',
+    'zh': '加入体育、活动和本地商家的市场。',
+  },
+  'Sign in': {'ko': '로그인', 'ja': 'ログイン', 'zh': '登录'},
+  'Register': {'ko': '가입하기', 'ja': '登録', 'zh': '注册'},
+  'How will you use TinkerPro?': {
+    'ko': 'TinkerPro를 어떻게 사용하시겠습니까?',
+    'ja': 'TinkerProをどのように利用しますか？',
+    'zh': '您将如何使用 TinkerPro？',
+  },
+  'Client': {'ko': '고객', 'ja': '利用者', 'zh': '客户'},
+  'Discover and book': {'ko': '둘러보고 예약하기', 'ja': '探して予約', 'zh': '发现并预订'},
+  'Merchant': {'ko': '판매자', 'ja': '加盟店', 'zh': '商家'},
+  'List and grow your business': {
+    'ko': '비즈니스를 등록하고 성장시키세요',
+    'ja': 'ビジネスを掲載して成長させましょう',
+    'zh': '展示并拓展您的业务',
+  },
+  'Email address': {'ko': '이메일 주소', 'ja': 'メールアドレス', 'zh': '电子邮箱'},
+  'Password': {'ko': '비밀번호', 'ja': 'パスワード', 'zh': '密码'},
+  'Enter your password': {'ko': '비밀번호를 입력하세요', 'ja': 'パスワードを入力', 'zh': '请输入密码'},
+  'At least 8 characters': {
+    'ko': '8자 이상',
+    'ja': '8文字以上',
+    'zh': '至少 8 个字符',
+  },
+  'Confirm password': {'ko': '비밀번호 확인', 'ja': 'パスワードを確認', 'zh': '确认密码'},
+  'Repeat your password': {'ko': '비밀번호를 다시 입력하세요', 'ja': 'パスワードを再入力', 'zh': '请再次输入密码'},
+  'Forgot password?': {'ko': '비밀번호를 잊으셨나요?', 'ja': 'パスワードをお忘れですか？', 'zh': '忘记密码？'},
+  'Create account': {'ko': '계정 만들기', 'ja': 'アカウントを作成', 'zh': '创建账户'},
+  'Continue securely with': {
+    'ko': '다음 계정으로 안전하게 계속하기',
+    'ja': '次のアカウントで安全に続行',
+    'zh': '使用以下方式安全地继续',
+  },
+  'Continue with Google': {
+    'ko': 'Google로 계속하기',
+    'ja': 'Googleで続行',
+    'zh': '使用 Google 继续',
+  },
+  'New to TinkerPro? Register': {
+    'ko': 'TinkerPro가 처음이신가요? 가입하기',
+    'ja': '初めてですか？登録する',
+    'zh': '初次使用 TinkerPro？立即注册',
+  },
+  'Already have an account? Sign in': {
+    'ko': '이미 계정이 있으신가요? 로그인',
+    'ja': 'すでにアカウントをお持ちですか？ログイン',
+    'zh': '已有账户？登录',
+  },
+  'Choose language': {'ko': '언어 선택', 'ja': '言語を選択', 'zh': '选择语言'},
+};
+
+String appLanguageText(
+  String english,
+  String filipino, {
+  String? languageCode,
+}) {
+  final code = languageCode ?? AppPreferences.instance.languageCode;
+  if (code == 'fil') {
+    final direct = _additionalLanguageText[english]?['fil'];
+    if (direct != null) return direct;
+    return _translateTemplate(english, code) ?? filipino;
+  }
+  return _additionalLanguageText[english]?[code] ??
+      _translateTemplate(english, code) ??
+      english;
+}
+
+String? _translateTemplate(String text, String languageCode) {
+  for (final entry in _additionalLanguageText.entries) {
+    final placeholder = RegExp(r'\{(\w+)\}').firstMatch(entry.key);
+    if (placeholder == null) continue;
+
+    final prefix = entry.key.substring(0, placeholder.start);
+    final suffix = entry.key.substring(placeholder.end);
+    if (!text.startsWith(prefix) ||
+        !text.endsWith(suffix) ||
+        text.length < prefix.length + suffix.length) {
+      continue;
+    }
+
+    final translated = entry.value[languageCode];
+    if (translated == null) continue;
+    final value = text.substring(prefix.length, text.length - suffix.length);
+    return translated.replaceAll(placeholder.group(0)!, value);
+  }
+  return null;
+}
+
+class AppText extends Text {
+  const AppText(
+    super.data, {
+    super.key,
+    this.localize = false,
+    super.style,
+    super.strutStyle,
+    super.textAlign,
+    super.textDirection,
+    super.locale,
+    super.softWrap,
+    super.overflow,
+    super.textScaler,
+    super.maxLines,
+    super.semanticsLabel,
+    super.semanticsIdentifier,
+    super.textWidthBasis,
+    super.textHeightBehavior,
+    super.selectionColor,
+  });
+
+  const AppText.rich(
+    super.textSpan, {
+    super.key,
+    this.localize = false,
+    super.style,
+    super.strutStyle,
+    super.textAlign,
+    super.textDirection,
+    super.locale,
+    super.softWrap,
+    super.overflow,
+    super.textScaler,
+    super.maxLines,
+    super.semanticsLabel,
+    super.semanticsIdentifier,
+    super.textWidthBasis,
+    super.textHeightBehavior,
+    super.selectionColor,
+  }) : super.rich();
+
+  final bool localize;
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.maybeLocaleOf(context);
+    final languageCode = locale == null
+        ? AppPreferences.instance.languageCode
+        : Localizations.localeOf(context).languageCode;
+    final plainText = data;
+    if (plainText != null) {
+      return Text(
+        localize
+            ? appLanguageText(plainText, plainText, languageCode: languageCode)
+            : plainText,
+        style: style,
+        strutStyle: strutStyle,
+        textAlign: textAlign,
+        textDirection: textDirection,
+        locale: locale,
+        softWrap: softWrap,
+        overflow: overflow,
+        textScaler: textScaler,
+        maxLines: maxLines,
+        semanticsLabel: semanticsLabel == null
+            ? null
+            : localize
+            ? appLanguageText(
+                semanticsLabel!,
+                semanticsLabel!,
+                languageCode: languageCode,
+              )
+            : semanticsLabel,
+        semanticsIdentifier: semanticsIdentifier,
+        textWidthBasis: textWidthBasis,
+        textHeightBehavior: textHeightBehavior,
+        selectionColor: selectionColor,
+      ).build(context);
+    }
+
+    return Text.rich(
+      localize ? _localizeSpan(textSpan!, languageCode) : textSpan!,
+      style: style,
+      strutStyle: strutStyle,
+      textAlign: textAlign,
+      textDirection: textDirection,
+      locale: locale,
+      softWrap: softWrap,
+      overflow: overflow,
+      textScaler: textScaler,
+      maxLines: maxLines,
+      semanticsLabel: semanticsLabel == null
+          ? null
+          : localize
+          ? appLanguageText(
+              semanticsLabel!,
+              semanticsLabel!,
+              languageCode: languageCode,
+            )
+          : semanticsLabel,
+      semanticsIdentifier: semanticsIdentifier,
+      textWidthBasis: textWidthBasis,
+      textHeightBehavior: textHeightBehavior,
+      selectionColor: selectionColor,
+    ).build(context);
+  }
+}
+
+InlineSpan _localizeSpan(InlineSpan span, String languageCode) {
+  if (span is! TextSpan) return span;
+  final spanText = span.text;
+  return TextSpan(
+    text: spanText == null
+        ? null
+        : appLanguageText(spanText, spanText, languageCode: languageCode),
+    children: span.children
+        ?.map((child) => _localizeSpan(child, languageCode))
+        .toList(growable: false),
+    style: span.style,
+    recognizer: span.recognizer,
+    mouseCursor: span.mouseCursor,
+    onEnter: span.onEnter,
+    onExit: span.onExit,
+    semanticsLabel: span.semanticsLabel == null
+        ? null
+        : appLanguageText(
+            span.semanticsLabel!,
+            span.semanticsLabel!,
+            languageCode: languageCode,
+          ),
+    locale: span.locale,
+    spellOut: span.spellOut,
+    semanticsIdentifier: span.semanticsIdentifier,
+  );
+}
+
+class AppPreferences extends ChangeNotifier {
+  AppPreferences._();
+
+  static final instance = AppPreferences._();
+  static const _storageKeyPrefix = 'app_preferences_';
+
+  bool _darkMode = false;
+  AppPalette _palette = AppPalette.orange;
+  double _textScale = 1;
+  String _languageCode = 'en';
+  String? _activeAccount;
+  String? _loadedAccount;
+  bool _hasLoaded = false;
+  Future<void> _loadQueue = Future<void>.value();
+
+  bool get darkMode => _darkMode;
+  AppPalette get palette => _palette;
+  double get textScale => _textScale;
+  String get languageCode => _languageCode;
+
+  Future<void> load({String? accountEmail}) {
+    final account = _normalizeAccount(accountEmail);
+    final operation = _loadQueue.then<void>(
+      (_) => _loadAccount(account),
+      onError: (Object error) => _loadAccount(account),
+    );
+    _loadQueue = operation;
+    return operation;
+  }
+
+  Future<void> _loadAccount(String? account) async {
+    if (_hasLoaded && _loadedAccount == account) return;
+    _activeAccount = account;
+    _resetToDefaults();
+    notifyListeners();
+    final preferences = await SharedPreferences.getInstance();
+    final encoded = preferences.getString(_storageKeyFor(account));
+    if (encoded == null) {
+      _loadedAccount = account;
+      _hasLoaded = true;
+      notifyListeners();
+      return;
+    }
+
+    final value = jsonDecode(encoded);
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Saved app preferences are invalid.');
+    }
+    _darkMode = value['darkMode'] == true;
+    _palette = AppPalette.fromKey(value['palette'] as String?);
+    _textScale = switch (value['textScale']) {
+      0.9 => .9,
+      1.1 => 1.1,
+      1.2 => 1.2,
+      _ => 1,
+    };
+    _languageCode = AppLanguage.fromCode(value['languageCode'] as String?).code;
+    _loadedAccount = account;
+    _hasLoaded = true;
+    notifyListeners();
+  }
+
+  Future<void> update({
+    bool? darkMode,
+    AppPalette? palette,
+    double? textScale,
+    String? languageCode,
+  }) async {
+    if (languageCode != null &&
+        !AppLanguage.values.any((language) => language.code == languageCode)) {
+      throw ArgumentError.value(
+        languageCode,
+        'languageCode',
+        'Unsupported app language.',
+      );
+    }
+    final previous = (
+      darkMode: _darkMode,
+      palette: _palette,
+      textScale: _textScale,
+      languageCode: _languageCode,
+    );
+    final account = _activeAccount;
+    final encoded = jsonEncode({
+      'darkMode': darkMode ?? _darkMode,
+      'palette': (palette ?? _palette).key,
+      'textScale': textScale ?? _textScale,
+      'languageCode': languageCode ?? _languageCode,
+    });
+    _darkMode = darkMode ?? _darkMode;
+    _palette = palette ?? _palette;
+    _textScale = textScale ?? _textScale;
+    _languageCode = languageCode ?? _languageCode;
+    notifyListeners();
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = await preferences.setString(
+        _storageKeyFor(account),
+        encoded,
+      );
+      if (!saved) {
+        throw Exception('Your settings could not be saved on this device.');
+      }
+    } on Exception {
+      if (_activeAccount == account) {
+        _darkMode = previous.darkMode;
+        _palette = previous.palette;
+        _textScale = previous.textScale;
+        _languageCode = previous.languageCode;
+        notifyListeners();
+      }
+      rethrow;
+    }
+  }
+
+  void _resetToDefaults() {
+    _darkMode = false;
+    _palette = AppPalette.orange;
+    _textScale = 1;
+    _languageCode = 'en';
+  }
+
+  static String? _normalizeAccount(String? accountEmail) {
+    final account = accountEmail?.trim().toLowerCase();
+    return account == null || account.isEmpty ? null : account;
+  }
+
+  static String _storageKeyFor(String? account) {
+    if (account == null) return '${_storageKeyPrefix}guest';
+    final encodedAccount = base64Url
+        .encode(utf8.encode(account))
+        .replaceAll('=', '');
+    return '$_storageKeyPrefix$encodedAccount';
+  }
+}

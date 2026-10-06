@@ -372,6 +372,15 @@ void main() {
     expect(tester.getSize(payoutTypeFilter).height, 40);
     expect(find.text('Customer Two'), findsOneWidget);
     expect(find.text('Finish'), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('merchant-payout-search')),
+      'Customer One',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No booking requests'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer Two'), findsOneWidget);
     await tester.tap(find.text('Active bookings'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Customer One'), findsOneWidget);

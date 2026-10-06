@@ -48,7 +48,10 @@ void main() {
     expect(find.text('SPORTS, SLOTS & RATES'), findsNothing);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.text('Enter a business name'), findsOneWidget);
+    expect(
+      find.text('Please enter the name customers will see for this venue.'),
+      findsOneWidget,
+    );
     expect(find.text('STEP 1 OF 3  ·  Business basics'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).first, 'Sample court');

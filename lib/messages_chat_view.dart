@@ -1,8 +1,10 @@
+import './app_design_system.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import 'messages_ui.dart';
+import 'app_preferences.dart';
 
 class MessagesChatView extends StatelessWidget {
   const MessagesChatView({
@@ -36,7 +38,7 @@ class MessagesChatView extends StatelessWidget {
       children: [
         Expanded(
           child: messages.isEmpty
-              ? const Center(child: Text('Write the first message.'))
+              ? const Center(child: AppText('Write the first message.', localize: true))
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
@@ -56,7 +58,7 @@ class MessagesChatView extends StatelessWidget {
                       );
                     }
                     final bubble = Card(
-                      color: mine ? const Color(0xFFFFE8D2) : Colors.white,
+                      color: mine ? AppColors.softOrange : Colors.white,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -68,13 +70,13 @@ class MessagesChatView extends StatelessWidget {
                             if (body.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
-                                child: Text(body),
+                                child: AppText(body),
                               ),
                             if (mine &&
                                 (message['isSeen'] == true ||
                                     message['isSeen'] == 1 ||
                                     message['isSeen'] == '1'))
-                              const Padding(
+                               Padding(
                                 padding: EdgeInsets.only(top: 6),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -82,17 +84,17 @@ class MessagesChatView extends StatelessWidget {
                                     Icon(
                                       Icons.done_all_rounded,
                                       size: 14,
-                                      color: Color(0xFF68748A),
+                                      color: AppColors.muted,
                                     ),
                                     SizedBox(width: 4),
-                                    Text(
+                                    AppText(
                                       'Seen',
                                       style: TextStyle(
-                                        color: Color(0xFF68748A),
+                                        color: AppColors.muted,
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
-                                    ),
+                                     localize: true,),
                                   ],
                                 ),
                               ),
@@ -118,11 +120,11 @@ class MessagesChatView extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFFFFF1E3),
-            child: const Text(
+            color: AppColors.softStatus,
+            child:  AppText(
               'You blocked this person. Unblock them from chat options to send messages.',
-              style: TextStyle(color: Color(0xFF101B33), fontSize: 12),
-            ),
+              style: TextStyle(color: AppColors.ink, fontSize: 12),
+             localize: true,),
           ),
         SafeArea(
           child: Column(
@@ -152,7 +154,7 @@ class MessagesChatView extends StatelessWidget {
                             onPressed: onRemovePendingImage,
                             icon: const Icon(Icons.close_rounded),
                             style: IconButton.styleFrom(
-                              backgroundColor: Colors.white,
+                              backgroundColor: AppColors.surface,
                               foregroundColor: messageNavy,
                             ),
                           ),
@@ -164,7 +166,7 @@ class MessagesChatView extends StatelessWidget {
               Row(
                 children: [
                   IconButton(
-                    tooltip: 'Attach image',
+                    tooltip: appLanguageText('Attach image', 'Attach image'),
                     onPressed: sending || blocked ? null : onPickImage,
                     icon: const Icon(Icons.image_outlined),
                   ),
@@ -174,8 +176,8 @@ class MessagesChatView extends StatelessWidget {
                       enabled: !blocked,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => onSend(),
-                      decoration: const InputDecoration(
-                        hintText: 'Write a message...',
+                      decoration: InputDecoration(
+                        hintText: appLanguageText('Write a message...', 'Write a message...'),
                       ),
                     ),
                   ),

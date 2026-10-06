@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 
 const filterPanelTransitionDuration = Duration(milliseconds: 300);
 const filterPanelMaxWidth = 440.0;
@@ -27,14 +28,14 @@ const filterPanelFooterPadding = EdgeInsets.fromLTRB(
   AppSpacing.panelInset,
   14,
 );
-const filterPanelTitleStyle = AppTypography.filterTitle;
-const filterPanelSectionLabelStyle = TextStyle(
+TextStyle get filterPanelTitleStyle => AppTypography.filterTitle;
+TextStyle get filterPanelSectionLabelStyle => TextStyle(
   color: AppColors.muted,
   fontSize: 12,
   fontWeight: FontWeight.w900,
   letterSpacing: 1,
 );
-const filterPanelButtonStyle = ButtonStyle(
+final filterPanelButtonStyle = ButtonStyle(
   minimumSize: WidgetStatePropertyAll(Size(48, 48)),
   fixedSize: WidgetStatePropertyAll(Size(48, 48)),
   padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
@@ -42,7 +43,7 @@ const filterPanelButtonStyle = ButtonStyle(
   backgroundColor: WidgetStatePropertyAll(AppColors.page),
   foregroundColor: WidgetStatePropertyAll(AppColors.ink),
 );
-const filterPanelApplyButtonStyle = ButtonStyle(
+final filterPanelApplyButtonStyle = ButtonStyle(
   backgroundColor: WidgetStatePropertyAll(AppColors.ink),
   minimumSize: WidgetStatePropertyAll(Size.fromHeight(50)),
   shape: WidgetStatePropertyAll(
@@ -74,7 +75,7 @@ class FilterPanelButton extends StatelessWidget {
     style: filterPanelButtonStyle,
     icon: Badge(
       isLabelVisible: activeCount > 0,
-      label: Text('$activeCount'),
+      label: AppText('$activeCount', localize: true),
       child: const Icon(Icons.tune_rounded),
     ),
   );

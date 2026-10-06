@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'messages_ui.dart';
+import 'app_preferences.dart';
 
 class MessagesConversationList extends StatelessWidget {
   const MessagesConversationList({
@@ -62,8 +63,9 @@ class MessagesConversationList extends StatelessWidget {
           child: TextField(
             controller: searchController,
             onChanged: onSearchChanged,
+            textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Search messages',
+              hintText: appLanguageText('Search messages', 'Search messages'),
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: conversationQuery.isEmpty
                   ? null
@@ -94,7 +96,7 @@ class MessagesConversationList extends StatelessWidget {
         ),
         ListTile(
           leading: const Icon(Icons.forum_outlined),
-          title: Text(
+          title: AppText(
             showBlocked
                 ? 'Blocked'
                 : showArchived
@@ -105,26 +107,38 @@ class MessagesConversationList extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              AppText(
                 '${filtered.length}',
                 style: TextStyle(color: Colors.grey.shade600),
-              ),
+               localize: true,),
             ],
           ),
         ),
         Expanded(
           child: filtered.isEmpty
-              ? Center(
-                  child: Text(
-                    conversations.isEmpty
-                        ? 'No conversations yet. Tap the edit icon to start.'
-                        : showBlocked
-                        ? 'No blocked conversations.'
-                        : 'No matching conversations.',
-                    textAlign: TextAlign.center,
-                  ),
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  children: [
+                    SizedBox(
+                      height: 180,
+                      child: Center(
+                        child: AppText(
+                          conversations.isEmpty
+                              ? 'No conversations yet. Tap the edit icon to start.'
+                              : showBlocked
+                              ? 'No blocked conversations.'
+                              : 'No matching conversations.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
                 )
               : ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   children: filtered.map((conversation) {
                     final id = (conversation['id'] as num).toInt();
                     final unread =
@@ -140,11 +154,11 @@ class MessagesConversationList extends StatelessWidget {
                               child: Icon(Icons.groups_rounded),
                             ),
                       selected: id == selectedConversationId,
-                      title: Text(
+                      title: AppText(
                         _conversationTitle(conversation),
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      subtitle: Text(
+                      subtitle: AppText(
                         conversation['lastMessage'] as String? ??
                             'Start a conversation',
                         maxLines: 1,
@@ -153,10 +167,10 @@ class MessagesConversationList extends StatelessWidget {
                       trailing: unread > 0
                           ? CircleAvatar(
                               radius: 11,
-                              child: Text(
+                              child: AppText(
                                 '$unread',
                                 style: const TextStyle(fontSize: 11),
-                              ),
+                               localize: true,),
                             )
                           : null,
                       onTap: () => onSelectConversation(id),
@@ -207,7 +221,7 @@ class MessagesConversationList extends StatelessWidget {
             for (final item in actions)
               ListTile(
                 leading: Icon(item.$3),
-                title: Text(item.$1),
+                title: AppText(item.$1),
                 onTap: () => Navigator.pop(sheetContext, item.$2),
               ),
             const SizedBox(height: 8),
@@ -297,7 +311,7 @@ class MessagesConversationList extends StatelessWidget {
         children: [
           const CircleAvatar(radius: 27, child: Icon(Icons.add_rounded)),
           const SizedBox(height: 5),
-          Text('New', style: TextStyle(color: Colors.grey.shade700)),
+          AppText('New', style: TextStyle(color: Colors.grey.shade700), localize: true),
         ],
       ),
     ),
@@ -317,7 +331,7 @@ class MessagesConversationList extends StatelessWidget {
           const SizedBox(height: 5),
           SizedBox(
             width: 64,
-            child: Text(
+            child: AppText(
               displayName(contact).split(' ').first,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

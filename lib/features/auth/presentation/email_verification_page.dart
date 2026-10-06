@@ -27,7 +27,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
   Future<void> _verify() async {
     final code = _codeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('Enter the 6-digit code from your email.');
+      _message('That code should be 6 digits. Check your email and try again.');
       return;
     }
     setState(() => _loading = true);
@@ -62,7 +62,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
 
   void _message(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+        .showSnackBar(SnackBar(content: AppText(message), backgroundColor: _navy));
   }
 
   @override
@@ -73,10 +73,10 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
         backgroundColor: _page,
         foregroundColor: _navy,
         elevation: 0,
-        title: const Text(
+        title: const AppText(
           'Verify email',
           style: TextStyle(fontWeight: FontWeight.w900),
-        ),
+         localize: true,),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(22),
@@ -92,19 +92,19 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               ),
             ),
             const SizedBox(height: 25),
-            const Text(
+            AppText(
               'Check your inbox',
               style: TextStyle(
                 color: _ink,
                 fontSize: 27,
                 fontWeight: FontWeight.w900,
               ),
-            ),
+             localize: true,),
             const SizedBox(height: 9),
-            Text(
+            AppText(
               'We sent a 6-digit verification code to ${widget.email}.',
-              style: const TextStyle(color: _muted, fontSize: 14, height: 1.45),
-            ),
+              style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
+             localize: true,),
             const SizedBox(height: 28),
             _AuthField(
               label: 'Verification code',
@@ -136,14 +136,14 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Verify email'),
+                    : const AppText('Verify email', localize: true),
               ),
             ),
             const SizedBox(height: 14),
             Center(
               child: TextButton(
                 onPressed: _loading ? null : _resend,
-                child: const Text('Resend code'),
+                child: const AppText('Resend code', localize: true),
               ),
             ),
           ],

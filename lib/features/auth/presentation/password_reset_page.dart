@@ -29,14 +29,19 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
   }
 
   void _message(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: AppText(message), backgroundColor: _navy));
   }
 
   Future<void> _requestCode() async {
     final email = _emailController.text.trim().toLowerCase();
-    if (!email.contains('@')) {
-      _message('Enter the email address linked to your account.');
+    if (email.isEmpty) {
+      _message('Please enter the email address linked to your account.');
+      return;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      _message('That email address doesn’t look right. Please check it.');
       return;
     }
     setState(() {
@@ -65,7 +70,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
     final email = _emailController.text.trim().toLowerCase();
     final code = _codeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('Enter the 6-digit verification code from your email.');
+      _message('That code should be 6 digits. Check your email and try again.');
       return;
     }
     setState(() => _loading = true);
@@ -87,15 +92,15 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
     final code = _codeController.text.trim();
     final password = _passwordController.text;
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('Enter the 6-digit verification code from your email.');
+      _message('That code should be 6 digits. Check your email and try again.');
       return;
     }
     if (password.length < 8) {
-      _message('Your new password must be at least 8 characters.');
+      _message('Choose a new password with at least 8 characters.');
       return;
     }
     if (password != _confirmController.text) {
-      _message('Passwords do not match.');
+      _message('Those passwords don’t match. Please try again.');
       return;
     }
     setState(() => _loading = true);
@@ -124,25 +129,27 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
         backgroundColor: _page,
         foregroundColor: _navy,
         elevation: 0,
-        title: const Text('Reset password'),
+        title: const AppText('Reset password', localize: true),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            AppText(
               'Forgot your password?',
               style: TextStyle(
                 color: _ink,
                 fontSize: 27,
                 fontWeight: FontWeight.w900,
               ),
+              localize: true,
             ),
             const SizedBox(height: 8),
-            const Text(
+            AppText(
               'Enter your email to receive a verification code, then choose a new password.',
               style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
+              localize: true,
             ),
             const SizedBox(height: 26),
             _AuthField(
@@ -211,7 +218,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
               Center(
                 child: TextButton(
                   onPressed: _loading ? null : _requestCode,
-                  child: const Text('Send code again'),
+                  child: const AppText('Send code again', localize: true),
                 ),
               ),
             ],
@@ -249,7 +256,7 @@ class _ResetButton extends StatelessWidget {
         ),
         child: loading
             ? const CircularProgressIndicator(color: Colors.white)
-            : Text(label),
+            : AppText(label),
       ),
     );
   }

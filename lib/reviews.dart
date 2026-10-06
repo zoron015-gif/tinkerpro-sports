@@ -1,10 +1,15 @@
+import './app_design_system.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'skeleton_loader.dart';
+
 import 'app_session.dart';
 import 'auth_api.dart';
 import 'models/booking.dart';
+import 'app_preferences.dart';
 
 class ReviewsSheet extends StatefulWidget {
   const ReviewsSheet({
@@ -131,7 +136,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+          .showSnackBar(SnackBar(content: AppText(message)));
     }
   }
 
@@ -172,7 +177,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
+              AppText(
                 widget.isEvent
                     ? '${widget.businessName} ratings & reviews'
                     : '${widget.businessName} reviews',
@@ -183,18 +188,36 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
               ),
               const SizedBox(height: 10),
               if (_loading)
-                const LinearProgressIndicator(minHeight: 3)
+                Expanded(
+                  child: ListView(
+                    key: const ValueKey('reviews-loading-skeleton'),
+                    padding: EdgeInsets.zero,
+                    children: const [
+                      SkeletonBlock(width: 90, height: 30),
+                      SizedBox(height: 14),
+                      SkeletonBlock(height: 12),
+                      SizedBox(height: 8),
+                      SkeletonBlock(height: 12, width: 210),
+                      Divider(height: 28),
+                      SkeletonBlock(height: 76, borderRadius: 14),
+                      SizedBox(height: 12),
+                      SkeletonBlock(height: 76, borderRadius: 14),
+                      SizedBox(height: 12),
+                      SkeletonBlock(height: 76, borderRadius: 14),
+                    ],
+                  ),
+                )
               else if (_error != null)
                 _errorState()
               else ...[
                 Row(
                   children: [
-                    Text(
+                    AppText(
                       _reviews.isEmpty
                           ? 'New venue'
                           : average.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: Color(0xFF101B33),
+                      style: TextStyle(
+                        color: AppColors.ink,
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
                       ),
@@ -202,13 +225,14 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                     const SizedBox(width: 8),
                     const Icon(Icons.star_rounded, color: Colors.amber),
                     const SizedBox(width: 12),
-                    Text(
+                    AppText(
                       '${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'} · $ratedUsers rated',
-                      style: const TextStyle(
-                        color: Color(0xFF68748A),
+                      style: TextStyle(
+                        color: AppColors.muted,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
+                      localize: true,
                     ),
                   ],
                 ),
@@ -229,8 +253,8 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Could not load reviews.'),
-          Text('$_error', textAlign: TextAlign.center),
+          const AppText('Could not load reviews.', localize: true),
+          AppText('$_error', textAlign: TextAlign.center),
           TextButton.icon(
             onPressed: () {
               setState(() {
@@ -240,7 +264,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
               _loadReviews();
             },
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Try again'),
+            label: const AppText('Try again', localize: true),
           ),
         ],
       ),
@@ -265,7 +289,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
   Widget _reviewList() {
     if (_reviews.isEmpty) {
       return Center(
-        child: Text(
+        child: AppText(
           widget.isEvent
               ? 'No ratings yet. Complete an event booking to leave the first rating and review.'
               : 'No reviews yet. Be the first to rate this venue after a completed booking.',
@@ -292,7 +316,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           contentPadding: EdgeInsets.zero,
           leading: CircleAvatar(
             radius: 24,
-            backgroundColor: const Color(0xFFFFE8D2),
+            backgroundColor: AppColors.softOrange,
             child: avatar == null
                 ? _reviewInitial(name)
                 : ClipOval(
@@ -308,7 +332,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           title: Row(
             children: [
               Expanded(
-                child: Text(
+                child: AppText(
                   name.isEmpty ? 'Customer' : name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -334,7 +358,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
               ),
             ],
           ),
-          subtitle: Text('${review['comment'] ?? ''}'),
+          subtitle: AppText('${review['comment'] ?? ''}'),
         );
       },
     );
@@ -359,7 +383,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
     return NetworkImage(value);
   }
 
-  Widget _reviewInitial(String name) => Text(
+  Widget _reviewInitial(String name) => AppText(
     name.isEmpty ? 'U' : name[0].toUpperCase(),
     style: const TextStyle(fontWeight: FontWeight.w700),
   );
@@ -370,19 +394,19 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF7F9FC),
+          color: AppColors.page,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E7EF)),
+          border: Border.all(color: AppColors.border),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.lock_outline_rounded, color: Color(0xFF68748A)),
+            Icon(Icons.lock_outline_rounded, color: AppColors.muted),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
+              child: AppText(
                 _eligibilityMessage,
-                style: const TextStyle(color: Color(0xFF68748A), height: 1.35),
+                style: TextStyle(color: AppColors.muted, height: 1.35),
               ),
             ),
           ],
@@ -392,7 +416,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           widget.isEvent
               ? 'Rate this event venue after your completed booking'
               : 'Leave a review after your completed booking',
@@ -403,7 +427,10 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
             for (var star = 1; star <= 5; star++)
               IconButton(
                 key: ValueKey('review-rating-star-$star'),
-                tooltip: 'Rate $star out of 5 stars',
+                tooltip: appLanguageText(
+                  'Rate $star out of 5 stars',
+                  'Rate $star out of 5 stars',
+                ),
                 onPressed: _submitting
                     ? null
                     : () => setState(() => _rating = star),
@@ -419,14 +446,16 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
         TextField(
           controller: _comment,
           maxLines: 2,
-          decoration: const InputDecoration(labelText: 'Comment'),
+          decoration: InputDecoration(
+            labelText: appLanguageText('Comment', 'Comment'),
+          ),
         ),
         const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
           child: FilledButton(
             onPressed: _submitting ? null : _submitReview,
-            child: Text(
+            child: AppText(
               _submitting
                   ? 'Submitting...'
                   : widget.isEvent

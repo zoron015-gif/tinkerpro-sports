@@ -74,31 +74,47 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         const SizedBox(height: 14),
         Row(
           children: [
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Data analytics',
-                    style: TextStyle(
-                      color: _merchantInk,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Track sales, customers, and venue performance.',
-                    style: TextStyle(color: _merchantMuted, fontSize: 11),
-                  ),
-                ],
+             AppText(
+              'Data analytics',
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
               ),
+             localize: true,),
+            IconButton(
+              key: const ValueKey('merchant-analytics-info'),
+              tooltip: appLanguageText('About data analytics', 'About data analytics'),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const AppText('Data analytics', localize: true),
+                  content: const AppText(
+                    'Track sales, customers, and venue performance.',
+                   localize: true,),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const AppText('Got it', localize: true),
+                    ),
+                  ],
+                ),
+              ),
+              icon:  Icon(
+                Icons.info_outline_rounded,
+                color: _merchantMuted,
+                size: 19,
+              ),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
+            const Spacer(),
             OutlinedButton.icon(
               key: const ValueKey('merchant-analytics-date-filter'),
               onPressed: _chooseAnalyticsDateRange,
               icon: const Icon(Icons.calendar_month_outlined, size: 17),
-              label: Text(
+              label: AppText(
                 _analyticsDateRange == null
                     ? 'Date range'
                     : _analyticsDateRangeLabel,
@@ -107,7 +123,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _merchantNavy,
-                side: const BorderSide(color: _merchantLine),
+                side:  BorderSide(color: _merchantLine),
                 minimumSize: const Size(0, 40),
                 padding: const EdgeInsets.symmetric(horizontal: 9),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -127,10 +143,10 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
           style: _analyticsFilterStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(value: 'Daily', label: Text('Daily')),
-            ButtonSegment(value: 'Weekly', label: Text('Weekly')),
-            ButtonSegment(value: 'Monthly', label: Text('Monthly')),
-            ButtonSegment(value: 'Annual', label: Text('Annual')),
+            ButtonSegment(value: 'Daily', label: AppText('Daily', localize: true)),
+            ButtonSegment(value: 'Weekly', label: AppText('Weekly', localize: true)),
+            ButtonSegment(value: 'Monthly', label: AppText('Monthly', localize: true)),
+            ButtonSegment(value: 'Annual', label: AppText('Annual', localize: true)),
           ],
           selected: {_analyticsPeriod},
           onSelectionChanged: (selection) {
@@ -159,7 +175,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       key: const ValueKey('merchant-action-center'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _merchantLine),
         boxShadow: const [
@@ -175,25 +191,25 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         children: [
           Row(
             children: [
-              const Icon(Icons.bolt_rounded, color: _merchantOrange, size: 20),
+              Icon(Icons.bolt_rounded, color: _merchantOrange, size: 20),
               const SizedBox(width: 7),
-              const Expanded(
-                child: Text(
+               Expanded(
+                child: AppText(
                   'Needs your attention',
                   style: TextStyle(
                     color: _merchantInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
-                ),
+                 localize: true,),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF1E3),
+                  color: AppColors.softStatus,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
+                child: AppText(
                   '$pendingCount pending',
                   key: const ValueKey('merchant-action-count'),
                   style: const TextStyle(
@@ -201,19 +217,19 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
+                 localize: true,),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
+          AppText(
             '$pendingCount booking${pendingCount == 1 ? '' : 's'} awaiting approval',
-            style: const TextStyle(
+            style:  TextStyle(
               color: _merchantMuted,
               fontSize: 13,
               height: 1.35,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -226,7 +242,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 });
               },
               icon: const Icon(Icons.receipt_long_rounded, size: 18),
-              label: const Text('Review booking requests'),
+              label: const AppText('Review booking requests', localize: true),
               style: FilledButton.styleFrom(
                 backgroundColor: _merchantNavy,
                 minimumSize: const Size.fromHeight(44),
@@ -561,7 +577,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   Widget _analyticsMetric(String label, String value, IconData icon) => Card(
     elevation: 0,
-    color: Colors.white,
+    color: AppColors.surface,
     child: Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
@@ -572,18 +588,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _merchantMuted, fontSize: 11),
+                  style:  TextStyle(color: _merchantMuted, fontSize: 11),
                 ),
                 const SizedBox(height: 3),
-                Text(
+                AppText(
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style:  TextStyle(
                     color: _merchantInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
@@ -662,7 +678,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 summary: chartSummary,
               ),
               icon: const Icon(Icons.open_in_full_rounded, size: 16),
-              label: const Text('Full view'),
+              label: const AppText('Full view', localize: true),
             ),
           ),
           SizedBox(
@@ -784,9 +800,9 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             style: _analyticsFilterStyle,
             showSelectedIcon: false,
             segments: const [
-              ButtonSegment(value: 'Bookings', label: Text('Bookings')),
-              ButtonSegment(value: 'Sales', label: Text('Sales')),
-              ButtonSegment(value: 'Players', label: Text('Players')),
+              ButtonSegment(value: 'Bookings', label: AppText('Bookings', localize: true)),
+              ButtonSegment(value: 'Sales', label: AppText('Sales', localize: true)),
+              ButtonSegment(value: 'Players', label: AppText('Players', localize: true)),
             ],
             selected: {_venueComparisonMetric},
             onSelectionChanged: (selection) {
@@ -797,10 +813,10 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
           ),
           const SizedBox(height: 14),
           if (ranked.isEmpty)
-            const Text(
+             AppText(
               'Venue comparisons will appear when venues are added.',
               style: TextStyle(color: _merchantMuted, fontSize: 13),
-            )
+             localize: true,)
           else ...[
             for (final entry in ranked.asMap().entries)
               Padding(
@@ -811,11 +827,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
+                          child: AppText(
                             entry.value.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style:  TextStyle(
                               color: _merchantInk,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -823,7 +839,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        AppText(
                           _venueComparisonMetric == 'Sales'
                               ? _formatCurrency(valueFor(entry.value))
                               : valueFor(entry.value).round().toString(),
@@ -862,11 +878,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               '${_periodBookings.length} bookings in this date range',
             ),
             const SizedBox(height: 8),
-            Text(
+            AppText(
               _venueComparisonMetric == 'Sales'
                   ? 'Sales include confirmed bookings only.'
                   : 'Sorted by $metricLabel from highest to lowest.',
-              style: const TextStyle(color: _merchantMuted, fontSize: 11),
+              style:  TextStyle(color: _merchantMuted, fontSize: 11),
             ),
           ],
         ],
@@ -909,18 +925,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     width: double.infinity,
     padding: const EdgeInsets.all(11),
     decoration: BoxDecoration(
-      color: const Color(0xFFF7F9FC),
+      color: AppColors.page,
       borderRadius: BorderRadius.circular(10),
     ),
     child: Row(
       children: [
-        const Icon(Icons.summarize_outlined, color: _merchantNavy, size: 19),
+        Icon(Icons.summarize_outlined, color: _merchantInk, size: 19),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
+          child: AppText(
             summary,
-            style: const TextStyle(
-              color: _merchantNavy,
+            style: TextStyle(
+              color: _merchantInk,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -998,10 +1014,10 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       title: 'Venue performance',
       subtitle: 'Ratings, confirmed sales, and booking counts',
       child: ranked.isEmpty
-          ? const Text(
+          ?  AppText(
               'Venue performance will appear when bookings come in.',
               style: TextStyle(color: _merchantMuted, fontSize: 13),
-            )
+             localize: true,)
           : Column(
               children: [
                 for (final entry in ranked.take(5).toList().asMap().entries)
@@ -1011,58 +1027,58 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                       children: [
                         CircleAvatar(
                           radius: 15,
-                          backgroundColor: const Color(0xFFFFE8D2),
-                          child: Text(
+                          backgroundColor: AppColors.softOrange,
+                          child: AppText(
                             '${entry.key + 1}',
-                            style: const TextStyle(
-                              color: _merchantNavy,
+                            style: TextStyle(
+                              color: _merchantInk,
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                             ),
-                          ),
+                           localize: true,),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              AppText(
                                 entry.value.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style:  TextStyle(
                                   color: _merchantInk,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              Text(
+                              AppText(
                                 '${entry.value.bookings} bookings · '
                                 '${entry.value.participants} players · '
                                 '${entry.value.reviewCount} reviews',
-                                style: const TextStyle(
+                                style:  TextStyle(
                                   color: _merchantMuted,
                                   fontSize: 11,
                                 ),
-                              ),
+                               localize: true,),
                             ],
                           ),
                         ),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(
+                            AppText(
                               _formatCurrency(entry.value.sales),
-                              style: const TextStyle(
-                                color: _merchantNavy,
+                              style: TextStyle(
+                                color: _merchantInk,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            Text(
+                            AppText(
                               entry.value.rating > 0
                                   ? '★ ${entry.value.rating.toStringAsFixed(1)}'
                                   : 'No rating',
-                              style: const TextStyle(
+                              style:  TextStyle(
                                 color: _merchantMuted,
                                 fontSize: 10,
                               ),
@@ -1108,19 +1124,19 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   Widget _statusMetric(String label, int value) => Column(
     children: [
-      Text(
+      AppText(
         '$value',
-        style: const TextStyle(
+        style:  TextStyle(
           color: _merchantInk,
           fontSize: 17,
           fontWeight: FontWeight.w900,
         ),
-      ),
-      Text(
+       localize: true,),
+      AppText(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: _merchantMuted, fontSize: 10),
+        style:  TextStyle(color: _merchantMuted, fontSize: 10),
       ),
     ],
   );
@@ -1131,27 +1147,27 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     required Widget child,
   }) => Card(
     elevation: 0,
-    color: Colors.white,
+    color: AppColors.surface,
     child: Padding(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             title,
             key: ValueKey(
               'merchant-analytics-panel-${title.toLowerCase().replaceAll(' ', '-')}',
             ),
-            style: const TextStyle(
+            style:  TextStyle(
               color: _merchantInk,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 3),
-          Text(
+          AppText(
             subtitle,
-            style: const TextStyle(color: _merchantMuted, fontSize: 11),
+            style:  TextStyle(color: _merchantMuted, fontSize: 11),
           ),
           const SizedBox(height: 12),
           child,

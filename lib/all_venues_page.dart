@@ -3,9 +3,10 @@ import 'package:geolocator/geolocator.dart';
 
 import 'app_design_system.dart';
 import 'filter_panel_style.dart';
+import 'app_preferences.dart';
 
-const _venuesMuted = AppColors.muted;
-const _venuesOrange = AppColors.orange;
+Color get _venuesMuted => AppColors.muted;
+Color get _venuesOrange => AppColors.accent;
 
 class AllVenuesPage extends StatefulWidget {
   const AllVenuesPage({
@@ -87,6 +88,11 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
         post['address'],
         post['title'],
         post['body'],
+        post['facilityType'],
+        post['hours'],
+        post['availability'],
+        post['tags'],
+        post['amenities'],
       ].map((value) => '$value').join(' ').toLowerCase();
       return (_area == 'All areas' || address.contains(_area.toLowerCase())) &&
           (_sport == widget.categoryAllLabel ||
@@ -205,7 +211,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
           width: filterPanelWidth(context),
           height: double.infinity,
           child: Material(
-            color: Colors.white,
+            color: AppColors.surface,
             elevation: 24,
             child: StatefulBuilder(
               builder: (context, setSheetState) => SafeArea(
@@ -215,19 +221,19 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                       padding: filterPanelHeaderPadding,
                       child: Row(
                         children: [
-                          const Expanded(
-                            child: Text(
+                           Expanded(
+                            child: AppText(
                               'Filter venues',
                               style: filterPanelTitleStyle,
-                            ),
+                             localize: true,),
                           ),
                           TextButton(
                             key: const ValueKey('all-venues-filter-reset'),
                             onPressed: () => _resetFilters(setSheetState),
-                            child: const Text('Reset'),
+                            child: const AppText('Reset', localize: true),
                           ),
                           IconButton(
-                            tooltip: 'Close filters',
+                            tooltip: appLanguageText('Close filters', 'Close filters'),
                             onPressed: () => Navigator.of(dialogContext).pop(),
                             icon: const Icon(Icons.close_rounded),
                           ),
@@ -252,7 +258,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   key: ValueKey(
                                     'all-venues-filter-sport-$value',
                                   ),
-                                  label: Text(value),
+                                  label: AppText(value),
                                   selected: _sport == value,
                                   selectedColor: _venuesOrange,
                                   onSelected: (_) {
@@ -288,7 +294,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                         ? Icons.my_location_rounded
                                         : Icons.location_on_rounded,
                                   ),
-                            label: Text(
+                            label: AppText(
                               _locationLoading
                                   ? 'Getting your location...'
                                   : _userPosition == null
@@ -324,7 +330,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   key: ValueKey(
                                     'all-venues-filter-court-$value',
                                   ),
-                                  label: Text(value),
+                                  label: AppText(value),
                                   selected: _courtType == value,
                                   selectedColor: _venuesOrange,
                                   onSelected: (_) {
@@ -351,7 +357,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   key: ValueKey(
                                     'all-venues-filter-amenity-$value',
                                   ),
-                                  label: Text(value),
+                                  label: AppText(value),
                                   selected: _amenities.contains(value),
                                   onSelected: (selected) {
                                     setState(() {
@@ -379,7 +385,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   key: ValueKey(
                                     'all-venues-filter-availability-$value',
                                   ),
-                                  label: Text(value),
+                                  label: AppText(value),
                                   selected: _availability == value,
                                   selectedColor: _venuesOrange,
                                   onSelected: (_) {
@@ -430,7 +436,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           key: const ValueKey('all-venues-filter-apply'),
                           onPressed: () => Navigator.of(dialogContext).pop(),
                           style: filterPanelApplyButtonStyle,
-                          child: Text('Show ${_visiblePosts.length} venues'),
+                          child: AppText('Show ${_visiblePosts.length} venues', localize: true),
                         ),
                       ),
                     ),
@@ -515,7 +521,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: AppText(message),
           action: actionLabel == null || onAction == null
               ? null
               : SnackBarAction(label: actionLabel, onPressed: () => onAction()),
@@ -525,7 +531,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
 
   Widget _filterLabel(String label) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Text(label.toUpperCase(), style: filterPanelSectionLabelStyle),
+    child: AppText(label.toUpperCase(), style: filterPanelSectionLabelStyle),
   );
 
   Widget _dropdown({
@@ -536,14 +542,14 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     initialValue: options.contains(value) ? value : options.first,
     items: [
       for (final option in options)
-        DropdownMenuItem(value: option, child: Text(option)),
+        DropdownMenuItem(value: option, child: AppText(option)),
     ],
     onChanged: (value) {
       if (value != null) onChanged(value);
     },
-    decoration: const InputDecoration(
+    decoration:  InputDecoration(
       filled: true,
-      fillColor: Color(0xFFF8FAFC),
+      fillColor: AppColors.surfaceVariant,
       border: OutlineInputBorder(),
     ),
   );
@@ -559,16 +565,34 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     return false;
   }
 
+  void _showCollectionDescription() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: AppText(
+          widget.title == 'Most popular' ? 'Most popular venues' : 'Top rated',
+        ),
+        content: AppText(widget.collectionDescription),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const AppText('Got it', localize: true),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF7F9FC),
+    backgroundColor: AppColors.page,
     appBar: AppBar(
-      backgroundColor: Colors.white,
-      foregroundColor: const Color(0xFF101B33),
-      title: Text(
+      backgroundColor: AppColors.surface,
+      foregroundColor: AppColors.ink,
+      title: AppText(
         widget.title,
-        style: const TextStyle(
-          color: Color(0xFF101B33),
+        style:  TextStyle(
+          color: AppColors.ink,
           fontSize: 20,
           fontWeight: FontWeight.w900,
         ),
@@ -595,34 +619,46 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: FittedBox(
-                              alignment: Alignment.centerLeft,
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                widget.title == 'Most popular'
-                                    ? widget.popularHeading
-                                    : widget.ratedHeading,
-                                key: const ValueKey('all-venues-header-title'),
-                                maxLines: 1,
-                                softWrap: false,
-                                style: const TextStyle(
-                                  color: Color(0xFF101B33),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FittedBox(
+                                  alignment: Alignment.centerLeft,
+                                  fit: BoxFit.scaleDown,
+                                  child: AppText(
+                                    widget.title == 'Most popular'
+                                        ? widget.popularHeading
+                                        : widget.ratedHeading,
+                                    key: const ValueKey(
+                                      'all-venues-header-title',
+                                    ),
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style:  TextStyle(
+                                      color: AppColors.ink,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            widget.collectionDescription,
-                            style: TextStyle(
-                              color: _venuesMuted,
-                              fontSize: 13,
-                              height: 1.25,
-                            ),
+                              IconButton(
+                                key: const ValueKey('all-venues-info'),
+                                tooltip: appLanguageText('About this venue list', 'About this venue list'),
+                                onPressed: _showCollectionDescription,
+                                icon:  Icon(
+                                  Icons.info_outline_rounded,
+                                  color: _venuesMuted,
+                                  size: 19,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 32,
+                                  height: 32,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -636,10 +672,14 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                 key: const ValueKey('all-venues-search'),
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: widget.searchHint,
+                  hintText: appLanguageText(
+                    widget.searchHint,
+                    widget.searchHint,
+                  ),
                   hintStyle: const TextStyle(fontSize: 14),
-                  prefixIcon: const Icon(Icons.search, color: _venuesOrange),
+                  prefixIcon: Icon(Icons.search, color: _venuesOrange),
                   suffixIcon: _searchController.text.isEmpty
                       ? null
                       : IconButton(
@@ -650,22 +690,22 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           icon: const Icon(Icons.close_rounded),
                         ),
                   filled: true,
-                  fillColor: Colors.white,
+                  fillColor: AppColors.surface,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+                    borderSide:  BorderSide(color: AppColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: Color(0xFFE2E7EF)),
+                    borderSide:  BorderSide(color: AppColors.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(
+                    borderSide: BorderSide(
                       color: _venuesOrange,
                       width: 1.5,
                     ),
@@ -679,15 +719,28 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
           child: NotificationListener<ScrollNotification>(
             onNotification: _handleListScroll,
             child: _visiblePosts.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No venues match your filters or search.',
-                      style: TextStyle(color: _venuesMuted, fontSize: 16),
-                    ),
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    children:  [
+                      SizedBox(height: 80),
+                      Center(
+                        child: AppText(
+                          'No venues match your filters or search.',
+                          style: TextStyle(
+                            color: _venuesMuted,
+                            fontSize: 16,
+                          ),
+                         localize: true,),
+                      ),
+                    ],
                   )
                 : ListView.separated(
                     key: const ValueKey('all-venues-list'),
                     physics: const AlwaysScrollableScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                     itemCount: _visiblePosts.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 14),

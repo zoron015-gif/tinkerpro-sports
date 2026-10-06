@@ -4,16 +4,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 import 'app_session.dart';
 import 'app_theme.dart';
 import 'firebase_options.dart';
 
 class AppStartup extends StatefulWidget {
-  const AppStartup({
-    super.key,
-    required this.appBuilder,
-    this.initialize,
-  });
+  const AppStartup({super.key, required this.appBuilder, this.initialize});
 
   final Widget Function(AppSession?) appBuilder;
   final Future<AppSession> Function()? initialize;
@@ -32,11 +29,19 @@ class _AppStartupState extends State<AppStartup> {
   }
 
   Future<AppSession> _initialize() async {
-    if (widget.initialize != null) return widget.initialize!();
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+    late final AppSession session;
+    if (widget.initialize != null) {
+      session = await widget.initialize!();
+    } else {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      session = await AppSession.load();
+    }
+    await AppPreferences.instance.load(
+      accountEmail: session.isAuthenticated ? session.accountEmail : null,
     );
-    return AppSession.load();
+    return session;
   }
 
   void _retry() {
@@ -56,7 +61,10 @@ class _AppStartupState extends State<AppStartup> {
       return MaterialApp(
         title: 'TinkerPro',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
+        theme: AppTheme.configured(
+          darkMode: AppPreferences.instance.darkMode,
+          accentColor: AppPreferences.instance.palette.color,
+        ),
         home: error != null
             ? _StartupError(error: error, onRetry: _retry)
             : const _StartupLoadingScreen(),
@@ -83,7 +91,7 @@ class _StartupLoadingScreen extends StatelessWidget {
                 height: 132,
                 padding: const EdgeInsets.all(AppSpacing.large),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(32),
                   boxShadow: const [
                     BoxShadow(
@@ -99,7 +107,7 @@ class _StartupLoadingScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.xLarge),
-              Text.rich(
+              AppText.rich(
                 TextSpan(
                   children: [
                     TextSpan(
@@ -108,7 +116,7 @@ class _StartupLoadingScreen extends StatelessWidget {
                     ),
                     TextSpan(
                       text: 'Pro',
-                      style: TextStyle(color: AppColors.orange),
+                      style: TextStyle(color: AppColors.accent),
                     ),
                   ],
                 ),
@@ -117,27 +125,27 @@ class _StartupLoadingScreen extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   letterSpacing: -.8,
                 ),
-              ),
+               localize: true,),
               const SizedBox(height: AppSpacing.small),
-              const Text(
+               AppText(
                 'Sports, events, and local experiences',
                 textAlign: TextAlign.center,
                 style: AppTypography.supporting,
-              ),
+               localize: true,),
               const SizedBox(height: AppSpacing.xxLarge),
-              const SizedBox(
+              SizedBox(
                 width: 28,
                 height: 28,
                 child: CircularProgressIndicator(
                   strokeWidth: 3,
-                  color: AppColors.orange,
+                  color: AppColors.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.medium),
-              const Text(
+               AppText(
                 'Getting your courts ready...',
                 style: AppTypography.supporting,
-              ),
+               localize: true,),
             ],
           ),
         ),
@@ -162,25 +170,25 @@ class _StartupError extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.warning_amber_rounded,
-                color: AppColors.orange,
+                color: AppColors.accent,
                 size: 44,
               ),
               const SizedBox(height: AppSpacing.large),
-              const Text(
+               AppText(
                 'TinkerPro could not start',
                 textAlign: TextAlign.center,
                 style: AppTypography.pageTitle,
-              ),
+               localize: true,),
               const SizedBox(height: AppSpacing.small),
-              Text(
+              AppText(
                 '$error',
                 textAlign: TextAlign.center,
                 style: AppTypography.supporting,
-              ),
+               localize: true,),
               const SizedBox(height: AppSpacing.xLarge),
-              FilledButton(onPressed: onRetry, child: const Text('Try again')),
+              FilledButton(onPressed: onRetry, child: const AppText('Try again', localize: true)),
             ],
           ),
         ),

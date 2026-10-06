@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'saved_icons.dart';
 
@@ -6,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 import 'app_startup.dart';
 import 'app_theme.dart';
 import 'auth_dashboard.dart';
@@ -19,10 +21,10 @@ import 'scroll_to_top_overlay.dart';
 import 'dart:async';
 
 const _navy = AppColors.navy;
-const _ink = AppColors.ink;
-const _orange = AppColors.orange;
-const _page = AppColors.page;
-const _muted = AppColors.muted;
+Color get _ink => AppColors.ink;
+Color get _orange => AppColors.accent;
+Color get _page => AppColors.page;
+Color get _muted => AppColors.muted;
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
@@ -42,31 +44,91 @@ class MyApp extends StatelessWidget {
       );
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _rootNavigatorKey,
-      navigatorObservers: [_scrollObserver],
-      title: 'TinkerPro',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      home: const OverviewPage(),
-      builder: (context, child) => ScrollToTopOverlay(
-        key: _scrollToTopKey,
-        child: MessageNotificationHost(
-          child: child ?? const SizedBox.shrink(),
-          onOpenConversation: (conversationId) {
-            _rootNavigatorKey.currentState?.push(
-              MaterialPageRoute<void>(
-                builder: (_) => MessagesDashboardPage(
-                  initialConversationId: conversationId,
-                ),
-              ),
-            );
-          },
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: AppPreferences.instance,
+    builder: (context, _) {
+      final preferences = AppPreferences.instance;
+      return MaterialApp(
+        navigatorKey: _rootNavigatorKey,
+        navigatorObservers: [MyApp._scrollObserver],
+        title: 'TinkerPro',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.configured(
+          darkMode: preferences.darkMode,
+          accentColor: preferences.palette.color,
         ),
-      ),
-    );
-  }
+        locale: AppLanguage.fromCode(preferences.languageCode).locale,
+        supportedLocales: AppLanguage.supportedLocales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: const OverviewPage(),
+        builder: (context, child) {
+          final media = MediaQuery.of(context);
+          return MediaQuery(
+            data: media.copyWith(
+              textScaler: _PreferenceTextScaler(
+                media.textScaler,
+                preferences.textScale,
+              ),
+            ),
+            child: ScrollToTopOverlay(
+              key: MyApp._scrollToTopKey,
+              child: MessageNotificationHost(
+                child: child ?? const SizedBox.shrink(),
+                onOpenConversation: (conversationId) {
+                  _rootNavigatorKey.currentState?.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => MessagesDashboardPage(
+                        initialConversationId: conversationId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _PreferenceTextScaler extends TextScaler {
+  const _PreferenceTextScaler(this.platformScaler, this.preferenceScale);
+
+  final TextScaler platformScaler;
+  final double preferenceScale;
+
+  @override
+  double scale(double fontSize) =>
+      platformScaler.scale(fontSize * preferenceScale);
+
+  @override
+  double get textScaleFactor => platformScaler.scale(1) * preferenceScale;
+
+  @override
+  TextScaler clamp({
+    double minScaleFactor = 0,
+    double maxScaleFactor = double.infinity,
+  }) => _PreferenceTextScaler(
+    platformScaler.clamp(
+      minScaleFactor: minScaleFactor / preferenceScale,
+      maxScaleFactor: maxScaleFactor / preferenceScale,
+    ),
+    preferenceScale,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PreferenceTextScaler &&
+      other.platformScaler == platformScaler &&
+      other.preferenceScale == preferenceScale;
+
+  @override
+  int get hashCode => Object.hash(platformScaler, preferenceScale);
 }
 
 class OverviewPage extends StatelessWidget {
@@ -109,6 +171,7 @@ class OverviewPage extends StatelessWidget {
 
   Future<void> _logout(BuildContext context) async {
     final navigator = Navigator.of(context);
+    await AppPreferences.instance.load();
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const OverviewPage()),
       (_) => false,
@@ -127,7 +190,7 @@ class OverviewPage extends StatelessWidget {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: AppText(message),
           behavior: SnackBarBehavior.floating,
           backgroundColor: _navy,
         ),
@@ -185,13 +248,13 @@ class _Header extends StatelessWidget {
                 fit: BoxFit.contain,
               ),
               const SizedBox(width: 8),
-              const Text.rich(
+              AppText.rich(
                 TextSpan(
                   children: [
                     TextSpan(
                       text: 'Tinker',
                       style: TextStyle(
-                        color: _navy,
+                        color: _ink,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -.5,
@@ -208,7 +271,7 @@ class _Header extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
+               localize: true,),
             ],
           ),
         ],
@@ -236,7 +299,7 @@ class _AuthPageState extends State<AuthPage> {
   void _showComingSoon(String provider) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$provider sign in will be connected soon.'),
+        content: AppText('$provider sign in will be connected soon.', localize: true),
         backgroundColor: _navy,
       ),
     );
@@ -268,9 +331,9 @@ class _AuthPageState extends State<AuthPage> {
               ),
               const SizedBox(height: 15),
               Center(
-                child: Text(
+                child: AppText(
                   isLogin ? 'Welcome back' : 'Create your account',
-                  style: const TextStyle(
+                  style:  TextStyle(
                     color: _ink,
                     fontSize: 27,
                     fontWeight: FontWeight.w900,
@@ -279,11 +342,11 @@ class _AuthPageState extends State<AuthPage> {
               ),
               const SizedBox(height: 7),
               Center(
-                child: Text(
+                child: AppText(
                   isLogin
                       ? 'Sign in to continue your game.'
                       : 'Join TinkerPro and get in the game.',
-                  style: const TextStyle(color: _muted, fontSize: 13),
+                  style:  TextStyle(color: _muted, fontSize: 13),
                 ),
               ),
               const SizedBox(height: 26),
@@ -293,14 +356,14 @@ class _AuthPageState extends State<AuthPage> {
               ),
               const SizedBox(height: 24),
               if (!isLogin) ...[
-                const Text(
+                 AppText(
                   'I am joining as',
                   style: TextStyle(
                     color: _ink,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
+                 localize: true,),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -365,7 +428,7 @@ class _AuthPageState extends State<AuthPage> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => _showComingSoon('Password recovery'),
-                    child: const Text('Forgot password?'),
+                    child: const AppText('Forgot password?', localize: true),
                   ),
                 )
               else
@@ -387,7 +450,7 @@ class _AuthPageState extends State<AuthPage> {
                     ),
                     textStyle: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  child: Text(isLogin ? 'Sign in' : 'Create account'),
+                  child: AppText(isLogin ? 'Sign in' : 'Create account'),
                 ),
               ),
               const SizedBox(height: 22),
@@ -400,12 +463,12 @@ class _AuthPageState extends State<AuthPage> {
               ),
               const SizedBox(height: 24),
               Center(
-                child: Text.rich(
+                child: AppText.rich(
                   TextSpan(
                     text: isLogin
                         ? 'New to TinkerPro? '
                         : 'Already have an account? ',
-                    style: const TextStyle(color: _muted, fontSize: 13),
+                    style:  TextStyle(color: _muted, fontSize: 13),
                     children: [
                       WidgetSpan(
                         child: GestureDetector(
@@ -414,9 +477,9 @@ class _AuthPageState extends State<AuthPage> {
                                 ? _AuthMode.register
                                 : _AuthMode.login,
                           ),
-                          child: Text(
+                          child: AppText(
                             isLogin ? 'Register' : 'Sign in',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _orange,
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -426,7 +489,7 @@ class _AuthPageState extends State<AuthPage> {
                       ),
                     ],
                   ),
-                ),
+                 localize: true,),
               ),
             ],
           ),
@@ -500,7 +563,7 @@ class _ToggleOption extends StatelessWidget {
               : null,
         ),
         child: Center(
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: selected ? _navy : _muted,
@@ -552,7 +615,7 @@ class _RoleCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   style: TextStyle(
                     color: selected ? Colors.white : _ink,
@@ -561,7 +624,7 @@ class _RoleCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
+                AppText(
                   subtitle,
                   style: TextStyle(
                     color: selected
@@ -600,9 +663,10 @@ class _AuthField extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
+      AppText(
         label,
-        style: const TextStyle(
+        localize: true,
+        style: TextStyle(
           color: _ink,
           fontSize: 13,
           fontWeight: FontWeight.w800,
@@ -613,23 +677,23 @@ class _AuthField extends StatelessWidget {
         keyboardType: keyboardType,
         obscureText: obscureText,
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: appLanguageText(hint, hint),
           prefixIcon: Icon(icon, color: _muted, size: 20),
           suffixIcon: suffix,
           filled: true,
-          fillColor: Colors.white,
+          fillColor: AppColors.surface,
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderSide:  BorderSide(color: AppColors.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderSide:  BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: _orange, width: 1.5),
+            borderSide: BorderSide(color: _orange, width: 1.5),
           ),
         ),
       ),
@@ -646,7 +710,7 @@ class _OrDivider extends StatelessWidget {
       const Expanded(child: Divider(color: Color(0xFFDDE2EA))),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Text(
+        child: AppText(
           'OR CONTINUE WITH',
           style: TextStyle(
             color: _muted,
@@ -654,7 +718,7 @@ class _OrDivider extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: .8,
           ),
-        ),
+         localize: true,),
       ),
       const Expanded(child: Divider(color: Color(0xFFDDE2EA))),
     ],
@@ -677,7 +741,7 @@ class _SocialButton extends StatelessWidget {
     onPressed: onTap,
     style: OutlinedButton.styleFrom(
       minimumSize: const Size.fromHeight(51),
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       foregroundColor: _ink,
       side: const BorderSide(color: Color(0xFFE1E6EE)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -685,7 +749,7 @@ class _SocialButton extends StatelessWidget {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
+        AppText(
           mark,
           style: TextStyle(
             color: _navy,
@@ -694,9 +758,9 @@ class _SocialButton extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Text(
+        AppText(
           label,
-          style: const TextStyle(
+          style:  TextStyle(
             color: _ink,
             fontSize: 13,
             fontWeight: FontWeight.w800,
@@ -753,7 +817,7 @@ class _Hero extends StatelessWidget {
                   color: _orange.withValues(alpha: .16),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
+                child: AppText(
                   'PLAY MORE. PLAN LESS.',
                   style: TextStyle(
                     color: _orange,
@@ -761,10 +825,10 @@ class _Hero extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.3,
                   ),
-                ),
+                 localize: true,),
               ),
               const SizedBox(height: 22),
-              const Text(
+              const AppText(
                 'Your sport.\nYour event.\nYour place.',
                 key: ValueKey('overview-hero-title'),
                 style: TextStyle(
@@ -773,22 +837,22 @@ class _Hero extends StatelessWidget {
                   height: 1.08,
                   fontWeight: FontWeight.w800,
                 ),
-              ),
+               localize: true,),
               const SizedBox(height: 14),
-              Text(
+              AppText(
                 'TinkerPro brings sports and events together in one marketplace. Discover local businesses, compare what they offer, and book in a few taps.',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: .75),
                   fontSize: 15,
                   height: 1.55,
                 ),
-              ),
+               localize: true,),
               const SizedBox(height: 24),
               FilledButton.icon(
                 key: const ValueKey('overview-hero-explore'),
                 onPressed: onExplore,
                 icon: const Icon(Icons.arrow_forward_rounded, size: 19),
-                label: const Text('Explore bookings'),
+                label: const AppText('Explore bookings', localize: true),
                 style: FilledButton.styleFrom(
                   backgroundColor: _orange,
                   foregroundColor: Colors.white,
@@ -817,24 +881,24 @@ class _OverviewCategories extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const categories = [
+    final categories = [
       (
         Icons.sports_tennis_rounded,
         'Sports',
         'Find courts, fields, facilities, and open schedules.',
-        Color(0xFFFFF1E4),
+        AppColors.softOrangeAlt,
       ),
       (
         Icons.celebration_rounded,
         'Events',
         'Discover spaces for gatherings, celebrations, and occasions.',
-        Color(0xFFEFF2F7),
+        AppColors.surfaceVariant,
       ),
       (
         Icons.fitness_center_rounded,
         'Fitness & Wellness',
         'Explore classes, sessions, gyms, and wellness activities.',
-        Color(0xFFE8F5F0),
+        AppColors.successSurface,
       ),
     ];
 
@@ -843,19 +907,19 @@ class _OverviewCategories extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+           AppText(
             'Find the right place for your plan',
             style: TextStyle(
               color: _ink,
               fontSize: 23,
               fontWeight: FontWeight.w800,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 7),
-          const Text(
+           AppText(
             'Browse real merchant listings with details, availability, photos, and pricing before you decide.',
             style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
-          ),
+           localize: true,),
           const SizedBox(height: 16),
           ...categories.map(
             (category) => Padding(
@@ -866,9 +930,9 @@ class _OverviewCategories extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     borderRadius: BorderRadius.circular(17),
-                    border: Border.all(color: const Color(0xFFE7EBF2)),
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: Row(
                     children: [
@@ -879,25 +943,25 @@ class _OverviewCategories extends StatelessWidget {
                           color: category.$4,
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Icon(category.$1, color: _navy, size: 25),
+                        child: Icon(category.$1, color: _orange, size: 25),
                       ),
                       const SizedBox(width: 13),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            AppText(
                               category.$2,
-                              style: const TextStyle(
+                              style:  TextStyle(
                                 color: _ink,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
+                            AppText(
                               category.$3,
-                              style: const TextStyle(
+                              style:  TextStyle(
                                 color: _muted,
                                 fontSize: 12,
                                 height: 1.3,
@@ -906,7 +970,7 @@ class _OverviewCategories extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(
+                       Icon(
                         Icons.arrow_forward_ios_rounded,
                         color: _muted,
                         size: 16,
@@ -1006,7 +1070,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                       color: _navy,
                     ),
                     const Spacer(),
-                    const Text(
+                     AppText(
                       'STEP 1 OF 3',
                       style: TextStyle(
                         color: _muted,
@@ -1014,7 +1078,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1,
                       ),
-                    ),
+                     localize: true,),
                   ],
                 ),
               ),
@@ -1027,12 +1091,12 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                   segments: const [
                     ButtonSegment(
                       value: false,
-                      label: Text('Sports'),
+                      label: AppText('Sports', localize: true),
                       icon: Icon(Icons.sports_score_rounded),
                     ),
                     ButtonSegment(
                       value: true,
-                      label: Text('Events'),
+                      label: AppText('Events', localize: true),
                       icon: Icon(Icons.event_rounded),
                     ),
                   ],
@@ -1051,7 +1115,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         _showEvents ? 'Choose an event' : 'Choose a sport',
                         style: TextStyle(
                           color: _ink,
@@ -1060,10 +1124,10 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                         ),
                       ),
                     ),
-                    Text(
+                    AppText(
                       '${(_showEvents ? _events : _sports).length} available',
-                      style: const TextStyle(color: _muted, fontSize: 12),
-                    ),
+                      style:  TextStyle(color: _muted, fontSize: 12),
+                     localize: true,),
                   ],
                 ),
               ),
@@ -1111,9 +1175,9 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                       ? null
                       : () => ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(
+                            content: AppText(
                               'Great choice! Let’s find $_selectedBooking listings.',
-                            ),
+                             localize: true,),
                             backgroundColor: _navy,
                           ),
                         ),
@@ -1131,7 +1195,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  child: Text(
+                  child: AppText(
                     _selectedBooking == null
                         ? (_showEvents
                               ? 'Select an event to continue'
@@ -1225,16 +1289,7 @@ class _SelectionHeroState extends State<_SelectionHero> {
                 Image.asset(_heroImages[index], fit: BoxFit.cover),
           ),
           DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  _navy.withValues(alpha: .68),
-                  _navy.withValues(alpha: .94),
-                ],
-              ),
-            ),
+            decoration: BoxDecoration(gradient: AppGradients.navyHeroOverlay),
           ),
           Padding(
             padding: EdgeInsets.all(
@@ -1257,7 +1312,7 @@ class _SelectionHeroState extends State<_SelectionHero> {
                         color: _orange,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
+                      child: const AppText(
                         'FOOTBALL',
                         style: TextStyle(
                           color: Colors.white,
@@ -1265,9 +1320,9 @@ class _SelectionHeroState extends State<_SelectionHero> {
                           fontWeight: FontWeight.w900,
                           letterSpacing: .8,
                         ),
-                      ),
+                       localize: true,),
                     ),
-                    const Text(
+                    const AppText(
                       'COMING SOON',
                       style: TextStyle(
                         color: Color(0xE6FFFFFF),
@@ -1275,11 +1330,11 @@ class _SelectionHeroState extends State<_SelectionHero> {
                         fontWeight: FontWeight.w800,
                         letterSpacing: .8,
                       ),
-                    ),
+                     localize: true,),
                   ],
                 ),
                 const SizedBox(height: 14),
-                Text(
+                AppText(
                   'Find your next game',
                   style: TextStyle(
                     color: Colors.white,
@@ -1287,16 +1342,16 @@ class _SelectionHeroState extends State<_SelectionHero> {
                     fontWeight: FontWeight.w900,
                     height: 1.1,
                   ),
-                ),
+                 localize: true,),
                 SizedBox(height: 8),
-                Text(
+                AppText(
                   'Choose a sport or event and we’ll take care of the rest.',
                   style: TextStyle(
                     color: Color(0xD9FFFFFF),
                     fontSize: 13,
                     height: 1.45,
                   ),
-                ),
+                 localize: true,),
                 const SizedBox(height: 14),
                 Row(
                   children: List.generate(
@@ -1376,11 +1431,7 @@ class _SportCard extends StatelessWidget {
             ),
             DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, _navy.withValues(alpha: .92)],
-                ),
+                gradient: AppGradients.navyImageOverlay,
               ),
             ),
             Padding(
@@ -1401,7 +1452,7 @@ class _SportCard extends StatelessWidget {
                         child: Icon(icon, color: _orange, size: 23),
                       ),
                       if (selected)
-                        const Icon(
+                        Icon(
                           Icons.check_circle_rounded,
                           color: _orange,
                           size: 23,
@@ -1409,7 +1460,7 @@ class _SportCard extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  Text(
+                  AppText(
                     title,
                     style: const TextStyle(
                       color: Colors.white,
@@ -1418,7 +1469,7 @@ class _SportCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  AppText(
                     subtitle,
                     style: const TextStyle(
                       color: Color(0xD9FFFFFF),
@@ -1457,19 +1508,19 @@ class _HowItWorks extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+           AppText(
             'Everything in one place',
             style: TextStyle(
               color: _ink,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 7),
-          const Text(
+           AppText(
             'A simple marketplace for clients to book and merchants to grow.',
             style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
-          ),
+           localize: true,),
           const SizedBox(height: 20),
           Row(
             children: const [
@@ -1521,9 +1572,9 @@ class _Step extends StatelessWidget {
         height: 154,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: const Color(0xFFE7EBF2)),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1532,10 +1583,10 @@ class _Step extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Icon(icon, color: _orange, size: 22),
-                Text(
+                AppText(
                   number,
-                  style: const TextStyle(
-                    color: Color(0xFFB9C2D1),
+                  style: TextStyle(
+                    color: _muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1543,18 +1594,18 @@ class _Step extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            Text(
+            AppText(
               title,
-              style: const TextStyle(
+              style:  TextStyle(
                 color: _ink,
                 fontWeight: FontWeight.w800,
                 fontSize: 14,
               ),
             ),
             const SizedBox(height: 5),
-            Text(
+            AppText(
               text,
-              style: const TextStyle(color: _muted, fontSize: 11, height: 1.3),
+              style:  TextStyle(color: _muted, fontSize: 11, height: 1.3),
             ),
           ],
         ),
@@ -1593,23 +1644,25 @@ class _Features extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+           AppText(
             'Made for the way you play',
             style: TextStyle(
               color: _ink,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 16),
           ...features.map(
             (feature) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Container(
+                key: ValueKey('overview-feature-card-${feature.$2}'),
                 padding: const EdgeInsets.all(15),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(17),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: Row(
                   children: [
@@ -1617,7 +1670,7 @@ class _Features extends StatelessWidget {
                       width: 46,
                       height: 46,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1E4),
+                        color: AppColors.softOrangeAlt,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(feature.$1, color: _orange),
@@ -1627,18 +1680,18 @@ class _Features extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          AppText(
                             feature.$2,
-                            style: const TextStyle(
+                            style:  TextStyle(
                               color: _ink,
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
+                          AppText(
                             feature.$3,
-                            style: const TextStyle(color: _muted, fontSize: 13),
+                            style:  TextStyle(color: _muted, fontSize: 13),
                           ),
                         ],
                       ),
@@ -1717,7 +1770,7 @@ class _TrustItem extends StatelessWidget {
       children: [
         Icon(icon, color: _orange, size: 22),
         const SizedBox(height: 9),
-        Text(
+        AppText(
           title,
           style: const TextStyle(
             color: Colors.white,
@@ -1726,7 +1779,7 @@ class _TrustItem extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
+        AppText(
           text,
           style: TextStyle(
             color: Colors.white.withValues(alpha: .68),
@@ -1750,7 +1803,7 @@ class _BottomCallout extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFEEE0),
+        color: AppColors.softOrange,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
@@ -1759,22 +1812,22 @@ class _BottomCallout extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                AppText(
                   'Ready to make a plan?',
                   style: TextStyle(
-                    color: _navy,
+                    color: _ink,
                     fontSize: 19,
                     fontWeight: FontWeight.w800,
                   ),
-                ),
+                 localize: true,),
                 const SizedBox(height: 6),
-                Text(
+                AppText(
                   'Book a sport or event from a local business today.',
                   style: TextStyle(
-                    color: _navy.withValues(alpha: .7),
+                    color: _muted,
                     fontSize: 13,
                   ),
-                ),
+                 localize: true,),
               ],
             ),
           ),

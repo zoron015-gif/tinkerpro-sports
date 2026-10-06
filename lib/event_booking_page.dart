@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'app_session.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 
 class EventBookingPage extends StatefulWidget {
   const EventBookingPage({
@@ -64,6 +65,22 @@ class _EventBookingPageState extends State<EventBookingPage> {
     }
     final category = '${widget.business['category'] ?? ''}'.trim();
     return category.isEmpty ? const [] : [category];
+  }
+
+  IconData _eventTypeIcon(String eventType) {
+    final normalized = eventType.trim().toLowerCase();
+    if (normalized.contains('wedding')) return Icons.favorite_rounded;
+    if (normalized.contains('birthday')) return Icons.cake_rounded;
+    if (normalized.contains('conference') ||
+        normalized.contains('corporate') ||
+        normalized.contains('business')) {
+      return Icons.business_center_rounded;
+    }
+    if (normalized.contains('meeting')) return Icons.groups_rounded;
+    if (normalized.contains('party') || normalized.contains('celebration')) {
+      return Icons.celebration_rounded;
+    }
+    return Icons.event_available_rounded;
   }
 
   int _number(dynamic value) =>
@@ -146,21 +163,33 @@ class _EventBookingPageState extends State<EventBookingPage> {
   Future<void> _submit() async {
     final guests = int.tryParse(_guestCountController.text.trim());
     if (_eventType == null) {
-      _showError('Choose an event type offered by this venue.');
+      _showError('Please choose one of the event types offered by this venue.');
       return;
     }
-    if (guests == null ||
-        guests < 1 ||
-        (_attendanceMin > 0 && guests < _attendanceMin) ||
-        (_attendanceMax > 0 && guests > _attendanceMax)) {
-      final range = _attendanceMin > 0 && _attendanceMax > 0
-          ? 'Choose between $_attendanceMin and $_attendanceMax guests.'
-          : 'Enter a valid guest count.';
-      _showError(range);
+    if (_guestCountController.text.trim().isEmpty) {
+      _showError('Please enter how many guests you’re expecting.');
+      return;
+    }
+    if (guests == null || guests < 1) {
+      _showError('Please enter a whole number of at least 1 guest.');
+      return;
+    }
+    if (_attendanceMin > 0 && guests < _attendanceMin) {
+      _showError(
+        'This venue requires at least $_attendanceMin guests. Please adjust your count.',
+      );
+      return;
+    }
+    if (_attendanceMax > 0 && guests > _attendanceMax) {
+      _showError(
+        'This venue can host up to $_attendanceMax guests. Please adjust your count.',
+      );
       return;
     }
     if (_eventFee <= 0) {
-      _showError('This venue does not have a valid event fee.');
+      _showError(
+        'This venue’s event price isn’t available right now. Please contact the venue.',
+      );
       return;
     }
 
@@ -179,19 +208,19 @@ class _EventBookingPageState extends State<EventBookingPage> {
         final useCashOnArrival = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Online payment unavailable'),
-            content: const Text(
+            title: const AppText('Online payment unavailable', localize: true),
+            content: const AppText(
               'Online payments are not configured yet. No booking has been '
               'created. You can choose Cash on Arrival or try again later.',
-            ),
+             localize: true,),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
+                child: const AppText('Cancel', localize: true),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Use Cash on Arrival'),
+                child: const AppText('Use Cash on Arrival', localize: true),
               ),
             ],
           ),
@@ -210,16 +239,16 @@ class _EventBookingPageState extends State<EventBookingPage> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Confirm event booking'),
+          title: const AppText('Confirm event booking', localize: true),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                 AppText(
                   'Please check that all information is correct before continuing.',
                   style: TextStyle(color: AppColors.muted),
-                ),
+                 localize: true,),
                 const SizedBox(height: 16),
                 _confirmationRow('Venue', _venueName),
                 _confirmationRow('Event type', _eventType!),
@@ -238,11 +267,11 @@ class _EventBookingPageState extends State<EventBookingPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: const AppText('Cancel', localize: true),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Confirm booking'),
+              child: const AppText('Confirm booking', localize: true),
             ),
           ],
         ),
@@ -305,18 +334,18 @@ class _EventBookingPageState extends State<EventBookingPage> {
   Future<String?> _chooseOnlineProvider() => showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Choose online payment'),
-      content: const Text('Select a payment provider to continue securely.'),
+      title: const AppText('Choose online payment', localize: true),
+      content: const AppText('Select a payment provider to continue securely.', localize: true),
       actions: [
         TextButton.icon(
           onPressed: () => Navigator.pop(dialogContext, 'gcash'),
           icon: const Icon(Icons.account_balance_wallet_rounded),
-          label: const Text('GCash'),
+          label: const AppText('GCash', localize: true),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
           icon: const Icon(Icons.payments_rounded),
-          label: const Text('PayMaya'),
+          label: const AppText('PayMaya', localize: true),
         ),
       ],
     ),
@@ -324,7 +353,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(SnackBar(content: AppText(message)));
   }
 
   @override
@@ -348,23 +377,23 @@ class _EventBookingPageState extends State<EventBookingPage> {
     final availability = '${widget.business['availability'] ?? ''}'.trim();
     return Scaffold(
       backgroundColor: widget.asCheckoutSheet
-          ? const Color(0xFFF8F9FF)
+          ? AppColors.page
           : AppColors.page,
       appBar: widget.asCheckoutSheet
           ? null
           : AppBar(
-              title: const Column(
+              title:  Column(
                 children: [
-                  Text('Book Event'),
+                  AppText('Book Event', localize: true),
                   SizedBox(height: 2),
-                  Text(
+                  AppText(
                     'Step 2 of 2 · Checkout',
                     style: TextStyle(
                       color: AppColors.muted,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
-                  ),
+                   localize: true,),
                 ],
               ),
               centerTitle: true,
@@ -393,26 +422,26 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         Icons.arrow_back_rounded,
                         () => Navigator.of(context).pop(),
                       ),
-                      const Expanded(
+                       Expanded(
                         child: Column(
                           children: [
-                            Text(
+                            AppText(
                               'Book Event',
                               style: TextStyle(
                                 color: AppColors.ink,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
                               ),
-                            ),
+                             localize: true,),
                             SizedBox(height: 2),
-                            Text(
+                            AppText(
                               'Step 2 of 2 • Checkout',
                               style: TextStyle(
                                 color: AppColors.muted,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                               ),
-                            ),
+                             localize: true,),
                           ],
                         ),
                       ),
@@ -421,15 +450,15 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         () => showDialog<void>(
                           context: context,
                           builder: (context) => AlertDialog(
-                            title: const Text('Event booking'),
-                            content: const Text(
+                            title: const AppText('Event booking', localize: true),
+                            content: const AppText(
                               'Choose your event details and payment method. '
                               'The venue merchant will review your request.',
-                            ),
+                             localize: true,),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(context),
-                                child: const Text('Got it'),
+                                child: const AppText('Got it', localize: true),
                               ),
                             ],
                           ),
@@ -443,9 +472,9 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   key: const ValueKey('event-booking-summary-card'),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE8ECF3)),
+                    border: Border.all(color: AppColors.border),
                     boxShadow: const [
                       BoxShadow(
                         color: Color(0x0D0F172A),
@@ -473,22 +502,22 @@ class _EventBookingPageState extends State<EventBookingPage> {
                                     color: AppColors.softOrangeAlt,
                                     borderRadius: BorderRadius.circular(99),
                                   ),
-                                  child: const Text(
+                                  child: AppText(
                                     'EVENT',
                                     style: TextStyle(
-                                      color: AppColors.orange,
+                                      color: AppColors.accent,
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: .7,
                                     ),
-                                  ),
+                                   localize: true,),
                                 ),
                                 const SizedBox(height: 7),
-                                Text(
+                                AppText(
                                   _venueName,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style:  TextStyle(
                                     color: AppColors.ink,
                                     fontSize: 19,
                                     fontWeight: FontWeight.w900,
@@ -498,15 +527,15 @@ class _EventBookingPageState extends State<EventBookingPage> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
+                          AppText(
                             'PHP ${_eventFee.toStringAsFixed(2)}',
                             textAlign: TextAlign.end,
-                            style: const TextStyle(
-                              color: AppColors.orange,
+                            style: TextStyle(
+                              color: AppColors.accent,
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
                             ),
-                          ),
+                           localize: true,),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -549,7 +578,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         ),
                       if (amenities.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        const Text(
+                         AppText(
                           'VENUE AMENITIES',
                           style: TextStyle(
                             color: AppColors.muted,
@@ -557,7 +586,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                             fontWeight: FontWeight.w800,
                             letterSpacing: .8,
                           ),
-                        ),
+                         localize: true,),
                         const SizedBox(height: 6),
                         Wrap(
                           spacing: 6,
@@ -565,7 +594,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                           children: amenities
                               .map(
                                 (amenity) => Chip(
-                                  label: Text(amenity),
+                                  label: AppText(amenity),
                                   visualDensity: VisualDensity.compact,
                                 ),
                               )
@@ -602,13 +631,13 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   isExpanded: true,
                   decoration: _inputDecoration(
                     'Select event type',
-                    prefixIcon: const Icon(Icons.celebration_outlined),
-                    labelText: 'Event type',
+                    prefixIcon: Icon(_eventTypeIcon(_eventType ?? '')),
+                    labelText: appLanguageText('Event type', 'Event type'),
                   ),
                   items: _eventTypes
                       .map(
                         (type) =>
-                            DropdownMenuItem(value: type, child: Text(type)),
+                            DropdownMenuItem(value: type, child: AppText(type)),
                       )
                       .toList(),
                   onChanged: _submitting
@@ -623,7 +652,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       child: OutlinedButton.icon(
                         onPressed: _submitting ? null : _chooseDate,
                         icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text(_dateValue),
+                        label: AppText(_dateValue),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -631,7 +660,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       child: OutlinedButton.icon(
                         onPressed: _submitting ? null : _chooseTime,
                         icon: const Icon(Icons.schedule_rounded),
-                        label: Text(_startTime.format(context)),
+                        label: AppText(_startTime.format(context)),
                       ),
                     ),
                   ],
@@ -644,13 +673,16 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   decoration: _inputDecoration(
                     'Event duration',
                     prefixIcon: const Icon(Icons.access_time_rounded),
-                    labelText: 'Duration',
+                    labelText: appLanguageText('Duration', 'Duration'),
                   ),
                   items: List.generate(
                     24,
                     (index) => DropdownMenuItem(
                       value: index + 1,
-                      child: Text('${index + 1} hour${index == 0 ? '' : 's'}'),
+                      child: AppText(
+                        index == 0 ? '1 hour' : '${index + 1} hours',
+                        localize: true,
+                      ),
                     ),
                   ),
                   onChanged: _submitting
@@ -669,7 +701,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   decoration: _inputDecoration(
                     guestRange,
                     prefixIcon: const Icon(Icons.groups_outlined),
-                    labelText: 'Expected guests',
+                    labelText: appLanguageText(
+                      'Expected guests',
+                      'Expected guests',
+                    ),
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
@@ -682,8 +717,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       style: ButtonStyle(
                         backgroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
-                              ? AppColors.orange
-                              : Colors.white,
+                              ? AppColors.accent
+                              : AppColors.surface,
                         ),
                         foregroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
@@ -691,18 +726,18 @@ class _EventBookingPageState extends State<EventBookingPage> {
                               : AppColors.ink,
                         ),
                         side: WidgetStateProperty.all(
-                          const BorderSide(color: AppColors.border),
+                           BorderSide(color: AppColors.border),
                         ),
                       ),
                       segments: [
                         ButtonSegment(
                           value: 'online',
-                          label: Text(compact ? 'Online' : 'Online payment'),
+                          label: AppText(compact ? 'Online' : 'Online payment'),
                           icon: const Icon(Icons.lock_rounded),
                         ),
                         const ButtonSegment(
                           value: 'cash_on_arrival',
-                          label: Text('COA'),
+                          label: AppText('COA', localize: true),
                           icon: Icon(Icons.payments_outlined),
                         ),
                       ],
@@ -716,11 +751,11 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   },
                 ),
                 const SizedBox(height: 8),
-                Text(
+                AppText(
                   _paymentMethod == 'cash_on_arrival'
                       ? 'Pay PHP ${_cashOnArrivalAmount.toStringAsFixed(2)} now and PHP ${_cashOnArrivalAmount.toStringAsFixed(2)} on arrival.'
                       : 'Pay securely online. Amount due: PHP ${_eventFee.toStringAsFixed(2)}.',
-                  style: const TextStyle(color: AppColors.muted),
+                  style:  TextStyle(color: AppColors.muted),
                 ),
                 const Divider(height: 24),
                 _paymentSummaryRow(
@@ -751,14 +786,14 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 if (_paymentMethod == 'cash_on_arrival')
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(
+                    child: AppText(
                       'Cash on Arrival is fixed at 50% of the event fee.',
                       style: TextStyle(
-                        color: Colors.green.shade700,
+                        color: AppColors.success,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
-                    ),
+                     localize: true,),
                   ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
@@ -771,7 +806,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.lock_outline_rounded),
-                  label: Text(
+                  label: AppText(
                     _submitting
                         ? 'Submitting...'
                         : _paymentMethod == 'online'
@@ -779,14 +814,14 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         : 'Continue · PHP ${_cashOnArrivalAmount.toStringAsFixed(2)}',
                   ),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.orange,
+                    backgroundColor: AppColors.accent,
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                     elevation: 5,
-                    shadowColor: const Color(0x55FF8200),
+                    shadowColor: AppColors.accent.withValues(alpha: .34),
                   ),
                 ),
               ],
@@ -805,7 +840,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
         Icon(icon, color: AppColors.muted, size: 18),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(value, style: const TextStyle(color: AppColors.muted)),
+          child: AppText(value, style:  TextStyle(color: AppColors.muted)),
         ),
       ],
     ),
@@ -818,7 +853,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
       onPressed: onPressed,
       padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
-        backgroundColor: const Color(0xFFF1F3F7),
+        backgroundColor: AppColors.surfaceVariant,
         foregroundColor: AppColors.ink,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
@@ -833,18 +868,18 @@ class _EventBookingPageState extends State<EventBookingPage> {
       children: [
         SizedBox(
           width: 92,
-          child: Text(
+          child: AppText(
             label,
-            style: const TextStyle(
+            style:  TextStyle(
               color: AppColors.muted,
               fontWeight: FontWeight.w600,
             ),
           ),
         ),
         Expanded(
-          child: Text(
+          child: AppText(
             value,
-            style: const TextStyle(
+            style:  TextStyle(
               color: AppColors.ink,
               fontWeight: FontWeight.w700,
             ),
@@ -856,10 +891,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
 
   Widget _sectionLabel(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 7),
-    child: Text(
+    child: AppText(
       text,
-      style: const TextStyle(
-        color: Color(0xFF68748A),
+      style:  TextStyle(
+        color: AppColors.muted,
         fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: .7,
@@ -872,15 +907,17 @@ class _EventBookingPageState extends State<EventBookingPage> {
     Widget? prefixIcon,
     String? labelText,
   }) => InputDecoration(
-    hintText: hint,
-    labelText: labelText,
+    hintText: appLanguageText(hint, hint),
+    labelText: labelText == null
+        ? null
+        : appLanguageText(labelText, labelText),
     prefixIcon: prefixIcon,
     filled: true,
-    fillColor: Colors.white,
+    fillColor: AppColors.surface,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppColors.border),
+      borderSide:  BorderSide(color: AppColors.border),
     ),
   );
 
@@ -893,7 +930,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
     child: Row(
       children: [
         Expanded(
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: AppColors.muted,
@@ -902,7 +939,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
           ),
         ),
         Flexible(
-          child: Text(
+          child: AppText(
             value,
             textAlign: TextAlign.end,
             style: TextStyle(

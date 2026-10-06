@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -81,6 +82,56 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({'session_api_token': 'test-token'});
     FlutterSecureStorage.setMockInitialValues({'session_api_token': 'test-token'});
+  });
+
+  testWidgets('News Feed and Saved skeletons fit a narrow phone width', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Future<void> verifyLoadingSkeleton({required bool savedOnly}) async {
+      final delayedFeed = Completer<http.Response>();
+      final loadingApi = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/news-feed') return delayedFeed.future;
+          if (request.url.path == '/api/businesses') {
+            return http.Response(
+              jsonEncode({'businesses': []}),
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NewsFeedPage(api: loadingApi, savedOnly: savedOnly),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('news-feed-loading-skeleton')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      delayedFeed.complete(
+        http.Response(
+          jsonEncode({'posts': []}),
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      );
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    }
+
+    await verifyLoadingSkeleton(savedOnly: false);
+    await verifyLoadingSkeleton(savedOnly: true);
   });
 
   testWidgets('News Feed filters open from the right and show active count', (
@@ -1137,6 +1188,32 @@ void main() {
     expect(find.text('Sports Courts'), findsOneWidget);
     expect(find.text('Most popular'), findsOneWidget);
     expect(find.text('Highest rate'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Discover what’s new')).dx,
+      closeTo(tester.getTopLeft(find.text('Most popular')).dx, 1),
+    );
+    expect(
+      find.text('Fresh updates, offers, and stories from local venues.'),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('news-feed-intro-info')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Fresh updates, offers, and stories from local venues.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('news-feed-section-info-most-popular')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Most hearts from users'), findsOneWidget);
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+
     await tester.scrollUntilVisible(
       find.text('All listed courts'),
       180,

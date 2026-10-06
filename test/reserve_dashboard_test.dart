@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/app_design_system.dart';
+import 'package:myapp/app_preferences.dart';
 import 'package:myapp/reserve_dashboard.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('booking options fit with minimal scrolling on a phone', (
@@ -72,5 +75,84 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Continue to Sports'), findsOneWidget);
+  });
+
+  testWidgets('booking types and fixed footer adapt to dark mode', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await AppPreferences.instance.update(
+      darkMode: true,
+      palette: AppPalette.violet,
+    );
+    addTearDown(
+      () => AppPreferences.instance.update(
+        darkMode: false,
+        palette: AppPalette.orange,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: const ReserveDashboardPage(initialSelection: 'Event'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final type in ['Sports', 'Event', 'Fitness & Wellness']) {
+      final bookingType = find.byKey(
+        ValueKey(
+          'reserve-option-${type == 'Fitness & Wellness' ? 'fitness' : type.toLowerCase()}',
+        ),
+      );
+      await tester.ensureVisible(bookingType);
+      await tester.pumpAndSettle();
+      final option = tester.widget<AnimatedContainer>(
+        find.byKey(ValueKey('reserve-option-surface-$type')),
+      );
+      expect(
+        (option.decoration! as BoxDecoration).color,
+        AppColors.darkSurface,
+      );
+    }
+    final selectedEvent = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('reserve-option-surface-Event')),
+    );
+    expect(
+      ((selectedEvent.decoration! as BoxDecoration).border! as Border)
+          .top
+          .color,
+      AppPalette.violet.color,
+    );
+    expect(
+      tester.widget<Text>(find.text('VIP Banquets & Lounges')).style!.color,
+      AppPalette.violet.color,
+    );
+    final continueButton = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('Continue to Event'),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    expect(
+      continueButton.style!.backgroundColor!.resolve({}),
+      AppPalette.violet.color,
+    );
+
+    final footer = tester.widget<Container>(
+      find.byKey(const ValueKey('reserve-footer')),
+    );
+    expect((footer.decoration! as BoxDecoration).color, AppColors.darkSurface);
+
+    expect(
+      tester
+          .widget<Text>(
+            find.text('Instant confirmation · No upfront payment required'),
+          )
+          .style!
+          .color,
+      AppColors.darkSuccess,
+    );
   });
 }

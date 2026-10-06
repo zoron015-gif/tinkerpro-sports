@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:myapp/app_design_system.dart';
+import '../../../../app_preferences.dart';
 
 class ActivityLogSearchField extends StatelessWidget {
   const ActivityLogSearchField({
@@ -23,30 +24,31 @@ class ActivityLogSearchField extends StatelessWidget {
       key: const ValueKey('activity-log-search'),
       controller: controller,
       onChanged: onChanged,
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
-        hintText: 'Search activity...',
+        hintText: appLanguageText('Search activity...', 'Search activity...'),
         prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: isEmpty
             ? null
             : IconButton(
-                tooltip: 'Clear search',
+                tooltip: appLanguageText('Clear search', 'Clear search'),
                 onPressed: onClear,
                 icon: const Icon(Icons.close_rounded),
               ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.surface,
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+          borderSide:  BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+          borderSide:  BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.orange),
+          borderSide: BorderSide(color: AppColors.accent),
         ),
       ),
     ),
@@ -93,7 +95,7 @@ class ActivityLogDateFilter extends StatelessWidget {
       if (selectedDate != null)
         IconButton(
           key: const ValueKey('activity-log-clear-date'),
-          tooltip: 'Clear date filter',
+          tooltip: appLanguageText('Clear date filter', 'Clear date filter'),
           onPressed: onClear,
           icon: const Icon(Icons.event_busy_rounded),
         ),
@@ -128,10 +130,10 @@ class ActivityLogMessage extends StatelessWidget {
         children: [
           Icon(icon, color: AppColors.muted, size: 42),
           const SizedBox(height: 12),
-          Text(
+          AppText(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted),
+            style:  TextStyle(color: AppColors.muted),
           ),
           if (supportRequestId != null &&
               supportRequestId!.trim().isNotEmpty) ...[
@@ -139,12 +141,12 @@ class ActivityLogMessage extends StatelessWidget {
             SelectableText(
               'Support reference: $supportRequestId',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              style:  TextStyle(color: AppColors.muted, fontSize: 12),
             ),
           ],
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 12),
-            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+            TextButton(onPressed: onAction, child: AppText(actionLabel!)),
           ],
         ],
       ),

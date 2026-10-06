@@ -6,11 +6,65 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
+import 'package:myapp/app_design_system.dart';
+import 'package:myapp/app_preferences.dart';
+import 'package:myapp/app_theme.dart';
 import 'package:myapp/event_booking_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('Event checkout surfaces and actions follow dark palette', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await AppPreferences.instance.update(
+      darkMode: true,
+      palette: AppPalette.violet,
+    );
+    addTearDown(
+      () => AppPreferences.instance.update(
+        darkMode: false,
+        palette: AppPalette.orange,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.configured(
+          darkMode: true,
+          accentColor: AppPalette.violet.color,
+        ),
+        home: EventBookingPage(
+          business: {
+            'id': 7,
+            'name': 'Garden Venue',
+            'eventTypes': ['Wedding'],
+            'eventFee': 10000,
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold).first).backgroundColor,
+      AppColors.darkPage,
+    );
+    final summary = tester.widget<Container>(
+      find.byKey(const ValueKey('event-booking-summary-card')),
+    );
+    expect((summary.decoration! as BoxDecoration).color, AppColors.darkSurface);
+    expect(
+      tester.widget<Text>(find.text('EVENT')).style!.color,
+      AppPalette.violet.color,
+    );
+    expect(
+      tester.widget<Text>(find.text('Garden Venue')).style!.color,
+      AppColors.darkInk,
+    );
+  });
 
   testWidgets('Event booking submits event type, schedule, and guest count', (
     tester,
@@ -89,6 +143,23 @@ void main() {
 
     expect(find.text('Garden Venue'), findsOneWidget);
     expect(find.text('Wedding'), findsOneWidget);
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    final eventTypeDropdown = find.byWidgetPredicate(
+      (widget) =>
+          widget is DropdownButtonFormField &&
+          widget.decoration.labelText == 'Event type',
+    );
+    await tester.ensureVisible(eventTypeDropdown);
+    await tester.tap(eventTypeDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Birthday').last);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.cake_rounded), findsOneWidget);
+    await tester.tap(eventTypeDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Wedding').last);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
     expect(find.text('Owner: Mara Santos'), findsOneWidget);
     expect(find.text('Venue type: Indoor garden hall'), findsOneWidget);
     expect(find.textContaining('Guest capacity: 50–250'), findsOneWidget);

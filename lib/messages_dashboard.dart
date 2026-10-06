@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'messages_service.dart';
 import 'auth_api.dart';
+import 'skeleton_loader.dart';
 import 'messages_ui.dart';
 import 'messages_conversation_list.dart';
 import 'messages_chat_view.dart';
@@ -17,10 +18,11 @@ import 'news_feed.dart';
 import 'customer_bookings_page.dart';
 import 'app_bottom_navigation.dart';
 import 'app_design_system.dart';
+import 'app_preferences.dart';
 
-const _messageBackground = AppColors.page;
-const _messageNavy = AppColors.navy;
-const _messageOrange = AppColors.orange;
+Color get _messageBackground => AppColors.page;
+Color get _messageInk => AppColors.ink;
+Color get _messageOrange => AppColors.accent;
 
 class MessagesDashboardPage extends StatefulWidget {
   const MessagesDashboardPage({
@@ -207,16 +209,16 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete message?'),
-        content: const Text('This message will be permanently deleted.'),
+        title: const AppText('Delete message?', localize: true),
+        content: const AppText('This message will be permanently deleted.', localize: true),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: const AppText('Cancel', localize: true),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
+            child: const AppText('Delete', localize: true),
           ),
         ],
       ),
@@ -279,19 +281,19 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (dialogContext) => AlertDialog(
-              title: const Text('Delete conversation for you?'),
-              content: const Text(
+              title: const AppText('Delete conversation for you?', localize: true),
+              content: const AppText(
                 'This removes the conversation from your inbox only. '
                 'Other participants will still have their messages.',
-              ),
+               localize: true,),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
+                  child: const AppText('Cancel', localize: true),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Delete for me'),
+                  child: const AppText('Delete for me', localize: true),
                 ),
               ],
             ),
@@ -407,15 +409,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    const AppText(
                       'New message',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
                       ),
-                    ),
+                     localize: true,),
                     const SizedBox(height: 4),
-                    Text(
+                    AppText(
                       selected.isEmpty
                           ? 'Choose who you want to communicate with'
                           : '${selected.length} recipient${selected.length == 1 ? '' : 's'} selected',
@@ -425,8 +427,9 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     TextField(
                       controller: _contactSearch,
                       onChanged: (_) => setDialogState(() {}),
+                      textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
-                        hintText: 'Search people',
+                        hintText: appLanguageText('Search people', 'Search people'),
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: _contactSearch.text.isEmpty
                             ? null
@@ -448,8 +451,8 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                       const SizedBox(height: 10),
                       TextField(
                         controller: titleController,
-                        decoration: const InputDecoration(
-                          labelText: 'Group name (optional)',
+                        decoration: InputDecoration(
+                          labelText: appLanguageText('Group name (optional)', 'Group name (optional)'),
                           prefixIcon: Icon(Icons.group_outlined),
                         ),
                       ),
@@ -457,6 +460,8 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     const SizedBox(height: 10),
                     Expanded(
                       child: ListView.builder(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
                         itemCount: contacts.length,
                         itemBuilder: (_, index) {
                           final contact = contacts[index];
@@ -465,13 +470,13 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: _avatar(contact, radius: 24),
-                            title: Text(
+                            title: AppText(
                               _displayName(contact),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            subtitle: Text(
+                            subtitle: AppText(
                               (contact['role'] as String? ?? 'user')
                                   .toUpperCase(),
                             ),
@@ -496,7 +501,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                           child: OutlinedButton(
                             onPressed: () =>
                                 Navigator.pop(dialogContext, false),
-                            child: const Text('Cancel'),
+                            child: const AppText('Cancel', localize: true),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -505,7 +510,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                             onPressed: selected.isEmpty
                                 ? null
                                 : () => Navigator.pop(dialogContext, true),
-                            child: Text(
+                            child: AppText(
                               selected.length > 1 ? 'Create group' : 'Message',
                             ),
                           ),
@@ -576,7 +581,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   void _show(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      SnackBar(content: AppText(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -594,20 +599,20 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         scrolledUnderElevation: 0,
         titleTextStyle: _role == 'merchant'
             ? AppTypography.pageTitle
-            : const TextStyle(
-                color: _messageNavy,
+            : TextStyle(
+                color: _messageInk,
                 fontSize: 23,
                 fontWeight: FontWeight.w800,
               ),
-        iconTheme: const IconThemeData(color: _messageNavy),
+        iconTheme: IconThemeData(color: _messageInk),
         leading: _showChat
             ? IconButton(
-                tooltip: 'Back to inbox',
+                tooltip: appLanguageText('Back to inbox', 'Back to inbox'),
                 onPressed: _backToInbox,
                 icon: const Icon(Icons.arrow_back_rounded),
               )
             : null,
-        title: Text(
+        title: AppText(
           _showChat && _selectedConversation != null
               ? _selectedConversationTitle()
               : 'Messages',
@@ -615,7 +620,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         actions: [
           if (!_showChat)
             PopupMenuButton<String>(
-              tooltip: 'Conversation settings',
+              tooltip: appLanguageText('Conversation settings', 'Conversation settings'),
               icon: const Icon(Icons.settings_outlined),
               onSelected: (value) {
                 switch (value) {
@@ -636,7 +641,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     children: [
                       Icon(Icons.forum_outlined, size: 20),
                       SizedBox(width: 12),
-                      Text('Chats'),
+                      AppText('Chats', localize: true),
                     ],
                   ),
                 ),
@@ -647,7 +652,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     children: [
                       Icon(Icons.archive_outlined, size: 20),
                       SizedBox(width: 12),
-                      Text('Archive'),
+                      AppText('Archive', localize: true),
                     ],
                   ),
                 ),
@@ -658,25 +663,51 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     children: [
                       Icon(Icons.block_outlined, size: 20),
                       SizedBox(width: 12),
-                      Text('Blocked'),
+                      AppText('Blocked', localize: true),
                     ],
                   ),
                 ),
               ],
             ),
           IconButton(
-            tooltip: 'New conversation',
+            tooltip: appLanguageText('New conversation', 'New conversation'),
             onPressed: _startConversation,
             icon: const Icon(Icons.people_outline_rounded),
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? ListView(
+              key: const ValueKey('messages-loading-skeleton'),
+              padding: const EdgeInsets.all(16),
+              children: [
+                const SkeletonBlock(height: 46, borderRadius: 14),
+                const SizedBox(height: 16),
+                for (var index = 0; index < 6; index++) ...[
+                  const Row(
+                    children: [
+                      SkeletonBlock(width: 46, height: 46, borderRadius: 23),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SkeletonBlock(width: 155, height: 15),
+                            SizedBox(height: 8),
+                            SkeletonBlock(height: 12),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (index < 5) const SizedBox(height: 18),
+                ],
+              ],
+            )
           : RefreshIndicator(
               onRefresh: _load,
               color: _messageOrange,
-              backgroundColor: Colors.white,
+              backgroundColor: AppColors.surface,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final wide = constraints.maxWidth >= 700;
@@ -712,7 +743,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                   );
                   final chat = _selectedConversation == null
                       ? const Center(
-                          child: Text('Select a conversation to start.'),
+                          child: AppText('Select a conversation to start.', localize: true),
                         )
                       : MessagesChatView(
                           messages: _messages,

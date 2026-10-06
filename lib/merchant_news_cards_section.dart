@@ -1,4 +1,9 @@
+import './app_design_system.dart';
+
 import 'package:flutter/material.dart';
+
+import 'skeleton_loader.dart';
+import 'app_preferences.dart';
 
 class MerchantNewsCardsSection extends StatelessWidget {
   const MerchantNewsCardsSection({
@@ -22,14 +27,24 @@ class MerchantNewsCardsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
+    if (loading) {
+      return const Column(
+        key: ValueKey('merchant-news-cards-loading-skeleton'),
+        children: [
+          SkeletonBlock(height: 112, borderRadius: 14),
+          SizedBox(height: 10),
+          SkeletonBlock(height: 112, borderRadius: 14),
+        ],
+      );
+    }
 
     final postsByBusiness = <int, Map<String, dynamic>>{};
     for (final post in posts) {
       final businessId = _postBusinessId(post);
       if (businessId != null) {
         final existing = postsByBusiness[businessId];
-        final published = '${post['status'] ?? ''}'.toLowerCase() == 'published';
+        final published =
+            '${post['status'] ?? ''}'.toLowerCase() == 'published';
         final existingPublished =
             '${existing?['status'] ?? ''}'.toLowerCase() == 'published';
         if (existing == null || (published && !existingPublished)) {
@@ -42,13 +57,16 @@ class MerchantNewsCardsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (businesses.isEmpty)
-          const Text(
+          AppText(
             'Add a business first to create its News Card.',
-            style: TextStyle(color: Color(0xFF68748A)),
-          )
+            style: TextStyle(color: AppColors.muted),
+           localize: true,)
         else
           for (final business in businesses) ...[
-            if (!_isCompletePost(postsByBusiness[_businessId(business)], business))
+            if (!_isCompletePost(
+              postsByBusiness[_businessId(business)],
+              business,
+            ))
               _incompleteCard(business),
             if (_isCompletePost(
               postsByBusiness[_businessId(business)],
@@ -64,25 +82,26 @@ class MerchantNewsCardsSection extends StatelessWidget {
   Widget _incompleteCard(Map<String, dynamic> business) {
     final type = _businessType(business);
     return Card(
-      color: const Color(0xFFFFF8F0),
+      color: AppColors.softOrangeAlt,
       child: ListTile(
         leading: const Icon(Icons.edit_note_rounded, color: Color(0xFFFF8200)),
-        title: Text('${business['name'] ?? 'Business'}'),
-        subtitle: Text(
+        title: AppText('${business['name'] ?? 'Business'}'),
+        subtitle: AppText(
           '${_businessLabel(type, business['category'])}\n'
           'News Card incomplete — add a short venue update.',
         ),
         isThreeLine: true,
         trailing: FilledButton(
           onPressed: () => onComplete(business),
-          child: const Text('Complete'),
+          child: const AppText('Complete', localize: true),
         ),
       ),
     );
   }
 
   Widget _newsCard(Map<String, dynamic> post, Map<String, dynamic> business) {
-    final published = '${post['status'] ?? 'draft'}'.toLowerCase() == 'published';
+    final published =
+        '${post['status'] ?? 'draft'}'.toLowerCase() == 'published';
     final type = _businessType(business);
     return Card(
       child: ListTile(
@@ -90,12 +109,10 @@ class MerchantNewsCardsSection extends StatelessWidget {
           published ? Icons.check_circle_rounded : Icons.pending_outlined,
           color: published ? const Color(0xFF15803D) : const Color(0xFFFF8200),
         ),
-        title: Text('${post['title'] ?? 'News post'}'),
-        subtitle: Text(
+        title: AppText('${post['title'] ?? 'News post'}'),
+        subtitle: AppText(
           '${_businessLabel(type, business['category'])}\n'
-          '${published
-              ? 'PUBLISHED · BOOKING CARD AVAILABLE'
-              : 'DRAFT · Publish to show this Booking Card'}\n'
+          '${published ? 'PUBLISHED · BOOKING CARD AVAILABLE' : 'DRAFT · Publish to show this Booking Card'}\n'
           '${post['body'] ?? ''}',
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
@@ -107,7 +124,7 @@ class MerchantNewsCardsSection extends StatelessWidget {
             if (!published)
               FilledButton(
                 onPressed: () => onPublish(post),
-                child: const Text('Publish'),
+                child: const AppText('Publish', localize: true),
               ),
             PopupMenuButton<String>(
               onSelected: (value) {
@@ -115,8 +132,8 @@ class MerchantNewsCardsSection extends StatelessWidget {
                 if (value == 'delete') onDelete(post);
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('Edit')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
+                PopupMenuItem(value: 'edit', child: AppText('Edit', localize: true)),
+                PopupMenuItem(value: 'delete', child: AppText('Delete', localize: true)),
               ],
             ),
           ],

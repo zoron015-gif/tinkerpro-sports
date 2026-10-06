@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'app_session.dart';
+import 'app_design_system.dart';
 import 'auth_api.dart';
 import 'messages_dashboard.dart';
 import 'profile_dashboard.dart';
@@ -11,6 +12,8 @@ import 'app_bottom_navigation.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
 import 'models/booking.dart';
+import 'skeleton_loader.dart';
+import 'app_preferences.dart';
 
 class CustomerBookingsPage extends StatefulWidget {
   const CustomerBookingsPage({
@@ -211,12 +214,12 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: AppColors.page,
       appBar: AppBar(
-        title: const Text('Bookings'),
-        backgroundColor: const Color(0xFFF7F9FC),
+        title: const AppText('Bookings', localize: true),
+        backgroundColor: AppColors.page,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: const Color(0xFF101B33),
+        foregroundColor: AppColors.ink,
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
@@ -224,14 +227,55 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         future: _bookings,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return ListView(
+              key: const ValueKey('customer-bookings-loading-skeleton'),
+              padding: const EdgeInsets.all(16),
+              children: [
+                for (var index = 0; index < 3; index++) ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: AppColors.surfaceVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SkeletonBlock(
+                          height: 148,
+                          borderRadius: 12,
+                        ),
+                        const SizedBox(height: 14),
+                        const SkeletonBlock(width: 180, height: 18),
+                        const SizedBox(height: 8),
+                        const SkeletonBlock(width: 125, height: 13),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: SkeletonBlock(height: 38, borderRadius: 12),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: SkeletonBlock(height: 38, borderRadius: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (index < 2) const SizedBox(height: 14),
+                ],
+              ],
+            );
           }
           if (snapshot.hasError) {
             return ListView(
               children: [
                 Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Text('Could not load bookings: ${snapshot.error}'),
+                  child: AppText('Could not load bookings: ${snapshot.error}', localize: true),
                 ),
               ],
             );
@@ -261,19 +305,19 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               children: [
                 if (_messageCountError != null)
                   MaterialBanner(
-                    backgroundColor: const Color(0xFFFFF1E3),
+                    backgroundColor: AppColors.softStatus,
                     leading: const Icon(
                       Icons.sync_problem_rounded,
                       color: Color(0xFFB85C00),
                     ),
-                    content: Text(
+                    content: AppText(
                       _messageCountError!,
-                      style: const TextStyle(color: Color(0xFF101B33)),
+                      style:  TextStyle(color: AppColors.ink),
                     ),
                     actions: [
                       TextButton(
                         onPressed: _refresh,
-                        child: const Text('Retry'),
+                        child: const AppText('Retry', localize: true),
                       ),
                     ],
                   ),
@@ -287,12 +331,12 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                         : const SizedBox.shrink(),
                   ),
                 Material(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   child: TabBar(
                     dividerColor: Colors.transparent,
-                    labelColor: const Color(0xFF192B50),
-                    unselectedLabelColor: const Color(0xFF68748A),
-                    indicatorColor: const Color(0xFFFF8200),
+                    labelColor: AppColors.ink,
+                    unselectedLabelColor: AppColors.muted,
+                    indicatorColor: AppColors.accent,
                     indicatorWeight: 3,
                     tabs: [
                       Tab(text: 'Pending (${pending.length})'),
@@ -409,7 +453,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ? const Color(0xFFE7F6EC)
           : isInactive
           ? const Color(0xFFFEE4E2)
-          : const Color(0xFFFFF1E3),
+          : AppColors.softStatus,
       leading: Icon(
         isCompleted
             ? Icons.check_circle_rounded
@@ -417,10 +461,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ? Icons.event_busy_rounded
             : Icons.event_available_rounded,
         color: isCompleted
-            ? Colors.green.shade700
+            ? AppColors.success
             : isInactive
-            ? const Color(0xFFB42318)
-            : const Color(0xFFFF8200),
+            ? AppColors.errorText
+            : AppColors.accent,
       ),
       content: InkWell(
         key: const ValueKey('booking-status-banner-content'),
@@ -428,25 +472,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Text(
+          child: AppText(
             isCompleted || isInactive
                 ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
                       '${_statusLabel(status).toLowerCase()}.'
                 : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
                       'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
-            style: const TextStyle(
-              color: Color(0xFF101B33),
+            style:  TextStyle(
+              color: AppColors.ink,
               fontWeight: FontWeight.w700,
             ),
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: _refresh, child: const Text('Refresh')),
+        TextButton(onPressed: _refresh, child: const AppText('Refresh', localize: true)),
         TextButton(
           key: const ValueKey('booking-status-banner-dismiss'),
           onPressed: _dismissBookingStatusBanner,
-          child: const Text('Dismiss'),
+          child: const AppText('Dismiss', localize: true),
         ),
       ],
     );
@@ -460,7 +504,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 const SizedBox(height: 180),
-                Center(child: Text(emptyMessage)),
+                Center(child: AppText(emptyMessage)),
               ],
             )
           : ListView.separated(
@@ -499,9 +543,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E7EF)),
+        border: Border.all(color: AppColors.border),
         boxShadow: const [
           BoxShadow(
             color: Color(0x0D192B50),
@@ -523,8 +567,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   top: 12,
                   child: _imageBadge(
                     type.isEmpty ? 'Booking' : type,
-                    Colors.white.withValues(alpha: .94),
-                    const Color(0xFF101B33),
+                    AppColors.surface.withValues(alpha: .94),
+                    AppColors.ink,
                   ),
                 ),
                 if (category.isNotEmpty)
@@ -533,7 +577,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     top: 12,
                     child: _imageBadge(
                       category,
-                      const Color(0xFFFF8200),
+                      AppColors.accent,
                       Colors.white,
                     ),
                   ),
@@ -549,20 +593,20 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
+                      child: AppText(
                         '${booking['venueName'] ?? 'Venue'}',
-                        style: const TextStyle(
+                        style:  TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF101B33),
+                          color: AppColors.ink,
                         ),
-                      ),
+                       localize: true,),
                     ),
                     _statusPill(status),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
+                AppText(
                   _statusGuidance(status),
                   key: ValueKey('booking-status-guidance-$status'),
                   style: TextStyle(
@@ -585,10 +629,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   child: OutlinedButton.icon(
                     onPressed: () => _showBookingInfo(booking),
                     icon: const Icon(Icons.visibility_outlined, size: 18),
-                    label: const Text('View booking details'),
+                    label: const AppText('View booking details', localize: true),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF192B50),
-                      side: const BorderSide(color: Color(0xFFE2E7EF)),
+                      foregroundColor: AppColors.ink,
+                      side:  BorderSide(color: AppColors.border),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -654,7 +698,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         color: color.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
+      child: AppText(
         _statusLabel(status),
         style: TextStyle(
           fontSize: 11,
@@ -673,7 +717,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Text(
+          child: AppText(
             text,
             style: TextStyle(
               color: foreground,
@@ -697,14 +741,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               ? Icons.star_outline_rounded
               : Icons.star_rounded,
         ),
-        label: Text(
+        label: AppText(
           existingRating == null
               ? 'Rate this booking'
               : 'You rated this $existingRating/5',
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFFF8200),
-          side: const BorderSide(color: Color(0xFFFFB266)),
+          foregroundColor: AppColors.accent,
+          side: BorderSide(color: AppColors.accent.withValues(alpha: .55)),
           padding: const EdgeInsets.symmetric(vertical: 11),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -722,7 +766,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     if (!mounted || submitted != true) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Your rating was submitted.')));
+    ).showSnackBar(const SnackBar(content: AppText('Your rating was submitted.', localize: true)));
     await _refresh();
   }
 
@@ -730,27 +774,27 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(
-      color: const Color(0xFFF7F9FC),
+      color: AppColors.page,
       borderRadius: BorderRadius.circular(13),
       border: Border.all(color: const Color(0xFFE7EBF1)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           label.toUpperCase(),
-          style: const TextStyle(
-            color: Color(0xFF68748A),
+          style:  TextStyle(
+            color: AppColors.muted,
             fontSize: 10,
             fontWeight: FontWeight.w800,
             letterSpacing: .7,
           ),
         ),
         const SizedBox(height: 3),
-        Text(
+        AppText(
           value,
-          style: const TextStyle(
-            color: Color(0xFF101B33),
+          style:  TextStyle(
+            color: AppColors.ink,
             fontSize: 13,
             height: 1.35,
             fontWeight: FontWeight.w700,
@@ -786,14 +830,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => Scaffold(
-          backgroundColor: const Color(0xFFF7F9FC),
+          backgroundColor: AppColors.page,
           appBar: AppBar(
-            title: const Text(
+            title: const AppText(
               'Booking details',
               style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-            backgroundColor: const Color(0xFFF7F9FC),
-            foregroundColor: const Color(0xFF101B33),
+             localize: true,),
+            backgroundColor: AppColors.page,
+            foregroundColor: AppColors.ink,
             surfaceTintColor: Colors.transparent,
             elevation: 0,
             scrolledUnderElevation: 0,
@@ -819,7 +863,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
+        color: AppColors.page,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
@@ -831,21 +875,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           Row(
             children: [
               Expanded(
-                child: Text(
+                child: AppText(
                   '${booking['venueName'] ?? 'Venue'}',
-                  style: const TextStyle(
+                  style:  TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF101B33),
+                    color: AppColors.ink,
                   ),
-                ),
+                 localize: true,),
               ),
               const SizedBox(width: 8),
               _statusPill(status),
             ],
           ),
           const SizedBox(height: 6),
-          Text(
+          AppText(
             _statusGuidance(status),
             style: TextStyle(
               color: _statusColor(status),
@@ -855,92 +899,92 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(
+          AppText(
             _scheduleLabel(booking),
-            style: const TextStyle(
+            style:  TextStyle(
               fontSize: 15,
-              color: Color(0xFF101B33),
+              color: AppColors.ink,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 2),
-          Text(
+          AppText(
             '${fitnessPlanType.isNotEmpty
                 ? 'First visit'
                 : isEvent
                 ? '${booking['players']} guests'
                 : '${booking['players']} players'} · '
             '${booking['paymentMethod']}',
-            style: const TextStyle(fontSize: 14, color: Color(0xFF4C5B72)),
-          ),
+            style: TextStyle(fontSize: 14, color: AppColors.muted),
+           localize: true,),
           if (isEvent && eventType.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
+            AppText(
               'Event: $eventType',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFFB85B00),
+                color: AppColors.warning,
               ),
-            ),
+             localize: true,),
           ],
           if (fitnessPlanType.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(
+            AppText(
               '${booking['fitnessCategory']} · '
                       '${booking['fitnessPlanType']}'
                   .toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF2A9D72),
+                color: AppColors.success,
               ),
-            ),
-            Text(
+             localize: true,),
+            AppText(
               'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
               '${'${booking['fitnessCoachName'] ?? ''}'.isEmpty ? '' : '\nCoach: ${booking['fitnessCoachName']} · PHP ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}'}',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF4C5B72)),
-            ),
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
+             localize: true,),
           ],
           const SizedBox(height: 10),
-          Text(
+          AppText(
             'Total: PHP ${total.toStringAsFixed(2)}',
-            style: const TextStyle(
+            style:  TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF101B33),
+              color: AppColors.ink,
             ),
-          ),
+           localize: true,),
           if (_amount(booking['extraPlayerCharge']) > 0)
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Text(
+              child: AppText(
                 'Includes extra-player fee: PHP '
                 '${_amount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF4C5B72)),
-              ),
+                style: TextStyle(fontSize: 13, color: AppColors.muted),
+               localize: true,),
             ),
           const SizedBox(height: 2),
-          Text(
+          AppText(
             '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Downpayment'}: PHP '
             '${fitnessPlanType.isNotEmpty ? total.toStringAsFixed(2) : downpayment.toStringAsFixed(2)}',
-            style: const TextStyle(
+            style:  TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF101B33),
+              color: AppColors.ink,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 14),
           const Divider(height: 1),
           const SizedBox(height: 12),
-          const Text(
+           AppText(
             'Venue information',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF101B33),
+              color: AppColors.ink,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 8),
           _venueDetail(
             Icons.person_outline_rounded,
@@ -986,14 +1030,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             'PHP ${_amount(booking['pricePerHour'] ?? booking['venuePricePerHour']).toStringAsFixed(2)} / hr',
           ),
           const SizedBox(height: 12),
-          const Text(
+           AppText(
             'Booking information you entered',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF101B33),
+              color: AppColors.ink,
             ),
-          ),
+           localize: true,),
           const SizedBox(height: 8),
           _bookingField('Date', booking['date']),
           _bookingField('Start time', _formatTime(booking['startTime'])),
@@ -1055,12 +1099,12 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF68748A)),
+          Icon(icon, size: 16, color: AppColors.muted),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: AppText(
               text,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF4C5B72)),
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
         ],
@@ -1087,18 +1131,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         children: [
           SizedBox(
             width: 116,
-            child: Text(
+            child: AppText(
               label,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF68748A)),
+              style:  TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Expanded(
-            child: Text(
+            child: AppText(
               text,
-              style: const TextStyle(
+              style:  TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF101B33),
+                color: AppColors.ink,
               ),
             ),
           ),
@@ -1213,21 +1257,24 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text('Rate ${widget.booking.venue.name}'),
+    title: AppText('Rate ${widget.booking.venue.name}', localize: true),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
+         AppText(
           'How was your completed booking?',
-          style: TextStyle(color: Color(0xFF68748A)),
-        ),
+          style: TextStyle(color: AppColors.muted),
+         localize: true,),
         const SizedBox(height: 14),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             for (var star = 1; star <= 5; star++)
               IconButton(
-                tooltip: '$star star${star == 1 ? '' : 's'}',
+                tooltip: appLanguageText(
+                  'Rate $star out of 5 stars',
+                  'Rate $star out of 5 stars',
+                ),
                 onPressed: _submitting
                     ? null
                     : () => setState(() => _rating = star),
@@ -1244,11 +1291,11 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         TextField(
           controller: _comment,
           maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Comment (optional)'),
+          decoration: InputDecoration(labelText: appLanguageText('Comment (optional)', 'Comment (optional)')),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(
+          AppText(
             _error!,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
@@ -1258,11 +1305,11 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
     actions: [
       TextButton(
         onPressed: _submitting ? null : () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
+        child: const AppText('Cancel', localize: true),
       ),
       FilledButton(
         onPressed: _rating == 0 || _submitting ? null : _submit,
-        child: const Text('Submit rating'),
+        child: const AppText('Submit rating', localize: true),
       ),
     ],
   );

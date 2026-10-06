@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../auth_api.dart';
 import '../../../app_design_system.dart';
+import '../../../app_preferences.dart';
 import '../application/auth_service.dart';
 
 part 'password_reset_page.dart';
@@ -12,23 +13,17 @@ part 'email_verification_page.dart';
 part 'auth_widgets.dart';
 
 const _navy = AppColors.navy;
-const _ink = AppColors.ink;
-const _orange = AppColors.orange;
-const _page = AppColors.page;
-const _muted = AppColors.muted;
+Color get _ink => AppColors.ink;
+Color get _orange => AppColors.accent;
+Color get _page => AppColors.page;
+Color get _muted => AppColors.muted;
 const _authSectionGap = 12.0;
 const _authFieldGap = 8.0;
 const _authPrimaryButtonHeight = 48.0;
-const _authHeadingStyle = TextStyle(
-  color: _ink,
-  fontSize: 27,
-  fontWeight: FontWeight.w900,
-);
-const _authDescriptionStyle = TextStyle(
-  color: _muted,
-  fontSize: 13,
-  height: 1.4,
-);
+TextStyle get _authHeadingStyle =>
+    TextStyle(color: _ink, fontSize: 27, fontWeight: FontWeight.w900);
+TextStyle get _authDescriptionStyle =>
+    TextStyle(color: _muted, fontSize: 13, height: 1.4);
 const _authPrimaryButtonTextStyle = TextStyle(
   fontSize: 15,
   fontWeight: FontWeight.w900,
@@ -70,7 +65,15 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), backgroundColor: _navy));
+        .showSnackBar(SnackBar(content: AppText(message), backgroundColor: _navy));
+  }
+
+  Future<void> _updateLanguage(String languageCode) async {
+    try {
+      await AppPreferences.instance.update(languageCode: languageCode);
+    } on Exception catch (error) {
+      if (mounted) _showMessage('Could not save your language setting: $error');
+    }
   }
 
   Future<void> _submit() async {
@@ -81,16 +84,26 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
 
     final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
-    if (!email.contains('@') || password.length < 8) {
-      _showMessage(
-        'Enter a valid email and a password with at least 8 characters.',
-      );
+    if (email.isEmpty) {
+      _showMessage('Please enter your email address.');
+      return;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      _showMessage('That email address doesn’t look right. Please check it.');
+      return;
+    }
+    if (password.isEmpty) {
+      _showMessage('Please enter your password.');
+      return;
+    }
+    if (password.length < 8) {
+      _showMessage('Choose a password with at least 8 characters.');
       return;
     }
 
     if (_mode == _AuthMode.register &&
         password != _confirmPasswordController.text) {
-      _showMessage('Passwords do not match.');
+      _showMessage('Those passwords don’t match. Please try again.');
       return;
     }
 
@@ -208,36 +221,109 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Choose your TinkerPro account type'),
-          content: RadioGroup<_AccountRole>(
-            groupValue: selectedRole,
-            onChanged: (value) {
-              if (value != null) setDialogState(() => selectedRole = value);
-            },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const RadioListTile<_AccountRole>(
-                  value: _AccountRole.customer,
-                  title: Text('Customer'),
-                  subtitle: Text('Discover and book experiences'),
-                ),
-                const RadioListTile<_AccountRole>(
-                  value: _AccountRole.merchant,
-                  title: Text('Merchant'),
-                  subtitle: Text('List and manage your business'),
-                ),
-              ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          title: AppText(
+            'How will you use TinkerPro?',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
             ),
+           localize: true,),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _RoleCard(
+                icon: Icons.person_rounded,
+                title: 'Client',
+                selected: selectedRole == _AccountRole.customer,
+                onTap: () =>
+                    setDialogState(() => selectedRole = _AccountRole.customer),
+                onNoticeTap: () => showDialog<void>(
+                  context: context,
+                  builder: (noticeContext) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    title: AppText(
+                      'Client account',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                     localize: true,),
+                    content: AppText(
+                      'Discover and book experiences.',
+                      style: TextStyle(color: _muted, height: 1.4),
+                     localize: true,),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(noticeContext).pop(),
+                        child: const AppText('Got it', localize: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _RoleCard(
+                icon: Icons.storefront_rounded,
+                title: 'Merchant',
+                selected: selectedRole == _AccountRole.merchant,
+                onTap: () =>
+                    setDialogState(() => selectedRole = _AccountRole.merchant),
+                onNoticeTap: () => showDialog<void>(
+                  context: context,
+                  builder: (noticeContext) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    title: AppText(
+                      'Merchant dashboard',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                     localize: true,),
+                    content: AppText(
+                      'Track sales, customers, and venue performance.',
+                      style: TextStyle(color: _muted, height: 1.4),
+                     localize: true,),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(noticeContext).pop(),
+                        child: const AppText('Got it', localize: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              style: TextButton.styleFrom(foregroundColor: _muted),
+              child: const AppText('Cancel', localize: true),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(selectedRole),
-              child: const Text('Continue'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              child: const AppText('Continue', localize: true),
             ),
           ],
         ),
@@ -273,15 +359,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                 ),
                 const DecoratedBox(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0x150A1730),
-                        Color(0x280A1730),
-                        Color(0xB30A1730),
-                      ],
-                    ),
+                    gradient: AppGradients.authBackdropOverlay,
                   ),
                 ),
               ],
@@ -300,14 +378,73 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
             ),
           ),
           Positioned(
+            top: safeTop + 8,
+            right: 12,
+            child: PopupMenuButton<String>(
+              key: const ValueKey('auth-language-selector'),
+              tooltip: appLanguageText('Choose language', 'Pumili ng wika'),
+              onSelected: _updateLanguage,
+              itemBuilder: (context) => [
+                for (final language in AppLanguage.values)
+                  PopupMenuItem(
+                    value: language.code,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: AppText(
+                            '${language.nativeName} (${language.englishName})',
+                           localize: true,),
+                        ),
+                        if (language.code ==
+                            AppPreferences.instance.languageCode)
+                          const Icon(Icons.check_rounded, size: 18),
+                      ],
+                    ),
+                  ),
+              ],
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: .24),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.language_rounded,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+                      const SizedBox(width: 6),
+                      AppText(
+                        AppLanguage.fromCode(
+                          AppPreferences.instance.languageCode,
+                        ).nativeName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
             top: headerHeight * .69,
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
               key: const ValueKey('auth-form-panel'),
-              decoration: const BoxDecoration(
-                color: Colors.white,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
                 boxShadow: [
                   BoxShadow(
@@ -340,17 +477,25 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         ),
                         const SizedBox(height: 4),
                         Center(
-                          child: Text(
-                            isLogin ? 'Welcome back' : 'Create your account',
+                          child: AppText(
+                            appLanguageText(
+                              isLogin ? 'Welcome back' : 'Create your account',
+                              isLogin ? 'Maligayang pagbabalik' : 'Gumawa ng account',
+                            ),
                             style: _authHeadingStyle,
                           ),
                         ),
                         const SizedBox(height: 3),
                         Center(
-                          child: Text(
-                            isLogin
-                                ? 'Sign in to book sports, events, and local experiences.'
-                                : 'Join the marketplace for sports, events, and local businesses.',
+                          child: AppText(
+                            appLanguageText(
+                              isLogin
+                                  ? 'Sign in to book sports, events, and local experiences.'
+                                  : 'Join the marketplace for sports, events, and local businesses.',
+                              isLogin
+                                  ? 'Mag-sign in upang mag-book ng sports, event, at lokal na karanasan.'
+                                  : 'Sumali sa marketplace para sa sports, event, at lokal na negosyo.',
+                            ),
                             style: _authDescriptionStyle,
                             textAlign: TextAlign.center,
                           ),
@@ -362,8 +507,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         ),
                         const SizedBox(height: _authSectionGap),
                         if (!isLogin) ...[
-                          const Text(
-                            'How will you use TinkerPro?',
+                          AppText(
+                            appLanguageText(
+                              'How will you use TinkerPro?',
+                              'Paano mo gagamitin ang TinkerPro?',
+                            ),
                             style: TextStyle(
                               color: _ink,
                               fontSize: 13,
@@ -376,8 +524,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                               Expanded(
                                 child: _RoleCard(
                                   icon: Icons.person_rounded,
-                                  title: 'Client',
-                                  subtitle: 'Discover and book',
+                                  title: appLanguageText('Client', 'Customer'),
+                                  subtitle: appLanguageText(
+                                    'Discover and book',
+                                    'Tuklasin at mag-book',
+                                  ),
                                   selected: _role == _AccountRole.customer,
                                   onTap: () => setState(
                                     () => _role = _AccountRole.customer,
@@ -388,8 +539,11 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                               Expanded(
                                 child: _RoleCard(
                                   icon: Icons.storefront_rounded,
-                                  title: 'Merchant',
-                                  subtitle: 'List and grow your business',
+                                  title: appLanguageText('Merchant', 'Merchant'),
+                                  subtitle: appLanguageText(
+                                    'List and grow your business',
+                                    'Ilista at palaguin ang negosyo',
+                                  ),
                                   selected: _role == _AccountRole.merchant,
                                   onTap: () => setState(
                                     () => _role = _AccountRole.merchant,
@@ -401,7 +555,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           const SizedBox(height: 12),
                         ],
                         _AuthField(
-                          label: 'Email address',
+                          label: appLanguageText('Email address', 'Email address'),
                           hint: 'you@example.com',
                           icon: Icons.mail_outline_rounded,
                           keyboardType: TextInputType.emailAddress,
@@ -409,10 +563,15 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         ),
                         const SizedBox(height: _authFieldGap),
                         _AuthField(
-                          label: 'Password',
-                          hint: isLogin
-                              ? 'Enter your password'
-                              : 'At least 8 characters',
+                          label: appLanguageText('Password', 'Password'),
+                          hint: appLanguageText(
+                            isLogin
+                                ? 'Enter your password'
+                                : 'At least 8 characters',
+                            isLogin
+                                ? 'Ilagay ang iyong password'
+                                : 'Hindi bababa sa 8 character',
+                          ),
                           icon: Icons.lock_outline_rounded,
                           obscureText: _obscurePassword,
                           controller: _passwordController,
@@ -430,8 +589,14 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         if (!isLogin) ...[
                           const SizedBox(height: _authFieldGap),
                           _AuthField(
-                            label: 'Confirm password',
-                            hint: 'Repeat your password',
+                            label: appLanguageText(
+                              'Confirm password',
+                              'Kumpirmahin ang password',
+                            ),
+                            hint: appLanguageText(
+                              'Repeat your password',
+                              'Ulitin ang iyong password',
+                            ),
                             icon: Icons.verified_user_outlined,
                             obscureText: true,
                             controller: _confirmPasswordController,
@@ -448,13 +613,17 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                         ? null
                                         : () => Navigator.of(context).push(
                                             MaterialPageRoute(
-                                              builder: (_) =>
-                                                  PasswordResetPage(
-                                                    service: _authService,
-                                                  ),
+                                              builder: (_) => PasswordResetPage(
+                                                service: _authService,
+                                              ),
                                             ),
                                           ),
-                                    child: const Text('Forgot password?'),
+                                    child: AppText(
+                                      appLanguageText(
+                                        'Forgot password?',
+                                        'Nakalimutan ang password?',
+                                      ),
+                                    ),
                                   ),
                                 )
                               : const SizedBox.expand(),
@@ -484,17 +653,25 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : Text(isLogin ? 'Sign in' : 'Create account'),
+                                : AppText(
+                                    appLanguageText(
+                                      isLogin ? 'Sign in' : 'Create account',
+                                      isLogin ? 'Mag-sign in' : 'Gumawa ng account',
+                                    ),
+                                  ),
                           ),
                         ),
                         const SizedBox(height: 12),
                         const _OrDivider(),
                         const SizedBox(height: 8),
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(bottom: 6),
                           child: Center(
-                            child: Text(
-                              'Continue securely with',
+                            child: AppText(
+                              appLanguageText(
+                                'Continue securely with',
+                                'Magpatuloy nang ligtas gamit ang',
+                              ),
                               style: TextStyle(
                                 color: _muted,
                                 fontSize: 12,
@@ -504,7 +681,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           ),
                         ),
                         _SocialButton(
-                          label: 'Continue with Google',
+                          label: appLanguageText(
+                            'Continue with Google',
+                            'Magpatuloy gamit ang Google',
+                          ),
                           logoAsset: 'assets/google_logo.png',
                           onTap: _signInWithGoogle,
                         ),
@@ -524,11 +704,16 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                   ? _AuthMode.register
                                   : _AuthMode.login,
                             ),
-                            child: Text(
-                              isLogin
-                                  ? 'New to TinkerPro? Register'
-                                  : 'Already have an account? Sign in',
-                              style: const TextStyle(
+                            child: AppText(
+                              appLanguageText(
+                                isLogin
+                                    ? 'New to TinkerPro? Register'
+                                    : 'Already have an account? Sign in',
+                                isLogin
+                                    ? 'Bago sa TinkerPro? Mag-register'
+                                    : 'May account ka na? Mag-sign in',
+                              ),
+                              style: TextStyle(
                                 color: _orange,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w900,

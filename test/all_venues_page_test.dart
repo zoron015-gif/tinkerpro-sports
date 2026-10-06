@@ -5,6 +5,42 @@ import 'package:myapp/all_venues_page.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('search filters venues and the result list dismisses keyboard on scroll', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AllVenuesPage(
+          title: 'Most popular',
+          posts: [
+            {'businessName': 'Basketball court', 'tags': 'Parking'},
+            {'businessName': 'Tennis court', 'tags': 'Store'},
+          ],
+          cardBuilder: (post) => SizedBox(
+            height: 140,
+            child: Card(child: Text('${post['businessName']}')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final resultList = tester.widget<ListView>(
+      find.byKey(const ValueKey('all-venues-list')),
+    );
+    expect(
+      resultList.keyboardDismissBehavior,
+      ScrollViewKeyboardDismissBehavior.onDrag,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('all-venues-search')),
+      'basketball',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Basketball court'), findsOneWidget);
+    expect(find.text('Tennis court'), findsNothing);
+  });
+
   testWidgets('All Venues header collapses while search stays pinned', (
     tester,
   ) async {
@@ -32,6 +68,12 @@ void main() {
 
     expect(find.text('Courts with the most hearts'), findsOneWidget);
     expect(find.byKey(const ValueKey('all-venues-search')), findsOneWidget);
+    expect(find.text('Browse every venue in this collection.'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('all-venues-info')));
+    await tester.pumpAndSettle();
+    expect(find.text('Browse every venue in this collection.'), findsOneWidget);
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
 
     await tester.drag(
       find.byKey(const ValueKey('all-venues-list')),

@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
+import 'package:myapp/app_design_system.dart';
+import 'package:myapp/app_preferences.dart';
 import 'package:myapp/customer_bookings_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -54,6 +56,65 @@ void main() {
           .where((uri) => uri.path == '/api/messages/conversations')
           .map((uri) => uri.queryParameters['businessType']),
       ['Fitness'],
+    );
+  });
+
+  testWidgets('booking tabs and card accents use the selected palette', (
+    tester,
+  ) async {
+    await AppPreferences.instance.update(
+      palette: AppPalette.violet,
+      darkMode: true,
+    );
+    addTearDown(
+      () => AppPreferences.instance.update(
+        palette: AppPalette.orange,
+        darkMode: false,
+      ),
+    );
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {
+                  ..._approvedBooking,
+                  'status': 'pending',
+                  'category': 'Tennis',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 500);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+
+    final tabs = tester.widget<TabBar>(find.byType(TabBar));
+    expect(tabs.indicatorColor, AppPalette.violet.color);
+    final categoryBadge = tester.widget<DecoratedBox>(
+      find
+          .ancestor(
+            of: find.text('Tennis'),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    expect(
+      (categoryBadge.decoration as BoxDecoration).color,
+      AppPalette.violet.color,
+    );
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold).first).backgroundColor,
+      AppColors.darkPage,
     );
   });
 

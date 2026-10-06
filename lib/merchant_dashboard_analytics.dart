@@ -87,12 +87,12 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
         if (_selectedIndex case final selectedIndex?)
           _selectedPointDetails(selectedIndex)
         else
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
+            child: AppText(
               'Tap or drag across the chart to inspect exact values.',
               style: TextStyle(color: _merchantMuted, fontSize: 11),
-            ),
+             localize: true,),
           ),
       ],
     ),
@@ -117,16 +117,16 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
+        color: AppColors.page,
         borderRadius: BorderRadius.circular(9),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          AppText(
             widget.detailLabels[index],
-            style: const TextStyle(
-              color: _merchantNavy,
+            style: TextStyle(
+              color: _merchantInk,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -151,18 +151,18 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
                           ),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
+                            child: AppText(
                               row.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _merchantMuted,
                                 fontSize: 11,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
+                          AppText(
                             widget.series.isEmpty
                                 ? widget.detailFormatter(row.value)
                                 : '${widget.detailFormatter(row.value)} customers',
@@ -225,14 +225,14 @@ class _AnalyticsFullChartPage extends StatelessWidget {
         titleSpacing: 16,
         leadingWidth: 56,
         titleTextStyle: AppTypography.pageTitle,
-        title: Text(title),
+        title: AppText(title),
         backgroundColor: _merchantPage,
         foregroundColor: _merchantInk,
         surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             key: const ValueKey('merchant-analytics-chart-close'),
-            tooltip: 'Close full chart',
+            tooltip: appLanguageText('Close full chart', 'Close full chart'),
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close_rounded),
           ),
@@ -244,9 +244,9 @@ class _AnalyticsFullChartPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 subtitle,
-                style: const TextStyle(color: _merchantMuted, fontSize: 13),
+                style: TextStyle(color: _merchantMuted, fontSize: 13),
               ),
               if (series.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -311,11 +311,11 @@ class _AnalyticsChartLegend extends StatelessWidget {
             const SizedBox(width: 5),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 140),
-              child: Text(
+              child: AppText(
                 item.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _merchantMuted, fontSize: 11),
+                style: TextStyle(color: _merchantMuted, fontSize: 11),
               ),
             ),
           ],
@@ -334,14 +334,14 @@ class _FullChartSummary extends StatelessWidget {
     width: double.infinity,
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: _merchantLine),
     ),
-    child: Text(
+    child: AppText(
       summary,
-      style: const TextStyle(
-        color: _merchantNavy,
+      style: TextStyle(
+        color: _merchantInk,
         fontSize: 14,
         fontWeight: FontWeight.w800,
       ),
@@ -365,7 +365,7 @@ class _AnalyticsViewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFFFF1E4) : Colors.white,
+    color: selected ? AppColors.softOrangeAlt : Colors.white,
     borderRadius: BorderRadius.circular(12),
     child: InkWell(
       borderRadius: BorderRadius.circular(12),
@@ -389,13 +389,13 @@ class _AnalyticsViewTile extends StatelessWidget {
               size: 20,
             ),
             const SizedBox(height: 5),
-            Text(
+            AppText(
               title,
               maxLines: 2,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: selected ? _merchantNavy : _merchantMuted,
+                color: selected ? _merchantInk : _merchantMuted,
                 fontSize: 10,
                 height: 1.1,
                 fontWeight: FontWeight.w800,
