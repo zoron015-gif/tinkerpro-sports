@@ -2108,6 +2108,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
               b.fitness_plan_price AS fitnessPlanPrice,
               b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
@@ -2204,6 +2205,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       fitnessPlanType: booking.fitnessPlanType,
       fitnessCategory: booking.fitnessCategory,
       fitnessCoachName: booking.fitnessCoachName,
+      fitnessCoachDurationMonths: booking.fitnessCoachDurationMonths,
       fitnessPlanPrice: booking.fitnessPlanPrice,
       fitnessCoachPrice: booking.fitnessCoachPrice,
       slotNumber: booking.slotNumber,
@@ -2272,6 +2274,12 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     ? req.body.fitnessPlanType.trim().toLowerCase() : '';
   const fitnessCoachName = typeof req.body.fitnessCoachName === 'string'
     ? req.body.fitnessCoachName.trim().slice(0, 100) : '';
+  const fitnessCoachDurationMonths =
+    req.body.fitnessCoachDurationMonths === undefined
+      ? fitnessCoachName
+        ? fitnessPlanType === 'yearly' ? 12 : 1
+        : 0
+      : Number(req.body.fitnessCoachDurationMonths);
   const requestedEventType = typeof req.body.eventType === 'string'
     ? req.body.eventType.trim().slice(0, 100) : '';
   const requestedSlot = Number(req.body.slotNumber);
@@ -2292,7 +2300,12 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       !isNumericInput(req.body.players) ||
       (req.body.slotNumber !== undefined &&
         !isNumericInput(req.body.slotNumber)) ||
-      !Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
+        (req.body.fitnessCoachDurationMonths !== undefined &&
+          (!isNumericInput(req.body.fitnessCoachDurationMonths) ||
+            !Number.isSafeInteger(fitnessCoachDurationMonths) ||
+            fitnessCoachDurationMonths < 0 ||
+            fitnessCoachDurationMonths > 4294967295)) ||
+        !Number.isSafeInteger(venueId) || venueId <= 0 || !validDate(bookingDate) ||
       !validTime(startTime) || !Number.isFinite(durationHours) ||
       durationHours <= 0 || durationHours > 24 || !Number.isSafeInteger(players) ||
       players <= 0 || players > 1000 || !allowedPaymentMethods.has(paymentMethod) ||
@@ -2320,6 +2333,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       slotNumber: Number.isFinite(requestedSlot) ? requestedSlot : null,
       fitnessPlanType,
       fitnessCoachName,
+      fitnessCoachDurationMonths,
       eventType: requestedEventType,
     }))
     .digest('hex');
@@ -2427,6 +2441,12 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         }
       }
       if (fitnessCoachName) {
+        if (fitnessCoachDurationMonths < 1) {
+          await connection.rollback();
+          return res.status(400).json({
+            error: 'Coach duration must be at least one month.',
+          });
+        }
         fitnessCoach = fitnessCoaches.find(
           (item) =>
             typeof item.name === 'string' &&
@@ -2437,8 +2457,17 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           return res.status(400).json({ error: 'Choose a coach offered by this venue.' });
         }
         fitnessCoachPrice =
-          Number(fitnessCoach.monthlyPrice) *
-          (fitnessPlanType === 'yearly' ? 12 : 1);
+          Number(fitnessCoach.monthlyPrice) * fitnessCoachDurationMonths;
+        if (
+          !Number.isFinite(fitnessCoachPrice) ||
+          fitnessCoachPrice <= 0 ||
+          fitnessCoachPrice > 99999999.99
+        ) {
+          await connection.rollback();
+          return res.status(400).json({
+            error: 'The selected coach duration price is unavailable.',
+          });
+        }
       }
       fitnessPlanPrice = Number(fitnessPlanPrice.toFixed(2));
       fitnessCoachPrice = Number(fitnessCoachPrice.toFixed(2));
@@ -2561,9 +2590,10 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         price_per_hour, total_amount, downpayment_amount,
         extra_player_charge, event_type, fitness_plan_type, fitness_category,
         fitness_coach_name, fitness_plan_price, fitness_coach_price,
+        fitness_coach_duration_months,
         booking_token_hash, payment_status, idempotency_key,
         idempotency_request_hash, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
        paymentMethod, selectedSportType, slotNumber, fullStudio ? 1 : 0,
        pricePerHour, total, downpayment, extraPlayerCharge,
@@ -2573,6 +2603,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
        isFitness ? fitnessCoach?.name ?? null : null,
        isFitness ? fitnessPlanPrice : null,
        isFitness ? fitnessCoachPrice : null,
+       isFitness && fitnessCoach ? fitnessCoachDurationMonths : null,
        hashBookingToken(bookingToken),
        paymentMethod === 'online' ? 'unpaid' : 'not_required',
        idempotencyKey, idempotencyRequestHash],
@@ -2619,6 +2650,9 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
                 fitnessPlanPrice,
                 fitnessCoachName: fitnessCoach?.name ?? null,
                 fitnessCoachPrice,
+                fitnessCoachDurationMonths: fitnessCoach
+                  ? fitnessCoachDurationMonths
+                  : null,
               }
             : {}),
           bookingToken,
@@ -2652,6 +2686,9 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
                 fitnessPlanPrice,
                 fitnessCoachName: fitnessCoach?.name ?? null,
                 fitnessCoachPrice,
+                fitnessCoachDurationMonths: fitnessCoach
+                  ? fitnessCoachDurationMonths
+                  : null,
               }
             : {}),
         },
@@ -2667,6 +2704,9 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         additionalPlayerFee, fitnessPlanType: isFitness ? fitnessPlanType : null,
         fitnessCategory: isFitness ? selectedSportType : null,
         fitnessCoachName: isFitness ? fitnessCoach?.name ?? null : null,
+        fitnessCoachDurationMonths: isFitness && fitnessCoach
+          ? fitnessCoachDurationMonths
+          : null,
         fitnessPlanPrice: isFitness ? fitnessPlanPrice : null,
         fitnessCoachPrice: isFitness ? fitnessCoachPrice : null,
         status: 'pending', bookingToken },
@@ -2772,6 +2812,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
               b.fitness_plan_price AS fitnessPlanPrice,
               b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
@@ -2970,6 +3011,7 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
               b.fitness_plan_price AS fitnessPlanPrice,
               b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
@@ -3031,6 +3073,7 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
+              b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
               b.fitness_plan_price AS fitnessPlanPrice,
               b.fitness_coach_price AS fitnessCoachPrice,
               b.slot_number AS slotNumber,
@@ -3329,6 +3372,18 @@ registerMerchantNewsRoutes({
 });
 
 async function customerNewsFeed(req, res, next) {
+  const businessType = req.query.businessType === undefined
+    ? null
+    : normalizeBusinessType(req.query.businessType);
+  if (req.query.businessType !== undefined && !businessType) {
+    return res.status(400).json({ error: 'Invalid business type filter.' });
+  }
+  const businessTypeFilter = businessType
+    ? ' AND LOWER(b.business_type) = ?'
+    : '';
+  const params = businessType
+    ? [req.auth.sub, businessType]
+    : [req.auth.sub];
   try {
     const [rows] = await pool.execute(
       `SELECT n.*, b.name AS business_name, b.business_type,
@@ -3359,9 +3414,9 @@ async function customerNewsFeed(req, res, next) {
          AND NULLIF(TRIM(n.title), '') IS NOT NULL
          AND NULLIF(TRIM(n.body), '') IS NOT NULL
          AND COALESCE(NULLIF(TRIM(n.image_url), ''),
-                      NULLIF(TRIM(b.image_url), '')) IS NOT NULL
+                      NULLIF(TRIM(b.image_url), '')) IS NOT NULL${businessTypeFilter}
        ORDER BY n.created_at DESC`,
-      [req.auth.sub],
+      params,
     );
     return res.json({ posts: rows.map(newsPostResponse) });
   } catch (error) { return next(error); }

@@ -88,6 +88,7 @@ abstract final class AppTheme {
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.orange,
         foregroundColor: Colors.white,
+        padding: AppSpacing.buttonPadding,
         minimumSize: const Size(0, 46),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(AppRadii.button)),
@@ -99,11 +100,26 @@ abstract final class AppTheme {
       style: OutlinedButton.styleFrom(
         foregroundColor: AppColors.navy,
         side: const BorderSide(color: AppColors.navy),
+        padding: AppSpacing.buttonPadding,
         minimumSize: const Size(0, 46),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(AppRadii.button)),
         ),
         textStyle: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(padding: AppSpacing.buttonPadding),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(padding: AppSpacing.buttonPadding),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(padding: AppSpacing.buttonPadding),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        padding: WidgetStatePropertyAll(AppSpacing.buttonPadding),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
@@ -141,6 +157,19 @@ abstract final class AppTheme {
       color: AppColors.orange,
       linearTrackColor: AppColors.softOrange,
     ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: AppColors.orange,
+      inactiveTrackColor: AppColors.border,
+      thumbColor: AppColors.orange,
+      overlayColor: AppColors.softOrange,
+      valueIndicatorColor: AppColors.orange,
+      valueIndicatorTextStyle: TextStyle(color: AppColors.onAccent),
+    ),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: AppColors.orange,
+      selectionColor: AppColors.softOrange,
+      selectionHandleColor: AppColors.orange,
+    ),
     dividerTheme: DividerThemeData(color: AppColors.border, thickness: 1),
   );
 
@@ -152,20 +181,27 @@ abstract final class AppTheme {
     final brightness = darkMode ? Brightness.dark : Brightness.light;
     final surface = darkMode ? AppColors.darkSurface : Colors.white;
     final page = darkMode ? AppColors.darkPage : AppColors.lightPage;
-    final primaryColor = darkMode
-        ? accentColor
-        : accentColor == AppColors.orange
-        ? AppColors.navy
-        : accentColor;
+    final accentForeground = AppColors.accessibleForeground(
+      accentColor,
+      darkMode ? AppColors.darkSurfaceHighest : Colors.white,
+    );
+    final onAccent = AppColors.contrastingForeground(accentColor);
+    final onAccentForeground = AppColors.contrastingForeground(
+      accentForeground,
+    );
+    final primaryColor = accentForeground;
+    final onPrimary = darkMode
+        ? onAccentForeground
+        : AppColors.contrastingForeground(primaryColor);
     final sourceScheme = ColorScheme.fromSeed(
       seedColor: primaryColor,
       brightness: brightness,
     );
     final scheme = sourceScheme.copyWith(
       primary: primaryColor,
-      onPrimary: Colors.white,
+      onPrimary: onPrimary,
       secondary: accentColor,
-      onSecondary: Colors.white,
+      onSecondary: onAccent,
       primaryContainer: darkMode
           ? primaryColor.withValues(alpha: .28)
           : primaryColor.withValues(alpha: .12),
@@ -191,7 +227,7 @@ abstract final class AppTheme {
           ? const Color(0xFF282A32)
           : const Color(0xFFEEF1F5),
       surfaceContainerHighest: darkMode
-          ? const Color(0xFF30323A)
+          ? AppColors.darkSurfaceHighest
           : const Color(0xFFE8ECF2),
       onSurfaceVariant: darkMode ? AppColors.darkMuted : AppColors.lightMuted,
       outline: darkMode ? AppColors.darkBorder : AppColors.lightBorder,
@@ -297,7 +333,8 @@ abstract final class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: accentColor,
-          foregroundColor: Colors.white,
+          foregroundColor: onAccent,
+          padding: AppSpacing.buttonPadding,
           minimumSize: const Size(0, 46),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadii.button)),
@@ -309,6 +346,7 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: scheme.primary,
           side: BorderSide(color: scheme.primary),
+          padding: AppSpacing.buttonPadding,
           minimumSize: const Size(0, 46),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadii.button)),
@@ -319,11 +357,22 @@ abstract final class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: scheme.primary,
+          padding: AppSpacing.buttonPadding,
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: scheme.surfaceContainerLow,
+          foregroundColor: scheme.primary,
+          padding: AppSpacing.buttonPadding,
+        ),
+      ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(foregroundColor: scheme.onSurfaceVariant),
+        style: IconButton.styleFrom(
+          foregroundColor: scheme.onSurfaceVariant,
+          padding: AppSpacing.buttonPadding,
+        ),
       ),
       inputDecorationTheme: base.inputDecorationTheme.copyWith(
         filled: true,
@@ -356,8 +405,9 @@ abstract final class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: scheme.surfaceContainer,
-        selectedColor: accentColor.withValues(alpha: darkMode ? .24 : .14),
+        selectedColor: accentColor,
         disabledColor: scheme.surfaceContainerHigh,
+        checkmarkColor: onAccent,
         side: BorderSide(color: scheme.outlineVariant),
         shape: const StadiumBorder(),
         labelStyle: TextStyle(
@@ -366,7 +416,7 @@ abstract final class AppTheme {
           fontWeight: FontWeight.w700,
         ),
         secondaryLabelStyle: TextStyle(
-          color: scheme.primary,
+          color: onAccent,
           fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
@@ -374,6 +424,7 @@ abstract final class AppTheme {
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
+          padding: const WidgetStatePropertyAll(AppSpacing.buttonPadding),
           backgroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
               return accentColor;
@@ -382,7 +433,7 @@ abstract final class AppTheme {
           }),
           foregroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return Colors.white;
+              return onAccent;
             }
             return scheme.onSurface;
           }),
@@ -394,7 +445,9 @@ abstract final class AppTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return accentColor;
+          if (states.contains(WidgetState.selected)) {
+            return darkMode ? accentForeground : accentColor;
+          }
           return darkMode ? const Color(0xFFB8BFCC) : Colors.white;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
@@ -410,7 +463,7 @@ abstract final class AppTheme {
           if (states.contains(WidgetState.selected)) return accentColor;
           return Colors.transparent;
         }),
-        checkColor: const WidgetStatePropertyAll(Colors.white),
+        checkColor: WidgetStatePropertyAll(onAccent),
         side: BorderSide(color: scheme.outline),
       ),
       radioTheme: RadioThemeData(
@@ -448,30 +501,30 @@ abstract final class AppTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: accentColor,
-        foregroundColor: Colors.white,
+        foregroundColor: onAccent,
         extendedTextStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: darkMode ? const Color(0xFF30323A) : AppColors.navy,
+          color: scheme.inverseSurface,
           borderRadius: BorderRadius.circular(8),
         ),
-        textStyle: const TextStyle(color: Colors.white),
+        textStyle: TextStyle(color: scheme.onInverseSurface),
       ),
       datePickerTheme: DatePickerThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
         headerBackgroundColor: primaryColor,
-        headerForegroundColor: Colors.white,
+        headerForegroundColor: onPrimary,
         dayForegroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.disabled)) {
             return scheme.onSurfaceVariant.withValues(alpha: .55);
           }
-          if (states.contains(WidgetState.selected)) return Colors.white;
+          if (states.contains(WidgetState.selected)) return onPrimary;
           return scheme.onSurface;
         }),
-        todayForegroundColor: WidgetStatePropertyAll(accentColor),
-        todayBorder: BorderSide(color: accentColor),
+        todayForegroundColor: WidgetStatePropertyAll(accentForeground),
+        todayBorder: BorderSide(color: accentForeground),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.dialog),
         ),
@@ -493,8 +546,32 @@ abstract final class AppTheme {
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: accentColor,
+        color: accentForeground,
         linearTrackColor: accentColor.withValues(alpha: .18),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: accentColor,
+        inactiveTrackColor: scheme.surfaceContainerHigh,
+        thumbColor: accentColor,
+        overlayColor: accentColor.withValues(alpha: .12),
+        valueIndicatorColor: accentColor,
+        valueIndicatorTextStyle: TextStyle(color: onAccent),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: scheme.inverseSurface,
+        contentTextStyle: TextStyle(
+          color: scheme.onInverseSurface,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.dialog),
+        ),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: accentColor,
+        selectionColor: accentColor.withValues(alpha: .28),
+        selectionHandleColor: accentColor,
       ),
     );
   }

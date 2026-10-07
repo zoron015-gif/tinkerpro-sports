@@ -50,7 +50,7 @@ class AppSettingsPage extends StatelessWidget {
               color: colors.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           Card(
             child: SwitchListTile.adaptive(
               key: const ValueKey('app-settings-dark-mode'),
@@ -73,7 +73,7 @@ class AppSettingsPage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           _SectionHeading(
             title: _text('Theme color', 'Kulay ng tema', languageCode),
             subtitle: _text(
@@ -82,14 +82,14 @@ class AppSettingsPage extends StatelessWidget {
               languageCode,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
               child: Wrap(
                 alignment: WrapAlignment.spaceBetween,
-                spacing: 12,
-                runSpacing: 12,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   for (final palette in AppPalette.values)
                     _PaletteChoice(
@@ -104,7 +104,7 @@ class AppSettingsPage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           _SectionHeading(
             title: _text('Text size', 'Laki ng teksto', languageCode),
             subtitle: _text(
@@ -113,7 +113,7 @@ class AppSettingsPage extends StatelessWidget {
               languageCode,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -146,7 +146,7 @@ class AppSettingsPage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           _SectionHeading(
             title: _text('Language', 'Wika', languageCode),
             subtitle: _text(
@@ -155,7 +155,7 @@ class AppSettingsPage extends StatelessWidget {
               languageCode,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Card(
             child: RadioGroup<String>(
               groupValue: languageCode,
@@ -212,7 +212,7 @@ class _SectionHeading extends StatelessWidget {
         style: Theme.of(context).textTheme.titleMedium
             ?.copyWith(fontWeight: FontWeight.w800),
       ),
-      const SizedBox(height: 3),
+      const SizedBox(height: 6),
       AppText(
         subtitle,
         style: Theme.of(context).textTheme.bodySmall

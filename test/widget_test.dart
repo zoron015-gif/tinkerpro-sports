@@ -21,6 +21,20 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
+  testWidgets('overview supports native pull-to-refresh', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RefreshIndicator), findsOneWidget);
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 320));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your sport.\nYour event.\nYour place.'), findsOneWidget);
+  });
+
   testWidgets('Marketplace overview renders the booking experience', (
     WidgetTester tester,
   ) async {

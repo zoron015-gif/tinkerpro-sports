@@ -100,6 +100,7 @@ class Booking {
     this.fitnessPlanType = '',
     this.fitnessCategory = '',
     this.fitnessCoachName = '',
+    this.fitnessCoachDurationMonths,
     this.fitnessPlanPrice = 0,
     this.fitnessCoachPrice = 0,
     this.status = 'pending',
@@ -127,6 +128,7 @@ class Booking {
   final String fitnessPlanType;
   final String fitnessCategory;
   final String fitnessCoachName;
+  final int? fitnessCoachDurationMonths;
   final double fitnessPlanPrice;
   final double fitnessCoachPrice;
   final String status;
@@ -155,6 +157,7 @@ class Booking {
     fitnessPlanType: _text(json['fitnessPlanType']),
     fitnessCategory: _text(json['fitnessCategory']),
     fitnessCoachName: _text(json['fitnessCoachName']),
+    fitnessCoachDurationMonths: _intValue(json['fitnessCoachDurationMonths']),
     fitnessPlanPrice: _doubleValue(json['fitnessPlanPrice']),
     fitnessCoachPrice: _doubleValue(json['fitnessCoachPrice']),
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
@@ -208,6 +211,7 @@ class Booking {
     'fitnessPlanType' => fitnessPlanType,
     'fitnessCategory' => fitnessCategory,
     'fitnessCoachName' => fitnessCoachName,
+    'fitnessCoachDurationMonths' => fitnessCoachDurationMonths,
     'fitnessPlanPrice' => fitnessPlanPrice,
     'fitnessCoachPrice' => fitnessCoachPrice,
     'status' => status,

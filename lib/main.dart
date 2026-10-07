@@ -29,13 +29,26 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(AppStartup(appBuilder: (session) => MyApp(session: session)));
+  final dependencies = AppDependencies(preferences: AppPreferences.instance);
+  runApp(
+    AppStartup(
+      dependencies: dependencies,
+      appBuilder: (session) =>
+          MyApp(session: session, dependencies: dependencies),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, this.session});
+  const MyApp({super.key, this.session, this.dependencies});
 
   final AppSession? session;
+  final AppDependencies? dependencies;
+
+  AppDependencies get _dependencies =>
+      dependencies ?? AppDependencies(preferences: AppPreferences.instance);
+
+  AppPreferences get _preferences => _dependencies.preferences;
 
   static final _scrollToTopKey = GlobalKey<ScrollToTopOverlayState>();
   static final ScrollToTopNavigatorObserver _scrollObserver =
@@ -45,19 +58,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: AppPreferences.instance,
+    animation: _preferences,
     builder: (context, _) {
-      final preferences = AppPreferences.instance;
       return MaterialApp(
         navigatorKey: _rootNavigatorKey,
         navigatorObservers: [MyApp._scrollObserver],
         title: 'TinkerPro',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.configured(
-          darkMode: preferences.darkMode,
-          accentColor: preferences.palette.color,
+          darkMode: _preferences.darkMode,
+          accentColor: _preferences.palette.color,
         ),
-        locale: AppLanguage.fromCode(preferences.languageCode).locale,
+        locale: AppLanguage.fromCode(_preferences.languageCode).locale,
         supportedLocales: AppLanguage.supportedLocales,
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
@@ -71,7 +83,7 @@ class MyApp extends StatelessWidget {
             data: media.copyWith(
               textScaler: _PreferenceTextScaler(
                 media.textScaler,
-                preferences.textScale,
+                _preferences.textScale,
               ),
             ),
             child: ScrollToTopOverlay(
@@ -131,9 +143,14 @@ class _PreferenceTextScaler extends TextScaler {
   int get hashCode => Object.hash(platformScaler, preferenceScale);
 }
 
-class OverviewPage extends StatelessWidget {
+class OverviewPage extends StatefulWidget {
   const OverviewPage({super.key});
 
+  @override
+  State<OverviewPage> createState() => _OverviewPageState();
+}
+
+class _OverviewPageState extends State<OverviewPage> {
   Future<void> _openBookings(BuildContext context) async {
     final session = await AppSession.load();
     if (!context.mounted) return;
@@ -197,32 +214,40 @@ class OverviewPage extends StatelessWidget {
       );
   }
 
+  Future<void> _refreshOverview() {
+    setState(() {});
+    return Future<void>.value();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: const _Header()),
-            SliverToBoxAdapter(
-              child: _Hero(onExplore: () => _openBookings(context)),
-            ),
-            SliverToBoxAdapter(
-              child: _OverviewCategories(
-                onExplore: () => _openBookings(context),
+        child: RefreshIndicator.adaptive(
+          onRefresh: _refreshOverview,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: const _Header()),
+              SliverToBoxAdapter(
+                child: _Hero(onExplore: () => _openBookings(context)),
               ),
-            ),
-            SliverToBoxAdapter(child: _HowItWorks()),
-            SliverToBoxAdapter(child: _Features()),
-            SliverToBoxAdapter(child: _OverviewTrustSection()),
-            SliverToBoxAdapter(
-              child: _BottomCallout(
-                onTap: () =>
-                    _showMessage(context, 'Welcome to TinkerPro Sports!'),
+              SliverToBoxAdapter(
+                child: _OverviewCategories(
+                  onExplore: () => _openBookings(context),
+                ),
               ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 28)),
-          ],
+              SliverToBoxAdapter(child: _HowItWorks()),
+              SliverToBoxAdapter(child: _Features()),
+              SliverToBoxAdapter(child: _OverviewTrustSection()),
+              SliverToBoxAdapter(
+                child: _BottomCallout(
+                  onTap: () =>
+                      _showMessage(context, 'Welcome to TinkerPro Sports!'),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 6)),
+            ],
+          ),
         ),
       ),
     );
@@ -247,7 +272,7 @@ class _Header extends StatelessWidget {
                 height: 44,
                 fit: BoxFit.contain,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               AppText.rich(
                 TextSpan(
                   children: [
@@ -271,7 +296,8 @@ class _Header extends StatelessWidget {
                     ),
                   ],
                 ),
-               localize: true,),
+                localize: true,
+              ),
             ],
           ),
         ],
@@ -299,7 +325,10 @@ class _AuthPageState extends State<AuthPage> {
   void _showComingSoon(String provider) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: AppText('$provider sign in will be connected soon.', localize: true),
+        content: AppText(
+          '$provider sign in will be connected soon.',
+          localize: true,
+        ),
         backgroundColor: _navy,
       ),
     );
@@ -321,7 +350,7 @@ class _AuthPageState extends State<AuthPage> {
                 icon: const Icon(Icons.arrow_back_rounded),
                 color: _navy,
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 6),
               Center(
                 child: Image.asset(
                   'assets/tinker_logo.png',
@@ -329,42 +358,43 @@ class _AuthPageState extends State<AuthPage> {
                   height: 58,
                 ),
               ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 6),
               Center(
                 child: AppText(
                   isLogin ? 'Welcome back' : 'Create your account',
-                  style:  TextStyle(
+                  style: TextStyle(
                     color: _ink,
                     fontSize: 27,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 6),
               Center(
                 child: AppText(
                   isLogin
                       ? 'Sign in to continue your game.'
                       : 'Join TinkerPro and get in the game.',
-                  style:  TextStyle(color: _muted, fontSize: 13),
+                  style: TextStyle(color: _muted, fontSize: 13),
                 ),
               ),
-              const SizedBox(height: 26),
+              const SizedBox(height: 6),
               _AuthModeToggle(
                 mode: _mode,
                 onChanged: (mode) => setState(() => _mode = mode),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 6),
               if (!isLogin) ...[
-                 AppText(
+                AppText(
                   'I am joining as',
                   style: TextStyle(
                     color: _ink,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
-                 localize: true,),
-                const SizedBox(height: 10),
+                  localize: true,
+                ),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     Expanded(
@@ -377,7 +407,7 @@ class _AuthPageState extends State<AuthPage> {
                             setState(() => _role = _AccountRole.customer),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: _RoleCard(
                         icon: Icons.storefront_rounded,
@@ -390,7 +420,7 @@ class _AuthPageState extends State<AuthPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 6),
               ],
               _AuthField(
                 label: 'Email address',
@@ -398,7 +428,7 @@ class _AuthPageState extends State<AuthPage> {
                 icon: Icons.mail_outline_rounded,
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 6),
               _AuthField(
                 label: 'Password',
                 hint: 'Enter your password',
@@ -415,7 +445,7 @@ class _AuthPageState extends State<AuthPage> {
                 ),
               ),
               if (!isLogin) ...[
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 const _AuthField(
                   label: 'Confirm password',
                   hint: 'Repeat your password',
@@ -432,7 +462,7 @@ class _AuthPageState extends State<AuthPage> {
                   ),
                 )
               else
-                const SizedBox(height: 20),
+                const SizedBox(height: 6),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -453,22 +483,22 @@ class _AuthPageState extends State<AuthPage> {
                   child: AppText(isLogin ? 'Sign in' : 'Create account'),
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 6),
               const _OrDivider(),
-              const SizedBox(height: 18),
+              const SizedBox(height: 6),
               _SocialButton(
                 label: 'Continue with Google',
                 mark: 'G',
                 onTap: () => _showComingSoon('Google'),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 6),
               Center(
                 child: AppText.rich(
                   TextSpan(
                     text: isLogin
                         ? 'New to TinkerPro? '
                         : 'Already have an account? ',
-                    style:  TextStyle(color: _muted, fontSize: 13),
+                    style: TextStyle(color: _muted, fontSize: 13),
                     children: [
                       WidgetSpan(
                         child: GestureDetector(
@@ -489,7 +519,8 @@ class _AuthPageState extends State<AuthPage> {
                       ),
                     ],
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
             ],
           ),
@@ -610,7 +641,7 @@ class _RoleCard extends StatelessWidget {
       child: Row(
         children: [
           Icon(icon, color: selected ? _orange : _muted, size: 24),
-          const SizedBox(width: 9),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -623,7 +654,7 @@ class _RoleCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 6),
                 AppText(
                   subtitle,
                   style: TextStyle(
@@ -672,7 +703,7 @@ class _AuthField extends StatelessWidget {
           fontWeight: FontWeight.w800,
         ),
       ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 6),
       TextField(
         keyboardType: keyboardType,
         obscureText: obscureText,
@@ -685,11 +716,11 @@ class _AuthField extends StatelessWidget {
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide:  BorderSide(color: AppColors.border),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide:  BorderSide(color: AppColors.border),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
@@ -718,7 +749,8 @@ class _OrDivider extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: .8,
           ),
-         localize: true,),
+          localize: true,
+        ),
       ),
       const Expanded(child: Divider(color: Color(0xFFDDE2EA))),
     ],
@@ -757,10 +789,10 @@ class _SocialButton extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 6),
         AppText(
           label,
-          style:  TextStyle(
+          style: TextStyle(
             color: _ink,
             fontSize: 13,
             fontWeight: FontWeight.w800,
@@ -825,9 +857,10 @@ class _Hero extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.3,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 6),
               const AppText(
                 'Your sport.\nYour event.\nYour place.',
                 key: ValueKey('overview-hero-title'),
@@ -837,8 +870,9 @@ class _Hero extends StatelessWidget {
                   height: 1.08,
                   fontWeight: FontWeight.w800,
                 ),
-               localize: true,),
-              const SizedBox(height: 14),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               AppText(
                 'TinkerPro brings sports and events together in one marketplace. Discover local businesses, compare what they offer, and book in a few taps.',
                 style: TextStyle(
@@ -846,8 +880,9 @@ class _Hero extends StatelessWidget {
                   fontSize: 15,
                   height: 1.55,
                 ),
-               localize: true,),
-              const SizedBox(height: 24),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               FilledButton.icon(
                 key: const ValueKey('overview-hero-explore'),
                 onPressed: onExplore,
@@ -856,10 +891,7 @@ class _Hero extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: _orange,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
+                  padding: AppSpacing.buttonPadding,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -907,20 +939,22 @@ class _OverviewCategories extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-           AppText(
+          AppText(
             'Find the right place for your plan',
             style: TextStyle(
               color: _ink,
               fontSize: 23,
               fontWeight: FontWeight.w800,
             ),
-           localize: true,),
-          const SizedBox(height: 7),
-           AppText(
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          AppText(
             'Browse real merchant listings with details, availability, photos, and pricing before you decide.',
             style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
-           localize: true,),
-          const SizedBox(height: 16),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
           ...categories.map(
             (category) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -945,23 +979,23 @@ class _OverviewCategories extends StatelessWidget {
                         ),
                         child: Icon(category.$1, color: _orange, size: 25),
                       ),
-                      const SizedBox(width: 13),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             AppText(
                               category.$2,
-                              style:  TextStyle(
+                              style: TextStyle(
                                 color: _ink,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 6),
                             AppText(
                               category.$3,
-                              style:  TextStyle(
+                              style: TextStyle(
                                 color: _muted,
                                 fontSize: 12,
                                 height: 1.3,
@@ -970,7 +1004,7 @@ class _OverviewCategories extends StatelessWidget {
                           ],
                         ),
                       ),
-                       Icon(
+                      Icon(
                         Icons.arrow_forward_ios_rounded,
                         color: _muted,
                         size: 16,
@@ -1070,7 +1104,7 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                       color: _navy,
                     ),
                     const Spacer(),
-                     AppText(
+                    AppText(
                       'STEP 1 OF 3',
                       style: TextStyle(
                         color: _muted,
@@ -1078,7 +1112,8 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ],
                 ),
               ),
@@ -1126,8 +1161,9 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                     ),
                     AppText(
                       '${(_showEvents ? _events : _sports).length} available',
-                      style:  TextStyle(color: _muted, fontSize: 12),
-                     localize: true,),
+                      style: TextStyle(color: _muted, fontSize: 12),
+                      localize: true,
+                    ),
                   ],
                 ),
               ),
@@ -1159,8 +1195,8 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                     }, childCount: (_showEvents ? _events : _sports).length),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: compact ? 1 : 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 6,
+                      mainAxisSpacing: 6,
                       childAspectRatio: compact ? 1.15 : .96,
                     ),
                   ),
@@ -1177,7 +1213,8 @@ class _SportsSelectionPageState extends State<SportsSelectionPage> {
                           SnackBar(
                             content: AppText(
                               'Great choice! Let’s find $_selectedBooking listings.',
-                             localize: true,),
+                              localize: true,
+                            ),
                             backgroundColor: _navy,
                           ),
                         ),
@@ -1300,7 +1337,7 @@ class _SelectionHeroState extends State<_SelectionHero> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Wrap(
-                  spacing: 7,
+                  spacing: 6,
                   runSpacing: 6,
                   children: [
                     Container(
@@ -1320,7 +1357,8 @@ class _SelectionHeroState extends State<_SelectionHero> {
                           fontWeight: FontWeight.w900,
                           letterSpacing: .8,
                         ),
-                       localize: true,),
+                        localize: true,
+                      ),
                     ),
                     const AppText(
                       'COMING SOON',
@@ -1330,10 +1368,11 @@ class _SelectionHeroState extends State<_SelectionHero> {
                         fontWeight: FontWeight.w800,
                         letterSpacing: .8,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 AppText(
                   'Find your next game',
                   style: TextStyle(
@@ -1342,8 +1381,9 @@ class _SelectionHeroState extends State<_SelectionHero> {
                     fontWeight: FontWeight.w900,
                     height: 1.1,
                   ),
-                 localize: true,),
-                SizedBox(height: 8),
+                  localize: true,
+                ),
+                SizedBox(height: 6),
                 AppText(
                   'Choose a sport or event and we’ll take care of the rest.',
                   style: TextStyle(
@@ -1351,8 +1391,9 @@ class _SelectionHeroState extends State<_SelectionHero> {
                     fontSize: 13,
                     height: 1.45,
                   ),
-                 localize: true,),
-                const SizedBox(height: 14),
+                  localize: true,
+                ),
+                const SizedBox(height: 6),
                 Row(
                   children: List.generate(
                     _heroImages.length,
@@ -1468,7 +1509,7 @@ class _SportCard extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   AppText(
                     subtitle,
                     style: const TextStyle(
@@ -1508,20 +1549,22 @@ class _HowItWorks extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-           AppText(
+          AppText(
             'Everything in one place',
             style: TextStyle(
               color: _ink,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
-           localize: true,),
-          const SizedBox(height: 7),
-           AppText(
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          AppText(
             'A simple marketplace for clients to book and merchants to grow.',
             style: TextStyle(color: _muted, fontSize: 14, height: 1.4),
-           localize: true,),
-          const SizedBox(height: 20),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
           Row(
             children: const [
               _Step(
@@ -1530,14 +1573,14 @@ class _HowItWorks extends StatelessWidget {
                 title: 'Discover',
                 text: 'Find sports, events, and local businesses.',
               ),
-              SizedBox(width: 10),
+              SizedBox(width: 6),
               _Step(
                 number: '02',
                 icon: Icons.calendar_month_rounded,
                 title: 'Book',
                 text: 'Choose a service, slot, or event.',
               ),
-              SizedBox(width: 10),
+              SizedBox(width: 6),
               _Step(
                 number: '03',
                 icon: Icons.sports_score_rounded,
@@ -1596,16 +1639,16 @@ class _Step extends StatelessWidget {
             const Spacer(),
             AppText(
               title,
-              style:  TextStyle(
+              style: TextStyle(
                 color: _ink,
                 fontWeight: FontWeight.w800,
                 fontSize: 14,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 6),
             AppText(
               text,
-              style:  TextStyle(color: _muted, fontSize: 11, height: 1.3),
+              style: TextStyle(color: _muted, fontSize: 11, height: 1.3),
             ),
           ],
         ),
@@ -1644,15 +1687,16 @@ class _Features extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-           AppText(
+          AppText(
             'Made for the way you play',
             style: TextStyle(
               color: _ink,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
-           localize: true,),
-          const SizedBox(height: 16),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
           ...features.map(
             (feature) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -1675,23 +1719,23 @@ class _Features extends StatelessWidget {
                       ),
                       child: Icon(feature.$1, color: _orange),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           AppText(
                             feature.$2,
-                            style:  TextStyle(
+                            style: TextStyle(
                               color: _ink,
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           AppText(
                             feature.$3,
-                            style:  TextStyle(color: _muted, fontSize: 13),
+                            style: TextStyle(color: _muted, fontSize: 13),
                           ),
                         ],
                       ),
@@ -1730,7 +1774,7 @@ class _OverviewTrustSection extends StatelessWidget {
               text: 'See what each venue offers.',
             ),
           ),
-          SizedBox(width: 12),
+          SizedBox(width: 6),
           Expanded(
             child: _TrustItem(
               icon: savedItemSelectedIcon,
@@ -1738,7 +1782,7 @@ class _OverviewTrustSection extends StatelessWidget {
               text: 'Keep places ready to book.',
             ),
           ),
-          SizedBox(width: 12),
+          SizedBox(width: 6),
           Expanded(
             child: _TrustItem(
               icon: Icons.storefront_rounded,
@@ -1769,7 +1813,7 @@ class _TrustItem extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, color: _orange, size: 22),
-        const SizedBox(height: 9),
+        const SizedBox(height: 6),
         AppText(
           title,
           style: const TextStyle(
@@ -1778,7 +1822,7 @@ class _TrustItem extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         AppText(
           text,
           style: TextStyle(
@@ -1819,15 +1863,14 @@ class _BottomCallout extends StatelessWidget {
                     fontSize: 19,
                     fontWeight: FontWeight.w800,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
                 const SizedBox(height: 6),
                 AppText(
                   'Book a sport or event from a local business today.',
-                  style: TextStyle(
-                    color: _muted,
-                    fontSize: 13,
-                  ),
-                 localize: true,),
+                  style: TextStyle(color: _muted, fontSize: 13),
+                  localize: true,
+                ),
               ],
             ),
           ),

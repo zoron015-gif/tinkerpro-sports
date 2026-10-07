@@ -22,7 +22,7 @@ void main() {
     );
   });
 
-  test('calculates percentage discounts and coach term fees', () {
+  test('calculates percentage discounts and coach fees by selected months', () {
     const percentageCategory = {
       'sessionPrice': 500,
       'monthlyPrice': 1200,
@@ -39,9 +39,10 @@ void main() {
       'Yearly offer: 10% off',
     );
     const coach = {'monthlyPrice': 300};
-    expect(FitnessBookingPricing.coachPrice(coach, 'monthly'), 300);
-    expect(FitnessBookingPricing.coachPrice(coach, 'yearly'), 3600);
-    expect(FitnessBookingPricing.coachPrice(coach, 'session'), 300);
+    expect(FitnessBookingPricing.coachPrice(coach), 300);
+    expect(FitnessBookingPricing.coachPrice(coach, durationMonths: 1), 300);
+    expect(FitnessBookingPricing.coachPrice(coach, durationMonths: 5), 1500);
+    expect(FitnessBookingPricing.coachPrice(coach, durationMonths: 0), 0);
   });
 
   test('handles absent merchant pricing without inventing a plan', () {

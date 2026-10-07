@@ -26,14 +26,18 @@ class FitnessBookingPage extends StatefulWidget {
 }
 
 class _FitnessBookingPageState extends State<FitnessBookingPage> {
+  static const _maximumCoachDurationMonths = 4294967295;
+
   static Color get _ink => AppColors.ink;
   Color get _accent => AppColors.accent;
+  Color get _accentForeground => AppColors.accentForeground;
 
   late final List<Map<String, dynamic>> _categories;
   late final List<Map<String, dynamic>> _coaches;
   String? _category;
   String? _plan;
   String? _coachName;
+  int _coachDurationMonths = 1;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
   TimeOfDay? _time;
   String _payment = 'online';
@@ -103,7 +107,10 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     final coach = _coaches
         .where((item) => item['name'] == _coachName)
         .firstOrNull;
-    return FitnessBookingPricing.coachPrice(coach, _plan);
+    return FitnessBookingPricing.coachPrice(
+      coach,
+      durationMonths: _coachDurationMonths,
+    );
   }
 
   double get _total => _basePrice() + _coachPrice();
@@ -232,11 +239,15 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
           final useCash = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
-              title: const AppText('Online payment unavailable', localize: true),
+              title: const AppText(
+                'Online payment unavailable',
+                localize: true,
+              ),
               content: const AppText(
                 'Online payments are not configured yet. No booking has been '
                 'created. You can choose Cash on Arrival or try again later.',
-               localize: true,),
+                localize: true,
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -265,8 +276,10 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
             '$_category · ${_plan!.toUpperCase()}\n'
             '${_dateString(_date)} at ${time.format(context)}\n'
             '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
+            '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
             'One-time total: PHP ${_total.toStringAsFixed(2)}',
-           localize: true,),
+            localize: true,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -295,6 +308,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
         sportType: _category!,
         fitnessPlanType: _plan!,
         fitnessCoachName: _coachName ?? '',
+        fitnessCoachDurationMonths: _coachName == null
+            ? 0
+            : _coachDurationMonths,
       );
       final booking = response['booking'] as Map<String, dynamic>? ?? const {};
       if (payment == 'online') {
@@ -336,7 +352,10 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     context: context,
     builder: (context) => AlertDialog(
       title: const AppText('Choose online payment', localize: true),
-      content: const AppText('The selected term is charged once at checkout.', localize: true),
+      content: const AppText(
+        'The selected term is charged once at checkout.',
+        localize: true,
+      ),
       actions: [
         TextButton.icon(
           onPressed: () => Navigator.pop(context, 'gcash'),
@@ -354,7 +373,8 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
 
   void _message(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: AppText(text)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: AppText(text)));
   }
 
   String _planTitle(String value) => FitnessBookingPricing.planTitle(value);
@@ -409,8 +429,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
                           ),
-                         localize: true,),
-                        SizedBox(height: 2),
+                          localize: true,
+                        ),
+                        SizedBox(height: 6),
                         AppText(
                           'Step 2 of 2 • Checkout',
                           style: TextStyle(
@@ -418,14 +439,15 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 38),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 6),
               Container(
                 key: const ValueKey('fitness-booking-summary-card'),
                 width: double.infinity,
@@ -464,14 +486,14 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                                 child: AppText(
                                   (_category ?? 'FITNESS').toUpperCase(),
                                   style: TextStyle(
-                                    color: _accent,
+                                    color: _accentForeground,
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: .7,
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 7),
+                              const SizedBox(height: 6),
                               AppText(
                                 name,
                                 maxLines: 2,
@@ -488,14 +510,15 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                         AppText(
                           'PHP ${categoryPrice.toStringAsFixed(2)}',
                           style: TextStyle(
-                            color: _accent,
+                            color: _accentForeground,
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     _bookingDetail(
                       Icons.person_outline_rounded,
                       'Owner: ${widget.business['ownerName'] ?? 'Venue merchant'}',
@@ -511,7 +534,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 6),
               AppText(
                 'FITNESS CONFIGURATION',
                 style: TextStyle(
@@ -520,13 +543,17 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   letterSpacing: .9,
                   fontWeight: FontWeight.w800,
                 ),
-               localize: true,),
-              const SizedBox(height: 8),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               DropdownButtonFormField<String>(
                 initialValue: _category,
                 decoration: _decoration(
                   prefixIcon: Icon(_fitnessCategoryIcon(_category ?? '')),
-                  labelText: appLanguageText('Fitness category', 'Fitness category'),
+                  labelText: appLanguageText(
+                    'Fitness category',
+                    'Fitness category',
+                  ),
                 ),
                 items: _categories
                     .map((item) => item['category'])
@@ -546,7 +573,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   });
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 6),
               AppText(
                 'PLAN',
                 style: TextStyle(
@@ -555,35 +582,38 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   letterSpacing: .9,
                   fontWeight: FontWeight.w800,
                 ),
-               localize: true,),
-              const SizedBox(height: 8),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               if (_availablePlans.isEmpty)
                 AppText(
                   'This venue has no priced plans available for this category.',
                   style: TextStyle(color: AppColors.muted),
-                 localize: true,)
+                  localize: true,
+                )
               else
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 6,
+                  runSpacing: 6,
                   children: _availablePlans.map((plan) {
                     final selected = plan == _plan;
                     return ChoiceChip(
                       label: AppText(
                         '${_planTitle(plan)} · PHP ${_displayPlanPrice(plan)}',
-                       localize: true,),
+                        localize: true,
+                      ),
                       selected: selected,
                       onSelected: (_) => setState(() => _plan = plan),
                       selectedColor: AppColors.softOrange,
                       labelStyle: TextStyle(
-                        color: selected ? _accent : _ink,
+                        color: selected ? _accentForeground : _ink,
                         fontWeight: FontWeight.w700,
                       ),
                     );
                   }).toList(),
                 ),
               if (_yearlyOfferLabel case final offer?) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 AppText(
                   offer,
                   style: TextStyle(
@@ -593,7 +623,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   ),
                 ),
               ],
-              const SizedBox(height: 14),
+              const SizedBox(height: 6),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final coachLabelWidth = (constraints.maxWidth - 160).clamp(
@@ -604,7 +634,10 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     initialValue: _coachName,
                     decoration: _decoration(
                       prefixIcon: const Icon(Icons.person_outline_rounded),
-                      labelText: appLanguageText('Coach (optional)', 'Coach (optional)'),
+                      labelText: appLanguageText(
+                        'Coach (optional)',
+                        'Coach (optional)',
+                      ),
                     ),
                     items: [
                       const DropdownMenuItem<String?>(
@@ -629,7 +662,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                                     ? const Icon(Icons.person, size: 18)
                                     : null,
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               SizedBox(
                                 width: coachLabelWidth,
                                 child: AppText(
@@ -637,7 +670,8 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                                   '${monthly.toStringAsFixed(2)}/month',
                                   overflow: TextOverflow.ellipsis,
                                   maxLines: 1,
-                                 localize: true,),
+                                  localize: true,
+                                ),
                               ),
                             ],
                           ),
@@ -649,13 +683,12 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                 },
               ),
               if (_coachName != null) ...[
-                const SizedBox(height: 8),
-                _summaryRow(
-                  'Coach fee for ${_planTitle(_plan ?? 'session')}',
-                  _coachPrice(),
-                ),
+                const SizedBox(height: 6),
+                _coachDurationSelector(),
+                const SizedBox(height: 6),
+                _summaryRow('Coach fee', _coachPrice()),
               ],
-              const SizedBox(height: 18),
+              const SizedBox(height: 6),
               AppText(
                 'FIRST VISIT',
                 style: TextStyle(
@@ -664,8 +697,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   letterSpacing: .9,
                   fontWeight: FontWeight.w800,
                 ),
-               localize: true,),
-              const SizedBox(height: 8),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
@@ -676,7 +710,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                       label: AppText(_dateString(_date)),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _chooseTime,
@@ -687,9 +721,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _availabilityNote(),
-              const SizedBox(height: 18),
+              const SizedBox(height: 6),
               AppText(
                 'PAYMENT METHOD',
                 style: TextStyle(
@@ -698,8 +732,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   letterSpacing: .9,
                   fontWeight: FontWeight.w800,
                 ),
-               localize: true,),
-              const SizedBox(height: 8),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               SegmentedButton<String>(
                 style: ButtonStyle(
                   backgroundColor: WidgetStateProperty.resolveWith(
@@ -709,7 +744,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   ),
                   foregroundColor: WidgetStateProperty.resolveWith(
                     (states) => states.contains(WidgetState.selected)
-                        ? Colors.white
+                        ? AppColors.onAccent
                         : _ink,
                   ),
                   side: WidgetStateProperty.all(
@@ -733,7 +768,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   setState(() => _payment = selection.first);
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               AppText(
                 _payment == 'cash_on_arrival'
                     ? 'Pay the selected plan total once on arrival: '
@@ -748,7 +783,11 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                 _basePrice(),
               ),
               if (_coachPrice() > 0)
-                _summaryRow('Coach · $_coachName', _coachPrice()),
+                _summaryRow(
+                  'Coach · $_coachName '
+                  '(${_coachDurationLabel(_coachDurationMonths)})',
+                  _coachPrice(),
+                ),
               _summaryRow('First visit duration', 1, suffix: ' hour'),
               _summaryRow(
                 'First visit',
@@ -758,7 +797,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     : '${_dateString(_date)} · ${_time!.format(context)}',
               ),
               _summaryRow('One-time total', _total, strong: true),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -771,7 +810,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                       : _submit,
                   style: FilledButton.styleFrom(
                     backgroundColor: _accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.onAccent,
                     minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -799,6 +838,56 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     return _basePrice(plan).toStringAsFixed(2);
   }
 
+  String _coachDurationLabel(int months) =>
+      '$months ${months == 1 ? 'month' : 'months'}';
+
+  Widget _coachDurationSelector() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: AppText(
+            'Coach duration',
+            style: TextStyle(color: _ink, fontWeight: FontWeight.w700),
+            localize: true,
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('fitness-coach-duration-decrease'),
+          tooltip: appLanguageText(
+            'Decrease coach duration',
+            'Decrease coach duration',
+          ),
+          onPressed: _coachDurationMonths <= 1
+              ? null
+              : () => setState(() => _coachDurationMonths--),
+          icon: const Icon(Icons.remove_circle_outline_rounded),
+        ),
+        AppText(
+          _coachDurationLabel(_coachDurationMonths),
+          key: const ValueKey('fitness-coach-duration-value'),
+          style: TextStyle(color: _ink, fontWeight: FontWeight.w800),
+        ),
+        IconButton(
+          key: const ValueKey('fitness-coach-duration-increase'),
+          tooltip: appLanguageText(
+            'Increase coach duration',
+            'Increase coach duration',
+          ),
+          onPressed: _coachDurationMonths >= _maximumCoachDurationMonths
+              ? null
+              : () => setState(() => _coachDurationMonths++),
+          icon: const Icon(Icons.add_circle_outline_rounded),
+        ),
+      ],
+    ),
+  );
+
   Widget _availabilityNote() {
     if (_loadingAvailability) {
       return const Row(
@@ -808,7 +897,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
             height: 15,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          SizedBox(width: 8),
+          SizedBox(width: 6),
           AppText('Checking first-visit availability...', localize: true),
         ],
       );
@@ -820,7 +909,8 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
           color: AppColors.errorText,
           fontWeight: FontWeight.w600,
         ),
-       localize: true,);
+        localize: true,
+      );
     }
     return AppText(
       _time == null
@@ -831,11 +921,11 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   }
 
   Widget _modalIconButton(IconData icon, VoidCallback onPressed) => SizedBox(
-    width: 38,
-    height: 38,
+    width: 44,
+    height: 44,
     child: IconButton(
       onPressed: onPressed,
-      padding: EdgeInsets.zero,
+      padding: AppSpacing.buttonPadding,
       style: IconButton.styleFrom(
         backgroundColor: AppColors.surfaceVariant,
         foregroundColor: _ink,
@@ -851,7 +941,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 16, color: AppColors.muted),
-        const SizedBox(width: 7),
+        const SizedBox(width: 6),
         Expanded(
           child: AppText(
             text,
@@ -903,7 +993,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     foregroundColor: _ink,
     backgroundColor: AppColors.surface,
     alignment: Alignment.centerLeft,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+    padding: AppSpacing.buttonPadding,
     side: BorderSide(color: AppColors.border, width: 1.5),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
   );

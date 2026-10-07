@@ -104,7 +104,7 @@ class _RoleCard extends StatelessWidget {
       child: Row(
         children: [
           Icon(icon, color: selected ? _orange : _muted, size: 24),
-          const SizedBox(width: 9),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,13 +124,16 @@ class _RoleCard extends StatelessWidget {
                     ),
                     if (onNoticeTap != null)
                       SizedBox(
-                        width: 28,
-                        height: 28,
+                        width: 44,
+                        height: 44,
                         child: IconButton(
                           tooltip: appLanguageText('About merchant tools', 'About merchant tools'),
                           onPressed: onNoticeTap,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          padding: AppSpacing.buttonPadding,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 44,
+                            height: 44,
+                          ),
                           visualDensity: VisualDensity.compact,
                           icon: Icon(
                             Icons.info_outline_rounded,
@@ -142,7 +145,7 @@ class _RoleCard extends StatelessWidget {
                   ],
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 6),
                   AppText(
                     subtitle!,
                     localize: true,
@@ -197,7 +200,7 @@ class _AuthField extends StatelessWidget {
           fontWeight: FontWeight.w800,
         ),
       ),
-      const SizedBox(height: 4),
+      const SizedBox(height: 6),
       TextField(
         key: ValueKey('auth-field-${label.toLowerCase().replaceAll(' ', '-')}'),
         controller: controller,
@@ -303,7 +306,7 @@ class _SocialButton extends StatelessWidget {
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 6),
         AppText(
           label,
           style: TextStyle(

@@ -193,7 +193,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                               size: 20,
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,7 +208,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 6),
                                 AppText(
                                   notification.preview,
                                   maxLines: 2,

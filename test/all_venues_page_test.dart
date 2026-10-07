@@ -1,45 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/all_venues_page.dart';
+import 'package:myapp/filter_panel_style.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('search filters venues and the result list dismisses keyboard on scroll', (
+  testWidgets('filter apply button colors follow the active theme', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AllVenuesPage(
-          title: 'Most popular',
-          posts: [
-            {'businessName': 'Basketball court', 'tags': 'Parking'},
-            {'businessName': 'Tennis court', 'tags': 'Store'},
-          ],
-          cardBuilder: (post) => SizedBox(
-            height: 140,
-            child: Card(child: Text('${post['businessName']}')),
+    const firstBackground = Color(0xFF00695C);
+    const firstForeground = Color(0xFFFFFFFF);
+    const secondBackground = Color(0xFFFFC107);
+    const secondForeground = Color(0xFF101B33);
+
+    Widget buildButtonTheme(Color background, Color foreground) => MaterialApp(
+      theme: ThemeData(
+        colorScheme: ColorScheme.light().copyWith(
+          secondary: background,
+          onSecondary: foreground,
+        ),
+      ),
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: FilledButton(
+            style: filterPanelApplyButtonStyle(context),
+            onPressed: () {},
+            child: const Text('Show venues'),
           ),
         ),
       ),
     );
-    await tester.pumpAndSettle();
 
-    final resultList = tester.widget<ListView>(
-      find.byKey(const ValueKey('all-venues-list')),
-    );
-    expect(
-      resultList.keyboardDismissBehavior,
-      ScrollViewKeyboardDismissBehavior.onDrag,
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('all-venues-search')),
-      'basketball',
+    await tester.pumpWidget(buildButtonTheme(firstBackground, firstForeground));
+    var button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.style!.backgroundColor!.resolve({}), firstBackground);
+    expect(button.style!.foregroundColor!.resolve({}), firstForeground);
+
+    await tester.pumpWidget(
+      buildButtonTheme(secondBackground, secondForeground),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Basketball court'), findsOneWidget);
-    expect(find.text('Tennis court'), findsNothing);
+    button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(button.style!.backgroundColor!.resolve({}), secondBackground);
+    expect(button.style!.foregroundColor!.resolve({}), secondForeground);
   });
+
+  testWidgets(
+    'search filters venues and the result list dismisses keyboard on scroll',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AllVenuesPage(
+            title: 'Most popular',
+            posts: [
+              {'businessName': 'Basketball court', 'tags': 'Parking'},
+              {'businessName': 'Tennis court', 'tags': 'Store'},
+            ],
+            cardBuilder: (post) => SizedBox(
+              height: 140,
+              child: Card(child: Text('${post['businessName']}')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final resultList = tester.widget<ListView>(
+        find.byKey(const ValueKey('all-venues-list')),
+      );
+      expect(
+        resultList.keyboardDismissBehavior,
+        ScrollViewKeyboardDismissBehavior.onDrag,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('all-venues-search')),
+        'basketball',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Basketball court'), findsOneWidget);
+      expect(find.text('Tennis court'), findsNothing);
+    },
+  );
 
   testWidgets('All Venues header collapses while search stays pinned', (
     tester,

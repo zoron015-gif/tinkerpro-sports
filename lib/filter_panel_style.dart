@@ -8,7 +8,7 @@ import 'app_preferences.dart';
 const filterPanelTransitionDuration = Duration(milliseconds: 300);
 const filterPanelMaxWidth = 440.0;
 const filterPanelWidthFactor = .9;
-const filterPanelSectionSpacing = 16.0;
+const filterPanelSectionSpacing = 6.0;
 
 const filterPanelHeaderPadding = EdgeInsets.fromLTRB(
   AppSpacing.panelInset,
@@ -38,18 +38,24 @@ TextStyle get filterPanelSectionLabelStyle => TextStyle(
 final filterPanelButtonStyle = ButtonStyle(
   minimumSize: WidgetStatePropertyAll(Size(48, 48)),
   fixedSize: WidgetStatePropertyAll(Size(48, 48)),
-  padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+  padding: WidgetStatePropertyAll(AppSpacing.buttonPadding),
   shape: WidgetStatePropertyAll(CircleBorder()),
   backgroundColor: WidgetStatePropertyAll(AppColors.page),
   foregroundColor: WidgetStatePropertyAll(AppColors.ink),
 );
-final filterPanelApplyButtonStyle = ButtonStyle(
-  backgroundColor: WidgetStatePropertyAll(AppColors.ink),
-  minimumSize: WidgetStatePropertyAll(Size.fromHeight(50)),
-  shape: WidgetStatePropertyAll(
-    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
-  ),
-);
+ButtonStyle filterPanelApplyButtonStyle(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return ButtonStyle(
+    backgroundColor: WidgetStatePropertyAll(colors.secondary),
+    foregroundColor: WidgetStatePropertyAll(colors.onSecondary),
+    minimumSize: const WidgetStatePropertyAll(Size.fromHeight(50)),
+    shape: const WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(14)),
+      ),
+    ),
+  );
+}
 
 double filterPanelWidth(BuildContext context) => math.min(
   MediaQuery.sizeOf(context).width * filterPanelWidthFactor,

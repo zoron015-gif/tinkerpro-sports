@@ -25,11 +25,11 @@ class FitnessBookingPricing {
   }
 
   static double coachPrice(
-    Map<String, dynamic>? coach,
-    String? plan,
-  ) {
-    if (coach == null || plan == null) return 0;
-    return _amount(coach['monthlyPrice']) * (plan == 'yearly' ? 12 : 1);
+    Map<String, dynamic>? coach, {
+    int durationMonths = 1,
+  }) {
+    if (coach == null || durationMonths < 1) return 0;
+    return _amount(coach['monthlyPrice']) * durationMonths;
   }
 
   static String? yearlyOfferLabel(

@@ -6,7 +6,7 @@ import 'filter_panel_style.dart';
 import 'app_preferences.dart';
 
 Color get _venuesMuted => AppColors.muted;
-Color get _venuesOrange => AppColors.accent;
+Color get _venuesOrange => AppColors.accentForeground;
 
 class AllVenuesPage extends StatefulWidget {
   const AllVenuesPage({
@@ -221,11 +221,12 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                       padding: filterPanelHeaderPadding,
                       child: Row(
                         children: [
-                           Expanded(
+                          Expanded(
                             child: AppText(
                               'Filter venues',
                               style: filterPanelTitleStyle,
-                             localize: true,),
+                              localize: true,
+                            ),
                           ),
                           TextButton(
                             key: const ValueKey('all-venues-filter-reset'),
@@ -233,7 +234,10 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                             child: const AppText('Reset', localize: true),
                           ),
                           IconButton(
-                            tooltip: appLanguageText('Close filters', 'Close filters'),
+                            tooltip: appLanguageText(
+                              'Close filters',
+                              'Close filters',
+                            ),
                             onPressed: () => Navigator.of(dialogContext).pop(),
                             icon: const Icon(Icons.close_rounded),
                           ),
@@ -247,8 +251,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                         children: [
                           _filterLabel(widget.categoryFilterLabel),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
                               for (final value in _options(
                                 (post) => '${post['category'] ?? ''}',
@@ -260,7 +264,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   ),
                                   label: AppText(value),
                                   selected: _sport == value,
-                                  selectedColor: _venuesOrange,
+                                  selectedColor: AppColors.accent,
                                   onSelected: (_) {
                                     setState(() => _sport = value);
                                     setSheetState(() {});
@@ -316,8 +320,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           const SizedBox(height: filterPanelSectionSpacing),
                           _filterLabel(widget.facilityFilterLabel),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
                               for (final value in [
                                 'All',
@@ -332,7 +336,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   ),
                                   label: AppText(value),
                                   selected: _courtType == value,
-                                  selectedColor: _venuesOrange,
+                                  selectedColor: AppColors.accent,
                                   onSelected: (_) {
                                     setState(() => _courtType = value);
                                     setSheetState(() {});
@@ -343,8 +347,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           const SizedBox(height: filterPanelSectionSpacing),
                           _filterLabel('Amenities'),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
                               for (final value in const [
                                 'Parking',
@@ -375,7 +379,8 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           const SizedBox(height: filterPanelSectionSpacing),
                           _filterLabel('Availability'),
                           Wrap(
-                            spacing: 8,
+                            spacing: 6,
+                            runSpacing: 6,
                             children: [
                               for (final value in const [
                                 'Any',
@@ -387,7 +392,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                   ),
                                   label: AppText(value),
                                   selected: _availability == value,
-                                  selectedColor: _venuesOrange,
+                                  selectedColor: AppColors.accent,
                                   onSelected: (_) {
                                     setState(() => _availability = value);
                                     setSheetState(() {});
@@ -411,7 +416,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                               setSheetState(() {});
                             },
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           _filterLabel('Sort price'),
                           _dropdown(
                             value: _priceSort,
@@ -435,8 +440,11 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                         child: FilledButton(
                           key: const ValueKey('all-venues-filter-apply'),
                           onPressed: () => Navigator.of(dialogContext).pop(),
-                          style: filterPanelApplyButtonStyle,
-                          child: AppText('Show ${_visiblePosts.length} venues', localize: true),
+                          style: filterPanelApplyButtonStyle(context),
+                          child: AppText(
+                            'Show ${_visiblePosts.length} venues',
+                            localize: true,
+                          ),
                         ),
                       ),
                     ),
@@ -547,7 +555,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     onChanged: (value) {
       if (value != null) onChanged(value);
     },
-    decoration:  InputDecoration(
+    decoration: InputDecoration(
       filled: true,
       fillColor: AppColors.surfaceVariant,
       border: OutlineInputBorder(),
@@ -589,14 +597,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     appBar: AppBar(
       backgroundColor: AppColors.surface,
       foregroundColor: AppColors.ink,
-      title: AppText(
-        widget.title,
-        style:  TextStyle(
-          color: AppColors.ink,
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
+      title: AppText(widget.title, style: AppTypography.pageTitle),
       actions: [
         FilterPanelButton(
           key: const ValueKey('all-venues-open-filters'),
@@ -615,7 +616,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
               curve: Curves.easeInOut,
               child: _headerVisible
                   ? Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 3),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -634,40 +635,38 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                                     ),
                                     maxLines: 1,
                                     softWrap: false,
-                                    style:  TextStyle(
-                                      color: AppColors.ink,
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w900,
-                                    ),
+                                    style: AppTypography.sectionTitle,
                                   ),
                                 ),
                               ),
                               IconButton(
                                 key: const ValueKey('all-venues-info'),
-                                tooltip: appLanguageText('About this venue list', 'About this venue list'),
+                                tooltip: appLanguageText(
+                                  'About this venue list',
+                                  'About this venue list',
+                                ),
                                 onPressed: _showCollectionDescription,
-                                icon:  Icon(
+                                icon: Icon(
                                   Icons.info_outline_rounded,
                                   color: _venuesMuted,
                                   size: 19,
                                 ),
                                 visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
+                                padding: AppSpacing.buttonPadding,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 32,
-                                  height: 32,
+                                  width: 44,
+                                  height: 44,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
                         ],
                       ),
                     )
                   : const SizedBox(),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 3, 16, 0),
               child: TextField(
                 key: const ValueKey('all-venues-search'),
                 controller: _searchController,
@@ -697,18 +696,15 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide:  BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide:  BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide(
-                      color: _venuesOrange,
-                      width: 1.5,
-                    ),
+                    borderSide: BorderSide(color: _venuesOrange, width: 1.5),
                   ),
                 ),
               ),
@@ -723,16 +719,14 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
-                    children:  [
+                    children: [
                       SizedBox(height: 80),
                       Center(
                         child: AppText(
                           'No venues match your filters or search.',
-                          style: TextStyle(
-                            color: _venuesMuted,
-                            fontSize: 16,
-                          ),
-                         localize: true,),
+                          style: TextStyle(color: _venuesMuted, fontSize: 16),
+                          localize: true,
+                        ),
                       ),
                     ],
                   )
@@ -741,9 +735,9 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
                     itemCount: _visiblePosts.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 14),
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
                     itemBuilder: (_, index) =>
                         widget.cardBuilder(_visiblePosts[index]),
                   ),

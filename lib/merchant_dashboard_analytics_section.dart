@@ -1,8 +1,10 @@
 part of 'merchant_dashboard.dart';
 
+const double _analyticsElementGap = 6;
+
 const _analyticsFilterStyle = ButtonStyle(
   minimumSize: WidgetStatePropertyAll(Size.fromHeight(40)),
-  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+  padding: WidgetStatePropertyAll(AppSpacing.buttonPadding),
   textStyle: WidgetStatePropertyAll(
     TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
   ),
@@ -14,16 +16,20 @@ class _AnalyticsBucket {
     required this.key,
     required this.label,
     this.sales = 0,
+    this.collected = 0,
     this.customers = 0,
     this.bookings = 0,
+    this.confirmedBookings = 0,
     this.participants = 0,
   });
 
   final String key;
   final String label;
   final double sales;
+  final double collected;
   final int customers;
   final int bookings;
+  final int confirmedBookings;
   final int participants;
 }
 
@@ -61,6 +67,85 @@ class _VenueAnalytics {
 }
 
 extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
+  String _bookingBusinessType(Map<String, dynamic> booking) =>
+      '${booking['businessType'] ?? booking['business_type'] ?? ''}'.trim();
+
+  List<String> get _analyticsBookingTypes {
+    final types =
+        _bookings
+            .map(_bookingBusinessType)
+            .where((type) => type.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return types;
+  }
+
+  List<Map<String, dynamic>> get _analyticsBookings {
+    if (_analyticsBookingType == 'All') return _bookings;
+    return _bookings
+        .where(
+          (booking) =>
+              _bookingBusinessType(booking).toLowerCase() ==
+              _analyticsBookingType.toLowerCase(),
+        )
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _analyticsBusinesses {
+    if (_analyticsBookingType == 'All') return _businesses;
+    return _businesses.where((business) {
+      final type =
+          '${business['businessType'] ?? business['business_type'] ?? ''}'
+              .trim();
+      return type.toLowerCase() == _analyticsBookingType.toLowerCase();
+    }).toList();
+  }
+
+  Widget get _analyticsBookingTypeFilter => DropdownButtonFormField<String>(
+    key: const ValueKey('merchant-analytics-booking-type-filter'),
+    initialValue: _analyticsBookingType,
+    isExpanded: true,
+    style: TextStyle(
+      color: _merchantInk,
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    ),
+    iconSize: 18,
+    decoration: InputDecoration(
+      labelText: appLanguageText('Booking type', 'Booking type'),
+      prefixIcon: Icon(Icons.filter_list_rounded, size: 18),
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      constraints: BoxConstraints(minHeight: 48),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantLine),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantLine),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide(color: _merchantOrange, width: 1.5),
+      ),
+    ),
+    items: [
+      const DropdownMenuItem(
+        value: 'All',
+        child: AppText('All booking types', maxLines: 1, localize: true),
+      ),
+      for (final type in _analyticsBookingTypes)
+        DropdownMenuItem(value: type, child: AppText(type, maxLines: 1)),
+    ],
+    onChanged: (value) {
+      if (value != null) {
+        _setAnalyticsState(() => _analyticsBookingType = value);
+      }
+    },
+  );
+
   Widget _merchantAnalyticsDashboard() => RefreshIndicator(
     onRefresh: () async {
       await _loadBusinesses();
@@ -71,27 +156,32 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
         _merchantActionCenter,
-        const SizedBox(height: 14),
+        const SizedBox(height: _analyticsElementGap),
         Row(
           children: [
-             AppText(
+            AppText(
               'Data analytics',
               style: TextStyle(
                 color: _merchantInk,
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
               ),
-             localize: true,),
+              localize: true,
+            ),
             IconButton(
               key: const ValueKey('merchant-analytics-info'),
-              tooltip: appLanguageText('About data analytics', 'About data analytics'),
+              tooltip: appLanguageText(
+                'About data analytics',
+                'About data analytics',
+              ),
               onPressed: () => showDialog<void>(
                 context: context,
                 builder: (dialogContext) => AlertDialog(
                   title: const AppText('Data analytics', localize: true),
                   content: const AppText(
                     'Track sales, customers, and venue performance.',
-                   localize: true,),
+                    localize: true,
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(dialogContext).pop(),
@@ -100,14 +190,14 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   ],
                 ),
               ),
-              icon:  Icon(
+              icon: Icon(
                 Icons.info_outline_rounded,
                 color: _merchantMuted,
                 size: 19,
               ),
               visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: AppSpacing.buttonPadding,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
             ),
             const Spacer(),
             OutlinedButton.icon(
@@ -123,9 +213,9 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _merchantNavy,
-                side:  BorderSide(color: _merchantLine),
+                side: BorderSide(color: _merchantLine),
                 minimumSize: const Size(0, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 9),
+                padding: AppSpacing.buttonPadding,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 textStyle: const TextStyle(
                   fontSize: 12,
@@ -135,33 +225,47 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: _analyticsElementGap),
         _analyticsViewSelector,
-        const SizedBox(height: 12),
+        const SizedBox(height: _analyticsElementGap),
+        _analyticsBookingTypeFilter,
+        const SizedBox(height: _analyticsElementGap),
         SegmentedButton<String>(
           key: const ValueKey('merchant-analytics-period'),
           style: _analyticsFilterStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(value: 'Daily', label: AppText('Daily', localize: true)),
-            ButtonSegment(value: 'Weekly', label: AppText('Weekly', localize: true)),
-            ButtonSegment(value: 'Monthly', label: AppText('Monthly', localize: true)),
-            ButtonSegment(value: 'Annual', label: AppText('Annual', localize: true)),
+            ButtonSegment(
+              value: 'Daily',
+              label: AppText('Daily', localize: true),
+            ),
+            ButtonSegment(
+              value: 'Weekly',
+              label: AppText('Weekly', localize: true),
+            ),
+            ButtonSegment(
+              value: 'Monthly',
+              label: AppText('Monthly', localize: true),
+            ),
+            ButtonSegment(
+              value: 'Annual',
+              label: AppText('Annual', localize: true),
+            ),
           ],
           selected: {_analyticsPeriod},
           onSelectionChanged: (selection) {
             _setAnalyticsState(() => _analyticsPeriod = selection.first);
           },
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: _analyticsElementGap),
         _analyticsSummaryCard,
-        const SizedBox(height: 12),
+        const SizedBox(height: _analyticsElementGap),
         _analyticsChartCard,
         if (_analyticsView == 'Venue performance') ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: _analyticsElementGap),
           _analyticsVenueCard,
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: _analyticsElementGap),
         _analyticsBookingStatusCard,
       ],
     ),
@@ -192,8 +296,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
           Row(
             children: [
               Icon(Icons.bolt_rounded, color: _merchantOrange, size: 20),
-              const SizedBox(width: 7),
-               Expanded(
+              const SizedBox(width: _analyticsElementGap),
+              Expanded(
                 child: AppText(
                   'Needs your attention',
                   style: TextStyle(
@@ -201,7 +305,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
@@ -217,20 +322,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: _analyticsElementGap),
           AppText(
             '$pendingCount booking${pendingCount == 1 ? '' : 's'} awaiting approval',
-            style:  TextStyle(
-              color: _merchantMuted,
-              fontSize: 13,
-              height: 1.35,
-            ),
-           localize: true,),
-          const SizedBox(height: 12),
+            style: TextStyle(color: _merchantMuted, fontSize: 13, height: 1.35),
+            localize: true,
+          ),
+          const SizedBox(height: _analyticsElementGap),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -266,7 +369,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     return Row(
       children: [
         for (var index = 0; index < views.length; index++) ...[
-          if (index > 0) const SizedBox(width: 8),
+          if (index > 0) const SizedBox(width: _analyticsElementGap),
           Expanded(
             child: _AnalyticsViewTile(
               key: ValueKey('merchant-analytics-view-${views[index].$1}'),
@@ -328,14 +431,16 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       ),
     };
     final sales = List<double>.filled(starts.length, 0);
+    final collected = List<double>.filled(starts.length, 0);
     final customersByBucket = List<Set<String>>.generate(
       starts.length,
       (_) => <String>{},
     );
     final bookingCounts = List<int>.filled(starts.length, 0);
+    final confirmedBookingCounts = List<int>.filled(starts.length, 0);
     final participantCounts = List<int>.filled(starts.length, 0);
     final keys = starts.map(_analyticsKey).toList();
-    for (final booking in _bookings) {
+    for (final booking in _analyticsBookings) {
       if (BookingStatusParser.isCancelled(booking['status'])) continue;
       final date = _bookingDate(booking);
       if (date == null) continue;
@@ -363,6 +468,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       if (customerId != null) customersByBucket[index].add('$customerId');
       if (_isConfirmedBooking(booking)) {
         sales[index] += _bookingAmount(booking['total']);
+        collected[index] += _bookingAmount(booking['downpayment']);
+        confirmedBookingCounts[index]++;
       }
     }
     return [
@@ -377,8 +484,10 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             _ => _weekdayLabel(starts[index].weekday),
           },
           sales: sales[index],
+          collected: collected[index],
           customers: customersByBucket[index].length,
           bookings: bookingCounts[index],
+          confirmedBookings: confirmedBookingCounts[index],
           participants: participantCounts[index],
         ),
     ];
@@ -460,7 +569,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   List<Map<String, dynamic>> get _periodBookings {
     final bucketKeys = _analyticsBuckets.map((bucket) => bucket.key).toSet();
-    return _bookings.where((booking) {
+    return _analyticsBookings.where((booking) {
       if (BookingStatusParser.isCancelled(booking['status'])) return false;
       final date = _bookingDate(booking);
       if (date == null || !bucketKeys.contains(_analyticsKeyForDate(date))) {
@@ -511,10 +620,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   int _bookingCount(dynamic value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 
-  int get _pendingBookingCount => _bookings.where(_isPendingBooking).length;
-
   Widget get _analyticsSummaryCard {
-    final liveVenues = _businesses.where(_isLiveOnApp).length;
+    final liveVenues = _analyticsBusinesses.where(_isLiveOnApp).length;
     final primaryMetric = switch (_analyticsView) {
       'Customer count' => '$_periodParticipants',
       'Venue performance' => '${_periodBookings.length}',
@@ -537,7 +644,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             Expanded(
               child: _analyticsMetric(primaryLabel, primaryMetric, primaryIcon),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: _analyticsElementGap),
             Expanded(
               child: _analyticsMetric(
                 _analyticsView == 'Customer count' ? 'Customers' : 'Collected',
@@ -551,7 +658,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: _analyticsElementGap),
         Row(
           children: [
             Expanded(
@@ -561,11 +668,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 Icons.event_available_outlined,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: _analyticsElementGap),
             Expanded(
               child: _analyticsMetric(
                 'Live venues',
-                '$liveVenues / ${_businesses.length}',
+                '$liveVenues / ${_analyticsBusinesses.length}',
                 Icons.storefront_outlined,
               ),
             ),
@@ -576,6 +683,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   }
 
   Widget _analyticsMetric(String label, String value, IconData icon) => Card(
+    margin: EdgeInsets.zero,
     elevation: 0,
     color: AppColors.surface,
     child: Padding(
@@ -583,7 +691,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       child: Row(
         children: [
           Icon(icon, color: _merchantOrange, size: 21),
-          const SizedBox(width: 9),
+          const SizedBox(width: _analyticsElementGap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -592,14 +700,14 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:  TextStyle(color: _merchantMuted, fontSize: 11),
+                  style: TextStyle(color: _merchantMuted, fontSize: 11),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: _analyticsElementGap),
                 AppText(
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:  TextStyle(
+                  style: TextStyle(
                     color: _merchantInk,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
@@ -629,6 +737,50 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final detailLabels = buckets
         .map((bucket) => '${bucket.label} · ${bucket.key}')
         .toList();
+    final pointDetails = [
+      for (final bucket in buckets)
+        [
+          _AnalyticsPointMetric(
+            label: 'Confirmed sales',
+            value: _formatCurrency(bucket.sales),
+            color: _merchantOrange,
+          ),
+          _AnalyticsPointMetric(
+            label: 'Collected payments',
+            value: _formatCurrency(bucket.collected),
+            color: const Color(0xFF168B69),
+          ),
+          _AnalyticsPointMetric(
+            label: 'Bookings',
+            value: '${bucket.bookings}',
+            color: _merchantNavy,
+          ),
+          _AnalyticsPointMetric(
+            label: 'Confirmed bookings',
+            value: '${bucket.confirmedBookings}',
+            color: _merchantMuted,
+          ),
+          _AnalyticsPointMetric(
+            label: 'Players',
+            value: '${bucket.participants}',
+            color: const Color(0xFF5169C4),
+          ),
+          _AnalyticsPointMetric(
+            label: 'Unique customers',
+            value: '${bucket.customers}',
+            color: const Color(0xFFB34E91),
+          ),
+          _AnalyticsPointMetric(
+            label: 'Avg. confirmed booking',
+            value: _formatCurrency(
+              bucket.confirmedBookings == 0
+                  ? 0
+                  : bucket.sales / bucket.confirmedBookings,
+            ),
+            color: const Color(0xFFAB6D19),
+          ),
+        ],
+    ];
     final chartWidth = math.max(280.0, values.length * 56.0).toDouble();
     final chartTitle = switch (_analyticsView) {
       'Customer count' => 'Customers by $_analyticsPeriod',
@@ -650,7 +802,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         children: [
           if (venueSeries.isNotEmpty) ...[
             _AnalyticsChartLegend(series: venueSeries),
-            const SizedBox(height: 10),
+            const SizedBox(height: _analyticsElementGap),
           ],
           Align(
             alignment: Alignment.centerRight,
@@ -664,6 +816,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 values: values,
                 labels: labels,
                 detailLabels: detailLabels,
+                pointDetails: pointDetails,
                 series: venueSeries,
                 valueColor: isCustomerView
                     ? const Color(0xFF168B69)
@@ -696,6 +849,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   values: values,
                   labels: labels,
                   detailLabels: detailLabels,
+                  pointDetails: pointDetails,
                   series: venueSeries,
                   valueLabel: isCustomerView ? 'Customers' : 'Confirmed sales',
                   valueColor: isCustomerView
@@ -712,7 +866,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: _analyticsElementGap),
           _analyticsChartSummary(chartSummary),
         ],
       ),
@@ -732,7 +886,9 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     ];
     final buckets = _analyticsBuckets;
     final names = <String>{
-      ..._businesses.map((business) => '${business['name'] ?? 'Venue'}'),
+      ..._analyticsBusinesses.map(
+        (business) => '${business['name'] ?? 'Venue'}',
+      ),
       ..._periodBookings.map((booking) => '${booking['venueName'] ?? 'Venue'}'),
     }.toList()..sort();
     final bucketIndexes = {
@@ -771,6 +927,16 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   }
 
   Widget get _analyticsVenueComparisonChart {
+    const contributionColors = [
+      Color(0xFF192B50),
+      Color(0xFFFF8200),
+      Color(0xFF168B69),
+      Color(0xFF5169C4),
+      Color(0xFFB34E91),
+      Color(0xFF008FA8),
+      Color(0xFFAB6D19),
+      Color(0xFF7855A3),
+    ];
     final venues = _venueAnalytics;
     double valueFor(_VenueAnalytics venue) => switch (_venueComparisonMetric) {
       'Sales' => venue.sales,
@@ -779,9 +945,9 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     };
     final ranked = [...venues]
       ..sort((a, b) => valueFor(b).compareTo(valueFor(a)));
-    final maxValue = ranked.fold<double>(
+    final totalValue = ranked.fold<double>(
       0,
-      (maximum, venue) => math.max(maximum, valueFor(venue)).toDouble(),
+      (total, venue) => total + valueFor(venue),
     );
     final valueColor = switch (_venueComparisonMetric) {
       'Sales' => _merchantOrange,
@@ -800,9 +966,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             style: _analyticsFilterStyle,
             showSelectedIcon: false,
             segments: const [
-              ButtonSegment(value: 'Bookings', label: AppText('Bookings', localize: true)),
-              ButtonSegment(value: 'Sales', label: AppText('Sales', localize: true)),
-              ButtonSegment(value: 'Players', label: AppText('Players', localize: true)),
+              ButtonSegment(
+                value: 'Bookings',
+                label: AppText('Bookings', localize: true),
+              ),
+              ButtonSegment(
+                value: 'Sales',
+                label: AppText('Sales', localize: true),
+              ),
+              ButtonSegment(
+                value: 'Players',
+                label: AppText('Players', localize: true),
+              ),
             ],
             selected: {_venueComparisonMetric},
             onSelectionChanged: (selection) {
@@ -811,16 +986,93 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               );
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: _analyticsElementGap),
           if (ranked.isEmpty)
-             AppText(
+            AppText(
               'Venue comparisons will appear when venues are added.',
               style: TextStyle(color: _merchantMuted, fontSize: 13),
-             localize: true,)
+              localize: true,
+            )
           else ...[
+            if (ranked.length > 1) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: AppText(
+                      'Share of total $metricLabel',
+                      style: TextStyle(
+                        color: _merchantInk,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  AppText(
+                    _venueComparisonMetric == 'Sales'
+                        ? _formatCurrency(totalValue)
+                        : '${totalValue.round()} $metricLabel',
+                    key: const ValueKey('merchant-venue-contribution-total'),
+                    style: TextStyle(
+                      color: _merchantMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: _analyticsElementGap),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Semantics(
+                  label: 'Venue contribution share of total $metricLabel',
+                  child: SizedBox(
+                    key: const ValueKey('merchant-venue-contribution-chart'),
+                    height: 14,
+                    child: totalValue <= 0
+                        ? ColoredBox(color: _merchantLine)
+                        : Row(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < ranked.length;
+                                index++
+                              )
+                                if (valueFor(ranked[index]) > 0)
+                                  Expanded(
+                                    flex: math.max(
+                                      1,
+                                      (valueFor(ranked[index]) /
+                                              totalValue *
+                                              1000)
+                                          .round(),
+                                    ),
+                                    child: Tooltip(
+                                      message:
+                                          '${ranked[index].name}: '
+                                          '${(valueFor(ranked[index]) / totalValue * 100).toStringAsFixed(1)}%',
+                                      child: ColoredBox(
+                                        color:
+                                            contributionColors[index %
+                                                contributionColors.length],
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: _analyticsElementGap),
+              AppText(
+                "Each color represents a venue's share of the total.",
+                style: TextStyle(color: _merchantMuted, fontSize: 10),
+              ),
+            ],
             for (final entry in ranked.asMap().entries)
               Padding(
-                padding: EdgeInsets.only(top: entry.key == 0 ? 0 : 14),
+                padding: EdgeInsets.only(
+                  top: entry.key == 0 ? 0 : _analyticsElementGap,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -831,14 +1083,27 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                             entry.value.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style:  TextStyle(
+                            style: TextStyle(
                               color: _merchantInk,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        AppText(
+                          '${(totalValue <= 0 ? 0 : valueFor(entry.value) / totalValue * 100).toStringAsFixed(1)}%',
+                          key: ValueKey(
+                            'merchant-venue-share-${entry.value.name}',
+                          ),
+                          style: TextStyle(
+                            color:
+                                contributionColors[entry.key %
+                                    contributionColors.length],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: _analyticsElementGap),
                         AppText(
                           _venueComparisonMetric == 'Sales'
                               ? _formatCurrency(valueFor(entry.value))
@@ -854,35 +1119,37 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: _analyticsElementGap),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: LinearProgressIndicator(
                         key: ValueKey(
                           'merchant-venue-comparison-bar-${entry.value.name}',
                         ),
-                        value: maxValue == 0
+                        value: totalValue <= 0
                             ? 0
-                            : valueFor(entry.value) / maxValue,
+                            : valueFor(entry.value) / totalValue,
                         minHeight: 8,
                         backgroundColor: _merchantLine,
-                        color: valueColor,
+                        color:
+                            contributionColors[entry.key %
+                                contributionColors.length],
                       ),
                     ),
                   ],
                 ),
               ),
-            const SizedBox(height: 14),
+            const SizedBox(height: _analyticsElementGap),
             _analyticsChartSummary(
               '${ranked.length} venues compared · '
               '${_periodBookings.length} bookings in this date range',
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: _analyticsElementGap),
             AppText(
               _venueComparisonMetric == 'Sales'
                   ? 'Sales include confirmed bookings only.'
                   : 'Sorted by $metricLabel from highest to lowest.',
-              style:  TextStyle(color: _merchantMuted, fontSize: 11),
+              style: TextStyle(color: _merchantMuted, fontSize: 11),
             ),
           ],
         ],
@@ -896,6 +1163,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     required List<double> values,
     required List<String> labels,
     required List<String> detailLabels,
+    required List<List<_AnalyticsPointMetric>> pointDetails,
     required List<_AnalyticsChartSeries> series,
     required Color valueColor,
     required String Function(double value) formatValue,
@@ -911,6 +1179,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         values: values,
         labels: labels,
         detailLabels: detailLabels,
+        pointDetails: pointDetails,
         series: series,
         valueColor: valueColor,
         formatValue: formatValue,
@@ -931,7 +1200,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     child: Row(
       children: [
         Icon(Icons.summarize_outlined, color: _merchantInk, size: 19),
-        const SizedBox(width: 8),
+        const SizedBox(width: _analyticsElementGap),
         Expanded(
           child: AppText(
             summary,
@@ -962,7 +1231,9 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       );
     }
     final names = <String>{
-      ..._businesses.map((business) => '${business['name'] ?? 'Venue'}'),
+      ..._analyticsBusinesses.map(
+        (business) => '${business['name'] ?? 'Venue'}',
+      ),
       ...stats.keys,
     };
     final analytics = [
@@ -988,7 +1259,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   }
 
   double _businessRating(String name) {
-    for (final business in _businesses) {
+    for (final business in _analyticsBusinesses) {
       if ('${business['name'] ?? ''}' == name) {
         return _bookingAmount(
           business['averageRating'] ?? business['average_rating'],
@@ -999,7 +1270,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   }
 
   int _businessReviewCount(String name) {
-    for (final business in _businesses) {
+    for (final business in _analyticsBusinesses) {
       if ('${business['name'] ?? ''}' == name) {
         final count = business['reviewCount'] ?? business['review_count'] ?? 0;
         return count is num ? count.toInt() : int.tryParse('$count') ?? 0;
@@ -1014,15 +1285,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       title: 'Venue performance',
       subtitle: 'Ratings, confirmed sales, and booking counts',
       child: ranked.isEmpty
-          ?  AppText(
+          ? AppText(
               'Venue performance will appear when bookings come in.',
               style: TextStyle(color: _merchantMuted, fontSize: 13),
-             localize: true,)
+              localize: true,
+            )
           : Column(
               children: [
                 for (final entry in ranked.take(5).toList().asMap().entries)
                   Padding(
-                    padding: EdgeInsets.only(top: entry.key == 0 ? 0 : 12),
+                    padding: EdgeInsets.only(
+                      top: entry.key == 0 ? 0 : _analyticsElementGap,
+                    ),
                     child: Row(
                       children: [
                         CircleAvatar(
@@ -1035,9 +1309,10 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                             ),
-                           localize: true,),
+                            localize: true,
+                          ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: _analyticsElementGap),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1046,20 +1321,22 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                                 entry.value.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style:  TextStyle(
+                                style: TextStyle(
                                   color: _merchantInk,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
+                              const SizedBox(height: _analyticsElementGap),
                               AppText(
                                 '${entry.value.bookings} bookings · '
                                 '${entry.value.participants} players · '
                                 '${entry.value.reviewCount} reviews',
-                                style:  TextStyle(
+                                style: TextStyle(
                                   color: _merchantMuted,
                                   fontSize: 11,
                                 ),
-                               localize: true,),
+                                localize: true,
+                              ),
                             ],
                           ),
                         ),
@@ -1074,11 +1351,12 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
+                            const SizedBox(height: _analyticsElementGap),
                             AppText(
                               entry.value.rating > 0
                                   ? '★ ${entry.value.rating.toStringAsFixed(1)}'
                                   : 'No rating',
-                              style:  TextStyle(
+                              style: TextStyle(
                                 color: _merchantMuted,
                                 fontSize: 10,
                               ),
@@ -1094,14 +1372,19 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   }
 
   Widget get _analyticsBookingStatusCard {
-    final confirmedCount = _bookings.where(_isConfirmedBooking).length;
-    final finishedCount = _bookings.where(_isFinishedBooking).length;
+    final confirmedCount = _analyticsBookings.where(_isConfirmedBooking).length;
+    final finishedCount = _analyticsBookings.where(_isFinishedBooking).length;
     return _analyticsPanel(
       title: 'Bookings overview',
       subtitle: 'Current status across all venues',
       child: Row(
         children: [
-          Expanded(child: _statusMetric('Pending', _pendingBookingCount)),
+          Expanded(
+            child: _statusMetric(
+              'Pending',
+              _analyticsBookings.where(_isPendingBooking).length,
+            ),
+          ),
           Expanded(
             child: _statusMetric('Approved', confirmedCount - finishedCount),
           ),
@@ -1109,7 +1392,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
           Expanded(
             child: _statusMetric(
               'Cancelled',
-              _bookings
+              _analyticsBookings
                   .where(
                     (booking) =>
                         BookingStatusParser.isCancelled(booking['status']),
@@ -1126,17 +1409,19 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     children: [
       AppText(
         '$value',
-        style:  TextStyle(
+        style: TextStyle(
           color: _merchantInk,
           fontSize: 17,
           fontWeight: FontWeight.w900,
         ),
-       localize: true,),
+        localize: true,
+      ),
+      const SizedBox(height: _analyticsElementGap),
       AppText(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style:  TextStyle(color: _merchantMuted, fontSize: 10),
+        style: TextStyle(color: _merchantMuted, fontSize: 10),
       ),
     ],
   );
@@ -1146,6 +1431,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     required String subtitle,
     required Widget child,
   }) => Card(
+    margin: EdgeInsets.zero,
     elevation: 0,
     color: AppColors.surface,
     child: Padding(
@@ -1158,18 +1444,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             key: ValueKey(
               'merchant-analytics-panel-${title.toLowerCase().replaceAll(' ', '-')}',
             ),
-            style:  TextStyle(
+            style: TextStyle(
               color: _merchantInk,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: _analyticsElementGap),
           AppText(
             subtitle,
-            style:  TextStyle(color: _merchantMuted, fontSize: 11),
+            style: TextStyle(color: _merchantMuted, fontSize: 11),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: _analyticsElementGap),
           child,
         ],
       ),

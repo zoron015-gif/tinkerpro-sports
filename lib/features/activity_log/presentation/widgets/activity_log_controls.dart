@@ -129,7 +129,7 @@ class ActivityLogMessage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: AppColors.muted, size: 42),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           AppText(
             message,
             textAlign: TextAlign.center,
@@ -137,7 +137,7 @@ class ActivityLogMessage extends StatelessWidget {
           ),
           if (supportRequestId != null &&
               supportRequestId!.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             SelectableText(
               'Support reference: $supportRequestId',
               textAlign: TextAlign.center,
@@ -145,7 +145,7 @@ class ActivityLogMessage extends StatelessWidget {
             ),
           ],
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             TextButton(onPressed: onAction, child: AppText(actionLabel!)),
           ],
         ],

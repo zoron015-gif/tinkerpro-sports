@@ -9,11 +9,64 @@ abstract final class AppColors {
   static Color get ink => AppPreferences.instance.darkMode ? darkInk : lightInk;
   static const orange = Color(0xFFFF8200);
   static Color get accent => AppPreferences.instance.palette.color;
+  static Color get accentForeground => accessibleForeground(
+    accent,
+    AppPreferences.instance.darkMode ? darkSurfaceHighest : Colors.white,
+  );
+  static Color get onAccent => contrastingForeground(accent);
+  static Color get onAccentForeground =>
+      contrastingForeground(accentForeground);
+
+  static Color accessibleForeground(
+    Color foreground,
+    Color background, {
+    double minimumContrast = 5,
+  }) {
+    if (_contrastRatio(foreground, background) >= minimumContrast) {
+      return foreground;
+    }
+
+    final target = contrastingForeground(background);
+    for (var step = 1; step <= 100; step++) {
+      final candidate = Color.lerp(foreground, target, step / 100)!;
+      if (_contrastRatio(candidate, background) >= minimumContrast) {
+        return candidate;
+      }
+    }
+    return target;
+  }
+
+  static double _contrastRatio(Color first, Color second) {
+    final firstLuminance = first.computeLuminance();
+    final secondLuminance = second.computeLuminance();
+    final lighter = firstLuminance > secondLuminance
+        ? firstLuminance
+        : secondLuminance;
+    final darker = firstLuminance > secondLuminance
+        ? secondLuminance
+        : firstLuminance;
+    return (lighter + .05) / (darker + .05);
+  }
+
+  static Color contrastingForeground(Color background) {
+    var best = lightInk;
+    var bestContrast = _contrastRatio(best, background);
+    for (final candidate in [Colors.black, Colors.white]) {
+      final candidateContrast = _contrastRatio(candidate, background);
+      if (candidateContrast > bestContrast) {
+        best = candidate;
+        bestContrast = candidateContrast;
+      }
+    }
+    return best;
+  }
+
   static const lightPage = Color(0xFFF7F9FC);
   static const darkPage = Color(0xFF101116);
   static Color get page =>
       AppPreferences.instance.darkMode ? darkPage : lightPage;
   static const darkSurface = Color(0xFF191B22);
+  static const darkSurfaceHighest = Color(0xFF30323A);
   static Color get surface =>
       AppPreferences.instance.darkMode ? darkSurface : Colors.white;
   static const lightMuted = Color(0xFF68748A);
@@ -27,12 +80,10 @@ abstract final class AppColors {
   static const lightBorderSubtle = Color(0xFFE6EAF0);
   static Color get borderSubtle =>
       AppPreferences.instance.darkMode ? darkBorder : lightBorderSubtle;
-  static Color get softOrange => accent.withValues(
-    alpha: AppPreferences.instance.darkMode ? .28 : .14,
-  );
-  static Color get softOrangeAlt => accent.withValues(
-    alpha: AppPreferences.instance.darkMode ? .2 : .09,
-  );
+  static Color get softOrange =>
+      accent.withValues(alpha: AppPreferences.instance.darkMode ? .28 : .14);
+  static Color get softOrangeAlt =>
+      accent.withValues(alpha: AppPreferences.instance.darkMode ? .2 : .09);
   static const darkSoftOrangeAlt = Color(0xFF33271D);
   static const lightSoftStatus = Color(0xFFFFF1E3);
   static Color get softStatus =>
@@ -175,6 +226,10 @@ abstract final class AppSpacing {
   static const small = 8.0;
   static const medium = 12.0;
   static const large = 16.0;
+  static const buttonPadding = EdgeInsets.symmetric(
+    horizontal: 12,
+    vertical: 8,
+  );
   static const panelInset = 20.0;
   static const xLarge = 24.0;
   static const xxLarge = 32.0;

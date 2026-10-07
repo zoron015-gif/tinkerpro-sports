@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -15,6 +16,9 @@ void main() {
     'disabled venue small cards are unavailable and do not navigate',
     (tester) async {
       SharedPreferences.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      FlutterSecureStorage.setMockInitialValues({
         'session_api_token': 'test-token',
       });
       final api = AuthApi(
@@ -58,7 +62,6 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-
       expect(find.text('UNAVAILABLE · Booking disabled'), findsWidgets);
       final smallCard = find
           .byKey(const ValueKey('news-feed-mini-business-42'))

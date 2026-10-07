@@ -83,7 +83,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 26),
+            const SizedBox(height: 6),
             Center(
               child: Image.asset(
                 'assets/tinker_logo.png',
@@ -91,7 +91,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                 height: 62,
               ),
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: 6),
             AppText(
               'Check your inbox',
               style: TextStyle(
@@ -100,12 +100,12 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                 fontWeight: FontWeight.w900,
               ),
              localize: true,),
-            const SizedBox(height: 9),
+            const SizedBox(height: 6),
             AppText(
               'We sent a 6-digit verification code to ${widget.email}.',
               style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
              localize: true,),
-            const SizedBox(height: 28),
+            const SizedBox(height: 6),
             _AuthField(
               label: 'Verification code',
               hint: '000000',
@@ -113,7 +113,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               keyboardType: TextInputType.number,
               controller: _codeController,
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -139,7 +139,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                     : const AppText('Verify email', localize: true),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 6),
             Center(
               child: TextButton(
                 onPressed: _loading ? null : _resend,

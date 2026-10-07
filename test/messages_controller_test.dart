@@ -131,6 +131,30 @@ void main() {
     },
   );
 
+  test('reopening a conversation keeps its messages visible while loading', () async {
+    controller.token = 'test-token';
+    controller.selectedConversationId = 5;
+    controller.messages = [
+      {'id': 51, 'body': 'previous message'},
+    ];
+    final pending = Completer<List<Map<String, dynamic>>>();
+    service.pendingMessages[5] = pending;
+
+    final selection = controller.select(5);
+    expect(controller.messages.single['body'], 'previous message');
+
+    pending.complete([
+      {'id': 51, 'body': 'previous message'},
+      {'id': 52, 'body': 'latest message'},
+    ]);
+    await selection;
+
+    expect(controller.messages.map((message) => message['body']), [
+      'previous message',
+      'latest message',
+    ]);
+  });
+
   test('opening a conversation clears its unread indicator', () async {
     controller.token = 'test-token';
     controller.conversations = [
@@ -191,6 +215,7 @@ void main() {
 
     controller.setMessages([
       {'id': 51, 'body': 'opened and read'},
+      {'id': 52, 'body': 'newer message'},
     ]);
     service.pendingConversations!.complete([
       {'id': 5, 'unreadCount': 1},
@@ -199,6 +224,7 @@ void main() {
 
     expect(controller.conversations.single['unreadCount'], 0);
     expect(controller.unreadMessageCount, 0);
+    expect(controller.messages.last['body'], 'newer message');
   });
 
   test(

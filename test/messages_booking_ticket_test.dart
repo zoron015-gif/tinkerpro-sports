@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/messages_ui.dart';
 
@@ -72,6 +72,44 @@ void main() {
     expect(find.text('TICKET CODE'), findsOneWidget);
   });
 
+  testWidgets('booking request ticket shows its transaction and unique token', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 504,
+            'transactionId': 'TP-TXN-00000504',
+            'bookingToken': 'TP-BOOKING-TOKEN-504',
+            'status': 'pending',
+            'businessType': 'Sports',
+            'venueName': 'Test Court',
+            'sportType': 'Basketball',
+            'bookingDate': '2026-10-08',
+            'startTime': '09:00:00',
+            'durationHours': 1,
+            'players': 2,
+            'total': 500,
+            'downpayment': 250,
+          }),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('messages-booking-ticket-TP-TXN-00000504')),
+      findsOneWidget,
+    );
+    expect(find.text('BOOKING REQUEST'), findsOneWidget);
+    expect(find.text('PENDING REVIEW'), findsOneWidget);
+    expect(find.text('TP-TXN-00000504'), findsOneWidget);
+    expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
+    expect(find.text('PHP 500.00'), findsOneWidget);
+    expect(find.text('Downpayment: PHP 250.00'), findsOneWidget);
+  });
+
   testWidgets('Fitness ticket displays the selected term and coach', (
     tester,
   ) async {
@@ -88,6 +126,7 @@ void main() {
             'fitnessPlanType': 'yearly',
             'fitnessCategory': 'Yoga',
             'fitnessCoachName': 'Alex Coach',
+            'fitnessCoachDurationMonths': 3,
             'fitnessPlanPrice': 10800,
             'fitnessCoachPrice': 3600,
             'bookingDate': '2026-10-01',
@@ -102,6 +141,7 @@ void main() {
     expect(find.text('TINKERPRO  ·  FITNESS PASS'), findsOneWidget);
     expect(find.text('Yoga · Yearly plan'), findsOneWidget);
     expect(find.textContaining('Alex Coach'), findsOneWidget);
+    expect(find.textContaining('3 months'), findsOneWidget);
     expect(find.text('Plan total: PHP 10800.00'), findsOneWidget);
     expect(find.text('Whole studio'), findsNothing);
   });

@@ -53,9 +53,7 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
         toolbarHeight: widget.isMerchant ? 56 : null,
         titleSpacing: widget.isMerchant ? 16 : null,
         leadingWidth: widget.isMerchant ? 56 : null,
-        titleTextStyle: widget.isMerchant
-            ? AppTypography.pageTitle
-            : const TextStyle(fontWeight: FontWeight.w900),
+        titleTextStyle: AppTypography.pageTitle,
         backgroundColor: _activityPage,
         foregroundColor: _activityInk,
         title: const AppText('Activity log', localize: true),
@@ -78,25 +76,25 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
         padding: const EdgeInsets.all(16),
         children: [
           const SkeletonBlock(height: 46, borderRadius: 14),
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
           for (var index = 0; index < 5; index++) ...[
             const Row(
               children: [
                 SkeletonBlock(width: 42, height: 42, borderRadius: 21),
-                SizedBox(width: 12),
+                SizedBox(width: 6),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SkeletonBlock(width: 160, height: 15),
-                      SizedBox(height: 8),
+                      SizedBox(height: 6),
                       SkeletonBlock(height: 12),
                     ],
                   ),
                 ),
               ],
             ),
-            if (index < 4) const SizedBox(height: 18),
+            if (index < 4) const SizedBox(height: 6),
           ],
         ],
       );
@@ -146,7 +144,7 @@ class _ActivityLogPageState extends State<ActivityLogPage> {
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.all(16),
                   itemCount: listItems.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  separatorBuilder: (_, _) => const SizedBox(height: 6),
                   itemBuilder: (context, index) {
                     final group = listItems[index];
                     return group.venueName == null
@@ -200,22 +198,19 @@ class _VenueActivityTile extends StatelessWidget {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side:  BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
       child: ListTile(
         key: const ValueKey('activity-log-venue-tile'),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading:  CircleAvatar(
+        leading: CircleAvatar(
           backgroundColor: AppColors.softOrangeAlt,
           foregroundColor: _activityOrange,
           child: Icon(Icons.location_on_outlined),
         ),
         title: AppText(
           venueName,
-          style:  TextStyle(
-            color: _activityInk,
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(color: _activityInk, fontWeight: FontWeight.w800),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),
@@ -223,12 +218,13 @@ class _VenueActivityTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (sportType != null && sportType!.isNotEmpty)
-                AppText(sportType!, style:  TextStyle(color: _activityMuted)),
+                AppText(sportType!, style: TextStyle(color: _activityMuted)),
               AppText(
                 '${activities.length} ${activities.length == 1 ? 'activity' : 'activities'} · '
                 'Last: ${_formatExactDateTime(mostRecent)}',
-                style:  TextStyle(color: _activityMuted, fontSize: 12),
-               localize: true,),
+                style: TextStyle(color: _activityMuted, fontSize: 12),
+                localize: true,
+              ),
             ],
           ),
         ),
@@ -267,7 +263,7 @@ class _VenueActivityTile extends StatelessWidget {
                       children: [
                         AppText(
                           venueName,
-                          style:  TextStyle(
+                          style: TextStyle(
                             color: _activityInk,
                             fontSize: 19,
                             fontWeight: FontWeight.w800,
@@ -276,13 +272,16 @@ class _VenueActivityTile extends StatelessWidget {
                         if (sportType != null && sportType!.isNotEmpty)
                           AppText(
                             sportType!,
-                            style:  TextStyle(color: _activityMuted),
+                            style: TextStyle(color: _activityMuted),
                           ),
                       ],
                     ),
                   ),
                   IconButton(
-                    tooltip: appLanguageText('Close venue activity', 'Close venue activity'),
+                    tooltip: appLanguageText(
+                      'Close venue activity',
+                      'Close venue activity',
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
@@ -295,7 +294,7 @@ class _VenueActivityTile extends StatelessWidget {
                 shrinkWrap: true,
                 padding: const EdgeInsets.all(16),
                 itemCount: activities.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
                 itemBuilder: (context, index) {
                   final activity = activities[index];
                   final details = _activityDetails(activity);
@@ -310,24 +309,21 @@ class _VenueActivityTile extends StatelessWidget {
                       children: [
                         AppText(
                           activity.title ?? 'Venue activity',
-                          style:  TextStyle(
+                          style: TextStyle(
                             color: _activityInk,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         AppText(
                           _formatExactDateTime(activity.createdAt),
-                          style:  TextStyle(
-                            color: _activityMuted,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: _activityMuted, fontSize: 12),
                         ),
                         if (_auditContextLabel(activity).isNotEmpty) ...[
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           AppText(
                             _auditContextLabel(activity),
-                            style:  TextStyle(
+                            style: TextStyle(
                               color: _activityMuted,
                               fontSize: 10,
                             ),
@@ -335,29 +331,32 @@ class _VenueActivityTile extends StatelessWidget {
                         ],
                         if (details['bookingDate'] != null ||
                             details['startTime'] != null) ...[
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           AppText(
                             'Booking: ${details['bookingDate'] ?? 'Date unavailable'}'
                             '${details['startTime'] == null ? '' : ' at ${details['startTime']}'}',
-                            style:  TextStyle(color: _activityMuted),
-                           localize: true,),
+                            style: TextStyle(color: _activityMuted),
+                            localize: true,
+                          ),
                         ],
                         if (details['durationHours'] != null)
                           AppText(
                             'Duration: ${details['durationHours']} hours',
-                            style:  TextStyle(color: _activityMuted),
-                           localize: true,),
+                            style: TextStyle(color: _activityMuted),
+                            localize: true,
+                          ),
                         if (details['players'] != null)
                           AppText(
                             'Players: ${details['players']}',
-                            style:  TextStyle(color: _activityMuted),
-                           localize: true,),
+                            style: TextStyle(color: _activityMuted),
+                            localize: true,
+                          ),
                         if (details.isEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: AppText(
                               activity.description ?? '',
-                              style:  TextStyle(color: _activityMuted),
+                              style: TextStyle(color: _activityMuted),
                             ),
                           ),
                       ],
@@ -392,7 +391,7 @@ class _ActivityTile extends StatelessWidget {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side:  BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -403,10 +402,7 @@ class _ActivityTile extends StatelessWidget {
         ),
         title: AppText(
           activity.title ?? 'Account activity',
-          style:  TextStyle(
-            color: _activityInk,
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(color: _activityInk, fontWeight: FontWeight.w800),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),
@@ -415,20 +411,20 @@ class _ActivityTile extends StatelessWidget {
             children: [
               AppText(
                 activity.description ?? '',
-                style:  TextStyle(color: _activityMuted),
+                style: TextStyle(color: _activityMuted),
               ),
               if (dateLabel.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 AppText(
                   dateLabel,
-                  style:  TextStyle(color: _activityMuted, fontSize: 11),
+                  style: TextStyle(color: _activityMuted, fontSize: 11),
                 ),
               ],
               if (_auditContextLabel(activity).isNotEmpty) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 AppText(
                   _auditContextLabel(activity),
-                  style:  TextStyle(color: _activityMuted, fontSize: 10),
+                  style: TextStyle(color: _activityMuted, fontSize: 10),
                 ),
               ],
             ],

@@ -10,6 +10,7 @@ import 'news_feed.dart';
 import 'app_design_system.dart';
 
 import 'dart:async';
+
 import 'app_preferences.dart';
 
 Color get _background => AppColors.page;
@@ -17,8 +18,8 @@ Color get _surface => AppColors.surface;
 Color get _surfaceLight => AppColors.softSurface;
 Color get _text => AppColors.ink;
 Color get _muted => AppColors.muted;
-Color get _mint => AppColors.accent;
-Color get _gold => AppColors.accent;
+Color get _mint => AppColors.accentForeground;
+Color get _gold => AppColors.accentForeground;
 const _reserveCardRadius = 17.0;
 
 class ReserveDashboardPage extends StatefulWidget {
@@ -78,7 +79,10 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: AppText('$_selected dashboard is not available yet.', localize: true),
+          content: AppText(
+            '$_selected dashboard is not available yet.',
+            localize: true,
+          ),
           backgroundColor: _surfaceLight,
           behavior: SnackBarBehavior.floating,
         ),
@@ -108,20 +112,19 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                   Center(
+                  Center(
                     child: AppText(
                       'Choose your booking type',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: AppTypography.sectionTitle.copyWith(
                         color: _text,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        height: 1.15,
+                        height: 1.25,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                   Center(
+                  const SizedBox(height: 6),
+                  Center(
                     child: AppText(
                       'Explore live availability and find the right experience.',
                       textAlign: TextAlign.center,
@@ -130,9 +133,10 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                         fontSize: 14,
                         height: 1.4,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   _ExperienceCard(
                     key: const ValueKey('reserve-option-sports'),
                     imagePath: 'assets/book-type/sports.jpg',
@@ -152,7 +156,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     selected: _selected == 'Sports',
                     onTap: () => setState(() => _selected = 'Sports'),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   _ExperienceCard(
                     key: const ValueKey('reserve-option-event'),
                     imagePath: 'assets/book-type/event.jpg',
@@ -165,7 +169,7 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                     selected: _selected == 'Event',
                     onTap: () => setState(() => _selected = 'Event'),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   _ExperienceCard(
                     key: const ValueKey('reserve-option-fitness'),
                     imagePath: 'assets/book-type/fitness.jpg',
@@ -227,15 +231,15 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               SizedBox(
                 width: double.infinity,
                 height: 54,
                 child: FilledButton(
                   onPressed: _continue,
                   style: FilledButton.styleFrom(
-                    backgroundColor: _mint,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: AppColors.onAccent,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -252,15 +256,16 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                           'Continue to $_selected',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                         localize: true,),
+                          localize: true,
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 6),
                       const Icon(Icons.arrow_forward_rounded, size: 20),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               AppText(
                 'Instant confirmation · No upfront payment required',
                 style: TextStyle(
@@ -268,7 +273,8 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
-               localize: true,),
+                localize: true,
+              ),
             ],
           ),
         ),
@@ -282,11 +288,12 @@ class _ReserveHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return  AppText(
+    return AppText(
       'Reserve experience',
       textAlign: TextAlign.center,
-      style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.w900),
-     localize: true,);
+      style: AppTypography.pageTitle.copyWith(color: _text),
+      localize: true,
+    );
   }
 }
 
@@ -317,6 +324,7 @@ class _ExperienceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final accentForeground = AppColors.accentForeground;
     return Semantics(
       button: true,
       selected: selected,
@@ -327,19 +335,19 @@ class _ExperienceCard extends StatelessWidget {
         child: AnimatedContainer(
           key: ValueKey('reserve-option-surface-$title'),
           duration: const Duration(milliseconds: 180),
-          height: textScale > 1.2 ? 176 : 160,
+          height: textScale > 1.2 ? 178 : 162,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(_reserveCardRadius),
             border: Border.all(
-              color: selected ? accent : AppColors.border,
+              color: selected ? accentForeground : AppColors.border,
               width: selected ? 2 : 1,
             ),
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: accent.withValues(alpha: .16),
+                      color: accentForeground.withValues(alpha: .16),
                       blurRadius: 24,
                       spreadRadius: 2,
                     ),
@@ -386,17 +394,20 @@ class _ExperienceCard extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: _Badge(text: badge, color: accent),
+                            child: _Badge(
+                              text: badge,
+                              color: accentForeground,
+                            ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Icon(
                             selected ? Icons.check_circle_rounded : icon,
-                            color: accent,
+                            color: accentForeground,
                             size: 22,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       AppText(
                         title,
                         style: TextStyle(
@@ -406,18 +417,18 @@ class _ExperienceCard extends StatelessWidget {
                           letterSpacing: -.2,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 6),
                       AppText(
                         description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style:  TextStyle(
+                        style: TextStyle(
                           color: _muted,
                           fontSize: 12,
                           height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
@@ -463,7 +474,7 @@ class _Badge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.circle, size: 8, color: color),
-          const SizedBox(width: 5),
+          const SizedBox(width: 6),
           Flexible(
             child: AppText(
               text,
@@ -529,26 +540,26 @@ class _Benefit extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: color, size: 18),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             AppText(
               label,
               maxLines: 1,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style:  TextStyle(
+              style: TextStyle(
                 color: _text,
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
                 height: 1.15,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
             AppText(
               detail,
               maxLines: 1,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style:  TextStyle(color: _muted, fontSize: 9, height: 1.2),
+              style: TextStyle(color: _muted, fontSize: 9, height: 1.2),
             ),
           ],
         ),

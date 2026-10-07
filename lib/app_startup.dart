@@ -9,11 +9,24 @@ import 'app_session.dart';
 import 'app_theme.dart';
 import 'firebase_options.dart';
 
+class AppDependencies {
+  AppDependencies({AppPreferences? preferences})
+    : preferences = preferences ?? AppPreferences.instance;
+
+  final AppPreferences preferences;
+}
+
 class AppStartup extends StatefulWidget {
-  const AppStartup({super.key, required this.appBuilder, this.initialize});
+  const AppStartup({
+    super.key,
+    required this.appBuilder,
+    this.initialize,
+    this.dependencies,
+  });
 
   final Widget Function(AppSession?) appBuilder;
   final Future<AppSession> Function()? initialize;
+  final AppDependencies? dependencies;
 
   @override
   State<AppStartup> createState() => _AppStartupState();
@@ -38,7 +51,7 @@ class _AppStartupState extends State<AppStartup> {
       );
       session = await AppSession.load();
     }
-    await AppPreferences.instance.load(
+    await _preferences.load(
       accountEmail: session.isAuthenticated ? session.accountEmail : null,
     );
     return session;
@@ -50,24 +63,42 @@ class _AppStartupState extends State<AppStartup> {
     });
   }
 
+  AppDependencies get _dependencies =>
+      widget.dependencies ?? AppDependencies();
+
+  AppPreferences get _preferences => _dependencies.preferences;
+
+  ThemeData _theme() => AppTheme.configured(
+    darkMode: _preferences.darkMode,
+    accentColor: _preferences.palette.color,
+  );
+
   @override
   Widget build(BuildContext context) => FutureBuilder<AppSession>(
     future: _initialization,
     builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return MaterialApp(
+          title: 'TinkerPro',
+          debugShowCheckedModeBanner: false,
+          theme: _theme(),
+          home: const _StartupLoadingScreen(),
+        );
+      }
+      if (snapshot.hasError) {
+        return MaterialApp(
+          title: 'TinkerPro',
+          debugShowCheckedModeBanner: false,
+          theme: _theme(),
+          home: _StartupError(error: snapshot.error!, onRetry: _retry),
+        );
+      }
       if (snapshot.hasData) return widget.appBuilder(snapshot.data);
-      final error = snapshot.connectionState == ConnectionState.done
-          ? snapshot.error
-          : null;
       return MaterialApp(
         title: 'TinkerPro',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.configured(
-          darkMode: AppPreferences.instance.darkMode,
-          accentColor: AppPreferences.instance.palette.color,
-        ),
-        home: error != null
-            ? _StartupError(error: error, onRetry: _retry)
-            : const _StartupLoadingScreen(),
+        theme: _theme(),
+        home: const _StartupLoadingScreen(),
       );
     },
   );
@@ -106,7 +137,7 @@ class _StartupLoadingScreen extends StatelessWidget {
                   fit: BoxFit.contain,
                 ),
               ),
-              const SizedBox(height: AppSpacing.xLarge),
+              const SizedBox(height: 6),
               AppText.rich(
                 TextSpan(
                   children: [
@@ -125,14 +156,16 @@ class _StartupLoadingScreen extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   letterSpacing: -.8,
                 ),
-               localize: true,),
-              const SizedBox(height: AppSpacing.small),
-               AppText(
+                localize: true,
+              ),
+              const SizedBox(height: 6),
+              AppText(
                 'Sports, events, and local experiences',
                 textAlign: TextAlign.center,
                 style: AppTypography.supporting,
-               localize: true,),
-              const SizedBox(height: AppSpacing.xxLarge),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               SizedBox(
                 width: 28,
                 height: 28,
@@ -141,11 +174,12 @@ class _StartupLoadingScreen extends StatelessWidget {
                   color: AppColors.accent,
                 ),
               ),
-              const SizedBox(height: AppSpacing.medium),
-               AppText(
+              const SizedBox(height: 6),
+              AppText(
                 'Getting your courts ready...',
                 style: AppTypography.supporting,
-               localize: true,),
+                localize: true,
+              ),
             ],
           ),
         ),
@@ -175,20 +209,25 @@ class _StartupError extends StatelessWidget {
                 color: AppColors.accent,
                 size: 44,
               ),
-              const SizedBox(height: AppSpacing.large),
-               AppText(
+              const SizedBox(height: 6),
+              AppText(
                 'TinkerPro could not start',
                 textAlign: TextAlign.center,
                 style: AppTypography.pageTitle,
-               localize: true,),
-              const SizedBox(height: AppSpacing.small),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
               AppText(
                 '$error',
                 textAlign: TextAlign.center,
                 style: AppTypography.supporting,
-               localize: true,),
-              const SizedBox(height: AppSpacing.xLarge),
-              FilledButton(onPressed: onRetry, child: const AppText('Try again', localize: true)),
+                localize: true,
+              ),
+              const SizedBox(height: 6),
+              FilledButton(
+                onPressed: onRetry,
+                child: const AppText('Try again', localize: true),
+              ),
             ],
           ),
         ),

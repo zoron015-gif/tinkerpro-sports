@@ -176,7 +176,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 6),
               AppText(
                 widget.isEvent
                     ? '${widget.businessName} ratings & reviews'
@@ -186,7 +186,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               if (_loading)
                 Expanded(
                   child: ListView(
@@ -194,15 +194,15 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                     padding: EdgeInsets.zero,
                     children: const [
                       SkeletonBlock(width: 90, height: 30),
-                      SizedBox(height: 14),
+                      SizedBox(height: 6),
                       SkeletonBlock(height: 12),
-                      SizedBox(height: 8),
+                      SizedBox(height: 6),
                       SkeletonBlock(height: 12, width: 210),
                       Divider(height: 28),
                       SkeletonBlock(height: 76, borderRadius: 14),
-                      SizedBox(height: 12),
+                      SizedBox(height: 6),
                       SkeletonBlock(height: 76, borderRadius: 14),
-                      SizedBox(height: 12),
+                      SizedBox(height: 6),
                       SkeletonBlock(height: 76, borderRadius: 14),
                     ],
                   ),
@@ -222,9 +222,9 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     const Icon(Icons.star_rounded, color: Colors.amber),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 6),
                     AppText(
                       '${_reviews.length} ${_reviews.length == 1 ? 'review' : 'reviews'} · $ratedUsers rated',
                       style: TextStyle(
@@ -338,7 +338,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Semantics(
                 label: '$normalizedRating out of 5 stars',
                 child: Row(
@@ -402,7 +402,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.lock_outline_rounded, color: AppColors.muted),
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
             Expanded(
               child: AppText(
                 _eligibilityMessage,
@@ -450,7 +450,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
             labelText: appLanguageText('Comment', 'Comment'),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         SizedBox(
           width: double.infinity,
           child: FilledButton(

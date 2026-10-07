@@ -48,7 +48,8 @@ class MessagesChatView extends StatelessWidget {
                     final attachment = attachmentValue(message);
                     final body = messageBody(message);
                     final attachmentType = safeString(attachment?['type']);
-                    if (attachmentType == 'booking_payment_ticket' ||
+                    if (attachmentType == 'booking' ||
+                        attachmentType == 'booking_payment_ticket' ||
                         attachmentType == 'booking_ticket') {
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 7),
@@ -86,7 +87,7 @@ class MessagesChatView extends StatelessWidget {
                                       size: 14,
                                       color: AppColors.muted,
                                     ),
-                                    SizedBox(width: 4),
+                                    SizedBox(width: 6),
                                     AppText(
                                       'Seen',
                                       style: TextStyle(

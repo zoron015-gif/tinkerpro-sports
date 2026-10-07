@@ -123,11 +123,11 @@ void main() {
       ((selectedEvent.decoration! as BoxDecoration).border! as Border)
           .top
           .color,
-      AppPalette.violet.color,
+          AppColors.accentForeground,
     );
     expect(
       tester.widget<Text>(find.text('VIP Banquets & Lounges')).style!.color,
-      AppPalette.violet.color,
+      AppColors.accentForeground,
     );
     final continueButton = tester.widget<FilledButton>(
       find.ancestor(

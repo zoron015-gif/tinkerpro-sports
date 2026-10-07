@@ -125,14 +125,18 @@ class _MerchantProfileDashboardPageState
             ),
             IconButton(
               key: const ValueKey('merchant-profile-info'),
-              tooltip: appLanguageText('About merchant profile', 'About merchant profile'),
+              tooltip: appLanguageText(
+                'About merchant profile',
+                'About merchant profile',
+              ),
               onPressed: () => showDialog<void>(
                 context: context,
                 builder: (dialogContext) => AlertDialog(
                   title: const AppText('Merchant Profile', localize: true),
                   content: const AppText(
                     'Manage your account and keep track of your venues.',
-                   localize: true,),
+                    localize: true,
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(dialogContext).pop(),
@@ -141,14 +145,14 @@ class _MerchantProfileDashboardPageState
                   ],
                 ),
               ),
-              icon:  Icon(
+              icon: Icon(
                 Icons.info_outline_rounded,
                 color: _profileMuted,
                 size: 19,
               ),
               visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: AppSpacing.buttonPadding,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
             ),
           ],
         ),
@@ -169,9 +173,9 @@ class _MerchantProfileDashboardPageState
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
         children: [
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           _profileCard(name, email, phone),
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
           _performanceCard(),
         ],
       ),
@@ -213,7 +217,7 @@ class _MerchantProfileDashboardPageState
                           Icons.settings_outlined,
                           color: Color(0xFFFF8200),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: AppText(
                             appLanguageText('Settings', 'Mga Setting'),
@@ -225,15 +229,18 @@ class _MerchantProfileDashboardPageState
                           ),
                         ),
                         IconButton(
-                          tooltip: appLanguageText('Close settings', 'Close settings'),
+                          tooltip: appLanguageText(
+                            'Close settings',
+                            'Close settings',
+                          ),
                           onPressed: () => Navigator.pop(dialogContext),
                           icon: const Icon(Icons.close_rounded),
                         ),
                       ],
                     ),
                   ),
-                   Divider(height: 1, color: _profileLine),
-                  const SizedBox(height: 8),
+                  Divider(height: 1, color: _profileLine),
+                  const SizedBox(height: 6),
                   ListTile(
                     key: const ValueKey('merchant-settings-appearance'),
                     leading: const Icon(Icons.palette_outlined),
@@ -241,12 +248,6 @@ class _MerchantProfileDashboardPageState
                       appLanguageText(
                         'Appearance & language',
                         'Hitsura at wika',
-                      ),
-                    ),
-                    subtitle: AppText(
-                      appLanguageText(
-                        'Dark mode, colors, text size, and language',
-                        'Madilim na tema, kulay, laki ng teksto, at wika',
                       ),
                     ),
                     onTap: () => Navigator.pop(
@@ -271,19 +272,13 @@ class _MerchantProfileDashboardPageState
                     title: AppText(
                       appLanguageText('Activity log', 'Tala ng aktibidad'),
                     ),
-                    subtitle: AppText(
-                      appLanguageText(
-                        'Review activity on your account',
-                        'Suriin ang aktibidad ng iyong account',
-                      ),
-                    ),
                     onTap: () => Navigator.pop(
                       dialogContext,
                       _MerchantProfileSetting.activityLog,
                     ),
                   ),
                   const Spacer(),
-                   Divider(height: 1, color: _profileLine),
+                  Divider(height: 1, color: _profileLine),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
                     child: Align(
@@ -314,7 +309,7 @@ class _MerchantProfileDashboardPageState
                       _MerchantProfileSetting.logOut,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
                 ],
               ),
             ),
@@ -384,42 +379,42 @@ class _MerchantProfileDashboardPageState
           image: _profileImage,
           fallback: AppText(
             _initials(name),
-            style:  TextStyle(
+            style: TextStyle(
               color: _profileInk,
               fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
           ),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: 6),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AppText(
                 name.isEmpty ? 'Merchant account owner' : name,
-                style:  TextStyle(
+                style: TextStyle(
                   color: _profileInk,
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               AppText(
                 email,
                 overflow: TextOverflow.ellipsis,
-                style:  TextStyle(color: _profileMuted),
+                style: TextStyle(color: _profileMuted),
               ),
               AppText(
                 phone,
                 overflow: TextOverflow.ellipsis,
-                style:  TextStyle(color: _profileMuted),
+                style: TextStyle(color: _profileMuted),
               ),
               const SizedBox(height: 6),
               const Row(
                 children: [
                   Icon(Icons.verified_rounded, size: 15, color: Colors.green),
-                  SizedBox(width: 4),
+                  SizedBox(width: 6),
                   AppText(
                     'Verified Host',
                     style: TextStyle(
@@ -427,7 +422,8 @@ class _MerchantProfileDashboardPageState
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
-                   localize: true,),
+                    localize: true,
+                  ),
                 ],
               ),
             ],
@@ -475,7 +471,8 @@ class _MerchantProfileDashboardPageState
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
-                       localize: true,),
+                        localize: true,
+                      ),
                     ),
                     const Icon(
                       Icons.today_rounded,
@@ -490,10 +487,11 @@ class _MerchantProfileDashboardPageState
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 const AppText(
                   'CONFIRMED REVENUE',
                   style: TextStyle(
@@ -502,8 +500,9 @@ class _MerchantProfileDashboardPageState
                     letterSpacing: 1.1,
                     fontWeight: FontWeight.w700,
                   ),
-                 localize: true,),
-                const SizedBox(height: 4),
+                  localize: true,
+                ),
+                const SizedBox(height: 6),
                 AppText(
                   '₱${_todayRevenue.toStringAsFixed(2)}',
                   key: const ValueKey('merchant-profile-today-revenue'),
@@ -513,8 +512,9 @@ class _MerchantProfileDashboardPageState
                     height: 1.1,
                     fontWeight: FontWeight.w900,
                   ),
-                 localize: true,),
-                const SizedBox(height: 5),
+                  localize: true,
+                ),
+                const SizedBox(height: 6),
                 AppText(
                   hasBookings
                       ? '${bookings.length} booking${bookings.length == 1 ? '' : 's'} scheduled today'
@@ -533,8 +533,8 @@ class _MerchantProfileDashboardPageState
               builder: (context, constraints) {
                 final itemWidth = (constraints.maxWidth - 12) / 2;
                 return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
                     SizedBox(
                       width: itemWidth,
@@ -603,7 +603,7 @@ class _MerchantProfileDashboardPageState
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:  TextStyle(
+                    style: TextStyle(
                       color: _profileMuted,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -612,11 +612,11 @@ class _MerchantProfileDashboardPageState
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             AppText(
               value,
               key: ValueKey('merchant-profile-metric-$label'),
-              style:  TextStyle(
+              style: TextStyle(
                 color: _profileInk,
                 fontSize: 19,
                 height: 1,

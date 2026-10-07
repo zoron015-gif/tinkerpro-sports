@@ -224,7 +224,7 @@ class MessagesConversationList extends StatelessWidget {
                 title: AppText(item.$1),
                 onTap: () => Navigator.pop(sheetContext, item.$2),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
         ),
       ),
@@ -310,7 +310,7 @@ class MessagesConversationList extends StatelessWidget {
       child: Column(
         children: [
           const CircleAvatar(radius: 27, child: Icon(Icons.add_rounded)),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           AppText('New', style: TextStyle(color: Colors.grey.shade700), localize: true),
         ],
       ),
@@ -328,7 +328,7 @@ class MessagesConversationList extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           MessagesAvatar(contact, radius: 27),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           SizedBox(
             width: 64,
             child: AppText(

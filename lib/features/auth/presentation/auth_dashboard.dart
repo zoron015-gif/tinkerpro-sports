@@ -271,7 +271,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               _RoleCard(
                 icon: Icons.storefront_rounded,
                 title: 'Merchant',
@@ -475,7 +475,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                             height: 36,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Center(
                           child: AppText(
                             appLanguageText(
@@ -485,7 +485,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                             style: _authHeadingStyle,
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 6),
                         Center(
                           child: AppText(
                             appLanguageText(
@@ -535,7 +535,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 6),
                               Expanded(
                                 child: _RoleCard(
                                   icon: Icons.storefront_rounded,
@@ -552,7 +552,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 6),
                         ],
                         _AuthField(
                           label: appLanguageText('Email address', 'Email address'),
@@ -661,9 +661,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 6),
                         const _OrDivider(),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Padding(
                           padding: EdgeInsets.only(bottom: 6),
                           child: Center(
@@ -688,14 +688,12 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           logoAsset: 'assets/google_logo.png',
                           onTap: _signInWithGoogle,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Center(
                           child: TextButton(
                             style: TextButton.styleFrom(
                               minimumSize: const Size(0, 36),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
+                              padding: AppSpacing.buttonPadding,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
                             ),

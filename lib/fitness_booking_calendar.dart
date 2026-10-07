@@ -229,7 +229,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
               ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         GridView.builder(
           key: const ValueKey('fitness-booking-calendar-grid'),
           shrinkWrap: true,
@@ -237,8 +237,8 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
           itemCount: cellCount,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 4,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
             childAspectRatio: 0.78,
           ),
           itemBuilder: (context, index) {
@@ -380,11 +380,11 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
             );
           },
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
         if (widget.onAttendanceChanged != null) ...[
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               _attendanceCount(
                 'Present',
@@ -399,13 +399,13 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           _attendanceEditor(today, closesSunday),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
         ],
         Wrap(
-          spacing: 14,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: [
             _legend(const Color(0xFFFF8200), 'Active'),
             _legend(AppColors.surfaceVariant, 'Passed'),
@@ -493,7 +493,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
               fontWeight: FontWeight.w800,
             ),
            localize: true,),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (isClosed)
              AppText(
               'This venue is closed on this day.',
@@ -501,8 +501,8 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
              localize: true,)
           else
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 OutlinedButton.icon(
                   key: const ValueKey('fitness-attendance-mark-present'),
@@ -580,7 +580,7 @@ class _FitnessBookingCalendarState extends State<FitnessBookingCalendar> {
         height: 12,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
-      const SizedBox(width: 5),
+      const SizedBox(width: 6),
       AppText(
         label,
         style:  TextStyle(color: AppColors.muted, fontSize: 10),

@@ -54,7 +54,7 @@ void main() {
       ),
     );
     initialAttempt.completeError(StateError('Initialization failed'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('TinkerPro could not start'), findsOneWidget);
     expect(find.textContaining('Initialization failed'), findsOneWidget);

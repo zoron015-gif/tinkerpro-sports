@@ -249,7 +249,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   'Please check that all information is correct before continuing.',
                   style: TextStyle(color: AppColors.muted),
                  localize: true,),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 _confirmationRow('Venue', _venueName),
                 _confirmationRow('Event type', _eventType!),
                 _confirmationRow('Date', _dateValue),
@@ -385,7 +385,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
               title:  Column(
                 children: [
                   AppText('Book Event', localize: true),
-                  SizedBox(height: 2),
+                  SizedBox(height: 6),
                   AppText(
                     'Step 2 of 2 · Checkout',
                     style: TextStyle(
@@ -433,7 +433,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                                 fontWeight: FontWeight.w800,
                               ),
                              localize: true,),
-                            SizedBox(height: 2),
+                            SizedBox(height: 6),
                             AppText(
                               'Step 2 of 2 • Checkout',
                               style: TextStyle(
@@ -466,7 +466,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 6),
                 ],
                 Container(
                   key: const ValueKey('event-booking-summary-card'),
@@ -505,14 +505,14 @@ class _EventBookingPageState extends State<EventBookingPage> {
                                   child: AppText(
                                     'EVENT',
                                     style: TextStyle(
-                                      color: AppColors.accent,
+                                      color: AppColors.accentForeground,
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: .7,
                                     ),
                                    localize: true,),
                                 ),
-                                const SizedBox(height: 7),
+                                const SizedBox(height: 6),
                                 AppText(
                                   _venueName,
                                   maxLines: 2,
@@ -526,19 +526,19 @@ class _EventBookingPageState extends State<EventBookingPage> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           AppText(
                             'PHP ${_eventFee.toStringAsFixed(2)}',
                             textAlign: TextAlign.end,
                             style: TextStyle(
-                              color: AppColors.accent,
+                              color: AppColors.accentForeground,
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
                             ),
                            localize: true,),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 6),
                       _bookingDetail(
                         Icons.person_outline_rounded,
                         'Owner: ${widget.business['ownerName'] ?? 'Venue merchant'}',
@@ -577,7 +577,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                           '–${_attendanceMax > 0 ? _attendanceMax : 'No maximum'}',
                         ),
                       if (amenities.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                          AppText(
                           'VENUE AMENITIES',
                           style: TextStyle(
@@ -624,7 +624,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 _sectionLabel('BOOKING CONFIGURATION'),
                 DropdownButtonFormField<String>(
                   initialValue: _eventType,
@@ -644,7 +644,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       ? null
                       : (value) => setState(() => _eventType = value),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 _sectionLabel('CHOOSE DATE AND TIME'),
                 Row(
                   children: [
@@ -655,7 +655,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         label: AppText(_dateValue),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _submitting ? null : _chooseTime,
@@ -665,7 +665,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 _sectionLabel('DURATION AND GUESTS'),
                 DropdownButtonFormField<int>(
                   initialValue: _durationHours,
@@ -693,7 +693,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                           }
                         },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 TextField(
                   controller: _guestCountController,
                   enabled: !_submitting,
@@ -708,7 +708,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 6),
                 _sectionLabel('PAYMENT METHOD'),
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -722,7 +722,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         ),
                         foregroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
-                              ? Colors.white
+                              ? AppColors.onAccent
                               : AppColors.ink,
                         ),
                         side: WidgetStateProperty.all(
@@ -750,7 +750,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                     );
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 AppText(
                   _paymentMethod == 'cash_on_arrival'
                       ? 'Pay PHP ${_cashOnArrivalAmount.toStringAsFixed(2)} now and PHP ${_cashOnArrivalAmount.toStringAsFixed(2)} on arrival.'
@@ -795,7 +795,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       ),
                      localize: true,),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 FilledButton.icon(
                   key: const ValueKey('event-booking-submit'),
                   onPressed: _submitting ? null : _submit,
@@ -815,7 +815,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   ),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.onAccent,
                     minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -838,7 +838,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, color: AppColors.muted, size: 18),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Expanded(
           child: AppText(value, style:  TextStyle(color: AppColors.muted)),
         ),
@@ -847,11 +847,11 @@ class _EventBookingPageState extends State<EventBookingPage> {
   );
 
   Widget _checkoutIconButton(IconData icon, VoidCallback onPressed) => SizedBox(
-    width: 38,
-    height: 38,
+    width: 44,
+    height: 44,
     child: IconButton(
       onPressed: onPressed,
-      padding: EdgeInsets.zero,
+      padding: AppSpacing.buttonPadding,
       style: IconButton.styleFrom(
         backgroundColor: AppColors.surfaceVariant,
         foregroundColor: AppColors.ink,

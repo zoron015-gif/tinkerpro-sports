@@ -100,7 +100,7 @@ function makeConnection() {
         return response([{}]);
       }
       if (sql.includes('INSERT INTO bookings')) {
-        const recordKey = `${params[0]}:${params[22]}`;
+        const recordKey = `${params[0]}:${params[23]}`;
         if (db.idempotencyRecords.has(recordKey)) {
           const error = new Error(
             'Duplicate entry for uq_bookings_customer_idempotency',
@@ -111,7 +111,7 @@ function makeConnection() {
         db.idempotencyRecords.set(recordKey, {
           customerId: params[0],
           bookingId: 601,
-          requestHash: params[23],
+          requestHash: params[24],
           responseJson: null,
           responseStatus: null,
         });
@@ -130,7 +130,7 @@ function makeConnection() {
       }
       if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
         return response([{
-          id: 501,
+          id: Number(params[0]),
           customerId: 42,
           venueId: 7,
           venueName: 'Test Court',
@@ -986,6 +986,31 @@ test('customer feed reports aggregate hearts and the authenticated user heart st
   assert.deepEqual(feedQuery.params, ['42']);
 });
 
+test('customer feed can restrict results to one booking type', async () => {
+  const response = await request('/api/news-feed?businessType=Fitness');
+
+  assert.equal(response.status, 200);
+  const feedQuery = db.calls.find(({ sql }) =>
+    sql.includes('heart_count') && sql.includes('hearted_by_me'),
+  );
+  assert.ok(feedQuery);
+  assert.match(feedQuery.sql, /LOWER\(b\.business_type\) = \?/);
+  assert.deepEqual(feedQuery.params, ['42', 'fitness & wellness']);
+});
+
+test('customer feed rejects unsupported booking type filters', async () => {
+  const response = await request('/api/news-feed?businessType=Unknown');
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Invalid business type filter.',
+  });
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('FROM merchant_news n')),
+    false,
+  );
+});
+
 test('customer feed includes merchant-configured event types', async () => {
   db.newsFeedRows = [{
     id: 15,
@@ -1312,7 +1337,7 @@ test('Event booking rejects event types and guest counts outside venue configura
   );
 });
 
-test('Fitness bookings price the selected term, annual offer, and coach on the server', async () => {
+test('Fitness bookings price coach duration from the requested month count', async () => {
   db.venue.businessType = 'Fitness & Wellness';
   const response = await request('/api/bookings', {
     method: 'POST',
@@ -1326,6 +1351,7 @@ test('Fitness bookings price the selected term, annual offer, and coach on the s
       sportType: 'Yoga',
       fitnessPlanType: 'yearly',
       fitnessCoachName: 'Alex Coach',
+      fitnessCoachDurationMonths: 3,
     },
   });
 
@@ -1334,14 +1360,41 @@ test('Fitness bookings price the selected term, annual offer, and coach on the s
   assert.equal(booking.fitnessCategory, 'Yoga');
   assert.equal(booking.fitnessPlanType, 'yearly');
   assert.equal(booking.fitnessPlanPrice, 9600);
-  assert.equal(booking.fitnessCoachPrice, 3600);
-  assert.equal(booking.total, 13200);
-  assert.equal(booking.downpayment, 13200);
+  assert.equal(booking.fitnessCoachPrice, 900);
+  assert.equal(booking.fitnessCoachDurationMonths, 3);
+  assert.equal(booking.total, 10500);
+  assert.equal(booking.downpayment, 10500);
   const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
   assert.ok(insert.sql.includes('fitness_plan_type'));
   assert.equal(insert.params[15], 'yearly');
   assert.equal(insert.params[16], 'Yoga');
   assert.equal(insert.params[17], 'Alex Coach');
+  assert.equal(insert.params[20], 3);
+});
+
+test('Fitness bookings reject coach durations shorter than one month', async () => {
+  db.venue.businessType = 'Fitness & Wellness';
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'online',
+      sportType: 'Yoga',
+      fitnessPlanType: 'monthly',
+      fitnessCoachName: 'Alex Coach',
+      fitnessCoachDurationMonths: 0,
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
 });
 
 test('customers can read, record, and clear attendance for fitness bookings', async () => {
@@ -1588,6 +1641,39 @@ test('merchant approval issues a booking ticket', async () => {
   assert.match(
     approvalUpdate.sql,
     /b\.payment_method <> 'online' OR b\.payment_status = 'paid'/,
+  );
+});
+
+test('separate booking transactions receive separate ticket codes', async () => {
+  const firstResponse = await request('/api/merchant/bookings/501/approve', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+  const secondResponse = await request('/api/merchant/bookings/502/approve', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+
+  assert.equal(firstResponse.status, 200);
+  assert.equal(secondResponse.status, 200);
+  const first = await firstResponse.json();
+  const second = await secondResponse.json();
+  assert.equal(first.transactionId, 'TP-TXN-00000501');
+  assert.equal(second.transactionId, 'TP-TXN-00000502');
+  assert.notEqual(first.ticketCode, second.ticketCode);
+
+  const ticketMessages = db.calls
+    .filter(({ sql }) =>
+      sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+    )
+    .map(({ params }) => JSON.parse(params[3]));
+  assert.deepEqual(
+    ticketMessages.map((ticket) => ticket.transactionId),
+    [first.transactionId, second.transactionId],
+  );
+  assert.deepEqual(
+    ticketMessages.map((ticket) => ticket.ticketCode),
+    [first.ticketCode, second.ticketCode],
   );
 });
 

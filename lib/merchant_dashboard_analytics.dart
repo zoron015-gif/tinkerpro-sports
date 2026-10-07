@@ -12,6 +12,18 @@ class _AnalyticsChartSeries {
   final Color color;
 }
 
+class _AnalyticsPointMetric {
+  const _AnalyticsPointMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+}
+
 class _AnalyticsLineChart extends StatefulWidget {
   const _AnalyticsLineChart({
     required this.values,
@@ -22,6 +34,7 @@ class _AnalyticsLineChart extends StatefulWidget {
     required this.detailFormatter,
     required this.valueLabel,
     this.series = const [],
+    this.pointDetails = const [],
     this.showDataLabels = false,
   });
 
@@ -33,6 +46,7 @@ class _AnalyticsLineChart extends StatefulWidget {
   final String Function(double value) detailFormatter;
   final String valueLabel;
   final List<_AnalyticsChartSeries> series;
+  final List<List<_AnalyticsPointMetric>> pointDetails;
   final bool showDataLabels;
 
   @override
@@ -50,7 +64,11 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
 
   void _selectPoint(Offset position, Size size) {
     if (widget.labels.isEmpty || size.width <= 0) return;
-    final index = (position.dx / size.width * widget.labels.length)
+    const plotLeft = 42.0;
+    const plotRight = 8.0;
+    final plotWidth = size.width - plotLeft - plotRight;
+    if (plotWidth <= 0) return;
+    final index = ((position.dx - plotLeft) / plotWidth * widget.labels.length)
         .floor()
         .clamp(0, widget.labels.length - 1);
     if (_selectedIndex != index) setState(() => _selectedIndex = index);
@@ -88,18 +106,19 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
           _selectedPointDetails(selectedIndex)
         else
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.symmetric(vertical: _analyticsElementGap),
             child: AppText(
               'Tap or drag across the chart to inspect exact values.',
               style: TextStyle(color: _merchantMuted, fontSize: 11),
-             localize: true,),
+              localize: true,
+            ),
           ),
       ],
     ),
   );
 
   Widget _selectedPointDetails(int index) {
-    final rows = widget.series.isEmpty
+    final rows = widget.series.isEmpty && widget.pointDetails.isEmpty
         ? [
             (
               name: widget.valueLabel,
@@ -114,8 +133,11 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
     return Container(
       key: const ValueKey('merchant-analytics-selected-point'),
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(top: _analyticsElementGap),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: _analyticsElementGap,
+      ),
       decoration: BoxDecoration(
         color: AppColors.page,
         borderRadius: BorderRadius.circular(9),
@@ -132,13 +154,13 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
             ),
           ),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 78),
+            constraints: const BoxConstraints(maxHeight: 148),
             child: SingleChildScrollView(
               child: Column(
                 children: [
                   for (final row in rows)
                     Padding(
-                      padding: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.only(top: _analyticsElementGap),
                       child: Row(
                         children: [
                           Container(
@@ -161,7 +183,7 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: _analyticsElementGap),
                           AppText(
                             widget.series.isEmpty
                                 ? widget.detailFormatter(row.value)
@@ -176,6 +198,54 @@ class _AnalyticsLineChartState extends State<_AnalyticsLineChart> {
                         ],
                       ),
                     ),
+                  if (widget.pointDetails.length > index) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: _analyticsElementGap,
+                      ),
+                      child: Divider(height: 1, color: _merchantLine),
+                    ),
+                    for (final metric in widget.pointDetails[index])
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: _analyticsElementGap,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: metric.color,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: AppText(
+                                metric.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _merchantMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: _analyticsElementGap),
+                            AppText(
+                              metric.value,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: _merchantInk,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -199,6 +269,7 @@ class _AnalyticsFullChartPage extends StatelessWidget {
     required this.detailFormatter,
     required this.showDataLabels,
     required this.summary,
+    this.pointDetails = const [],
   });
 
   final String title;
@@ -212,6 +283,7 @@ class _AnalyticsFullChartPage extends StatelessWidget {
   final String Function(double value) detailFormatter;
   final bool showDataLabels;
   final String summary;
+  final List<List<_AnalyticsPointMetric>> pointDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -249,10 +321,10 @@ class _AnalyticsFullChartPage extends StatelessWidget {
                 style: TextStyle(color: _merchantMuted, fontSize: 13),
               ),
               if (series.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: _analyticsElementGap),
                 _AnalyticsChartLegend(series: series),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: _analyticsElementGap),
               Expanded(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -263,6 +335,7 @@ class _AnalyticsFullChartPage extends StatelessWidget {
                       values: values,
                       labels: labels,
                       detailLabels: detailLabels,
+                      pointDetails: pointDetails,
                       series: series,
                       valueColor: valueColor,
                       formatValue: formatValue,
@@ -275,7 +348,7 @@ class _AnalyticsFullChartPage extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: _analyticsElementGap),
               _FullChartSummary(summary: summary),
             ],
           ),
@@ -292,8 +365,8 @@ class _AnalyticsChartLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Wrap(
-    spacing: 12,
-    runSpacing: 7,
+    spacing: 6,
+    runSpacing: 6,
     children: [
       for (final item in series)
         Row(
@@ -308,7 +381,7 @@ class _AnalyticsChartLegend extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: _analyticsElementGap),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 140),
               child: AppText(
@@ -388,7 +461,7 @@ class _AnalyticsViewTile extends StatelessWidget {
               color: selected ? _merchantOrange : _merchantMuted,
               size: 20,
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: _analyticsElementGap),
             AppText(
               title,
               maxLines: 2,
@@ -436,6 +509,9 @@ class _AnalyticsLineChartPainter extends CustomPainter {
     if (values.isEmpty || labels.isEmpty) return;
     const top = 16.0;
     const bottom = 26.0;
+    const left = 42.0;
+    const right = 8.0;
+    final plotWidth = math.max(1.0, size.width - left - right).toDouble();
     final chartHeight = math.max(1.0, size.height - top - bottom).toDouble();
     final allValues = series.isEmpty
         ? values
@@ -450,9 +526,25 @@ class _AnalyticsLineChartPainter extends CustomPainter {
       ..strokeWidth = 1;
     for (var row = 0; row <= 3; row++) {
       final y = top + chartHeight * row / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(
+        Offset(left, y),
+        Offset(size.width - right, y),
+        gridPaint,
+      );
+      final axisLabel = TextPainter(
+        text: TextSpan(
+          text: formatValue(scaleMax * (3 - row) / 3),
+          style: TextStyle(color: mutedColor, fontSize: 9),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: left - 4);
+      axisLabel.paint(
+        canvas,
+        Offset(left - axisLabel.width - 6, y - axisLabel.height / 2),
+      );
     }
-    final slotWidth = size.width / values.length;
+    final slotWidth = plotWidth / values.length;
     for (var index = 0; index < values.length; index++) {
       final textPainter = TextPainter(
         text: TextSpan(
@@ -469,7 +561,7 @@ class _AnalyticsLineChartPainter extends CustomPainter {
       textPainter.paint(
         canvas,
         Offset(
-          slotWidth * index + (slotWidth - textPainter.width) / 2,
+          left + slotWidth * index + (slotWidth - textPainter.width) / 2,
           top + chartHeight + 6,
         ),
       );
@@ -478,7 +570,7 @@ class _AnalyticsLineChartPainter extends CustomPainter {
       for (final item in series) {
         final points = <Offset>[];
         for (var index = 0; index < item.values.length; index++) {
-          final x = slotWidth * (index + .5);
+          final x = left + slotWidth * (index + .5);
           final y =
               top + chartHeight - chartHeight * item.values[index] / scaleMax;
           points.add(Offset(x, y));
@@ -521,9 +613,32 @@ class _AnalyticsLineChartPainter extends CustomPainter {
     } else {
       final points = <Offset>[];
       for (var index = 0; index < values.length; index++) {
-        final x = slotWidth * (index + .5);
+        final x = left + slotWidth * (index + .5);
         final y = top + chartHeight - chartHeight * values[index] / scaleMax;
         points.add(Offset(x, y));
+      }
+      if (points.isNotEmpty) {
+        final areaPath = Path()
+          ..moveTo(points.first.dx, top + chartHeight)
+          ..lineTo(points.first.dx, points.first.dy);
+        for (final point in points.skip(1)) {
+          areaPath.lineTo(point.dx, point.dy);
+        }
+        areaPath
+          ..lineTo(points.last.dx, top + chartHeight)
+          ..close();
+        canvas.drawPath(
+          areaPath,
+          Paint()
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                valueColor.withValues(alpha: .24),
+                valueColor.withValues(alpha: .015),
+              ],
+            ).createShader(Rect.fromLTWH(left, top, plotWidth, chartHeight)),
+        );
       }
       if (points.length > 1) {
         final path = Path()..moveTo(points.first.dx, points.first.dy);
@@ -587,7 +702,7 @@ class _AnalyticsLineChartPainter extends CustomPainter {
       }
     }
     if (selectedIndex != null && selectedIndex! < values.length) {
-      final selectedX = slotWidth * (selectedIndex! + .5);
+      final selectedX = left + slotWidth * (selectedIndex! + .5);
       canvas.drawLine(
         Offset(selectedX, top),
         Offset(selectedX, top + chartHeight),
@@ -596,14 +711,6 @@ class _AnalyticsLineChartPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
     }
-    final maxPainter = TextPainter(
-      text: TextSpan(
-        text: formatValue(maxValue),
-        style: TextStyle(color: mutedColor, fontSize: 9),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: size.width);
-    if (!showDataLabels) maxPainter.paint(canvas, Offset(0, 0));
   }
 
   @override

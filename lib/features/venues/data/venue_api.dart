@@ -1,10 +1,18 @@
 part of '../../../auth_api.dart';
 
 extension AuthApiVenueOperations on AuthApi {
-  Future<List<Map<String, dynamic>>> newsFeed(String token) async {
+  Future<List<Map<String, dynamic>>> newsFeed(
+    String token, {
+    String? businessType,
+  }) async {
     final response = await _request(
       'GET',
-      '/api/news-feed',
+      Uri(
+        path: '/api/news-feed',
+        queryParameters: {
+          if (businessType != null) 'businessType': businessType,
+        },
+      ).toString(),
       headers: _authHeaders(token),
     );
     return asMapList(response['posts']);

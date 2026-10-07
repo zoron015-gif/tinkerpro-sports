@@ -145,13 +145,13 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
               ),
               localize: true,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             AppText(
               'Enter your email to receive a verification code, then choose a new password.',
               style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
               localize: true,
             ),
-            const SizedBox(height: 26),
+            const SizedBox(height: 6),
             _AuthField(
               label: 'Account email',
               hint: 'you@example.com',
@@ -159,7 +159,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
               keyboardType: TextInputType.emailAddress,
               controller: _emailController,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 6),
             if (!_codeRequested)
               _ResetButton(
                 label: 'Send verification code',
@@ -176,14 +176,14 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                 maxLength: 6,
               ),
               if (!_codeVerified) ...[
-                const SizedBox(height: 22),
+                const SizedBox(height: 6),
                 _ResetButton(
                   label: 'Verify code',
                   loading: _loading,
                   onPressed: _verifyCode,
                 ),
               ] else ...[
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 _AuthField(
                   label: 'New password',
                   hint: 'At least 8 characters',
@@ -200,7 +200,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 _AuthField(
                   label: 'Confirm new password',
                   hint: 'Repeat your new password',
@@ -208,7 +208,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                   obscureText: true,
                   controller: _confirmController,
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 6),
                 _ResetButton(
                   label: 'Change password',
                   loading: _loading,

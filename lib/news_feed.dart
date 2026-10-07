@@ -32,6 +32,7 @@ import 'app_preferences.dart';
 Color get _newsInk => AppColors.ink;
 Color get _newsMuted => AppColors.muted;
 Color get _newsOrange => AppColors.accent;
+Color get _newsAccentForeground => AppColors.accentForeground;
 Color get _newsPage => AppColors.page;
 const _newsCardImageHeight = 160.0;
 
@@ -87,12 +88,12 @@ class _NewsImageCarouselState extends State<_NewsImageCarousel> {
                     const AssetImage('assets/court/pickle-court.jpg'),
                 fit: BoxFit.cover,
                 filterQuality: FilterQuality.high,
-                errorBuilder: (_, _, _) =>  ColoredBox(
+                errorBuilder: (_, _, _) => ColoredBox(
                   color: AppColors.softOrange,
                   child: Center(
                     child: Icon(
                       Icons.storefront_rounded,
-                      color: _newsOrange,
+                      color: _newsAccentForeground,
                       size: 52,
                     ),
                   ),
@@ -222,7 +223,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final isEventFeed = widget.businessType.trim().toLowerCase() == 'event';
     final feedPosts = isEventFeed
         ? <Map<String, dynamic>>[]
-        : await _api.newsFeed(token);
+        : await _api.newsFeed(token, businessType: widget.businessType);
     for (final post in feedPosts) {
       final key = _postHeartKey(post);
       if (key.isEmpty) continue;
@@ -435,7 +436,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       foregroundColor: _newsInk,
       leading: IconButton(
         key: const ValueKey('news-feed-back'),
-        tooltip: appLanguageText('Back to reservations', 'Back to reservations'),
+        tooltip: appLanguageText(
+          'Back to reservations',
+          'Back to reservations',
+        ),
         onPressed: () {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
@@ -457,7 +461,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       ),
       title: AppText(
         widget.savedOnly ? 'Saved venues' : widget.pageTitle,
-        style:  TextStyle(color: _newsInk, fontWeight: FontWeight.w900),
+        style: AppTypography.pageTitle.copyWith(color: _newsInk),
       ),
       actions: [
         if (!widget.savedOnly) _courtMapHeaderControl(),
@@ -493,10 +497,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                             ConnectionState.waiting) {
                           return ListView(
                             key: const ValueKey('news-feed-loading-skeleton'),
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                            padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
                             children: [
                               const SkeletonBlock(height: 18, width: 150),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 6),
                               const Row(
                                 children: [
                                   Expanded(
@@ -505,7 +509,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                       borderRadius: 16,
                                     ),
                                   ),
-                                  SizedBox(width: 12),
+                                  SizedBox(width: 6),
                                   Expanded(
                                     child: SkeletonBlock(
                                       height: 122,
@@ -514,14 +518,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 22),
+                              const SizedBox(height: 6),
                               const SkeletonBlock(height: 18, width: 170),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 6),
                               const SkeletonBlock(
                                 height: 180,
                                 borderRadius: 18,
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 6),
                               const SkeletonBlock(
                                 height: 180,
                                 borderRadius: 18,
@@ -567,9 +571,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   Widget _savedCardList(List<Map<String, dynamic>> posts) => ListView.separated(
     physics: const AlwaysScrollableScrollPhysics(),
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+    padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
     itemCount: posts.length,
-    separatorBuilder: (_, _) => const SizedBox(height: 14),
+    separatorBuilder: (_, _) => const SizedBox(height: 6),
     itemBuilder: (_, index) => _postCard(posts[index]),
   );
 
@@ -608,11 +612,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               padding: filterPanelHeaderPadding,
                               child: Row(
                                 children: [
-                                   Flexible(
+                                  Flexible(
                                     child: AppText(
                                       'Filter venues',
                                       style: filterPanelTitleStyle,
-                                     localize: true,),
+                                      localize: true,
+                                    ),
                                   ),
                                   TextButton(
                                     key: const ValueKey(
@@ -631,7 +636,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                       });
                                       setSheetState(() {});
                                     },
-                                    child: const AppText('Reset', localize: true),
+                                    child: const AppText(
+                                      'Reset',
+                                      localize: true,
+                                    ),
                                   ),
                                   IconButton(
                                     key: const ValueKey(
@@ -651,8 +659,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                 children: [
                                   _filterLabel(widget.categoryFilterLabel),
                                   Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
+                                    spacing: 6,
+                                    runSpacing: 6,
                                     children: [
                                       for (final value in sports)
                                         ChoiceChip(
@@ -668,7 +676,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                           selectedColor: _newsOrange,
                                           labelStyle: TextStyle(
                                             color: _feedSport == value
-                                                ? Colors.white
+                                                ? AppColors.onAccent
                                                 : _newsInk,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -713,6 +721,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                           : 'Using my location · nearest first',
                                     ),
                                   ),
+                                  const SizedBox(
+                                    height: filterPanelSectionSpacing,
+                                  ),
                                   _feedDropdown(
                                     identifier: 'area',
                                     value: _feedArea,
@@ -727,7 +738,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   ),
                                   _filterLabel(widget.facilityFilterLabel),
                                   Wrap(
-                                    spacing: 8,
+                                    spacing: 6,
+                                    runSpacing: 6,
                                     children: [
                                       for (final value in [
                                         _facilityAllLabel,
@@ -759,7 +771,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   ),
                                   _filterLabel('Amenities'),
                                   Wrap(
-                                    spacing: 8,
+                                    spacing: 6,
+                                    runSpacing: 6,
                                     children: [
                                       for (final value in const [
                                         'Parking',
@@ -794,7 +807,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   ),
                                   _filterLabel('Availability'),
                                   Wrap(
-                                    spacing: 8,
+                                    spacing: 6,
+                                    runSpacing: 6,
                                     children: [
                                       for (final value in const [
                                         'Any',
@@ -864,10 +878,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   key: const ValueKey('news-feed-filter-apply'),
                                   onPressed: () =>
                                       Navigator.of(dialogContext).pop(),
-                                  style: filterPanelApplyButtonStyle,
+                                  style: filterPanelApplyButtonStyle(context),
                                   child: AppText(
                                     'Show ${_filteredPosts(posts).length} venues',
-                                   localize: true,),
+                                    localize: true,
+                                  ),
                                 ),
                               ),
                             ),
@@ -967,7 +982,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Widget _filterLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+    key: ValueKey('news-feed-filter-label-${text.toLowerCase()}'),
+    padding: const EdgeInsets.only(bottom: 6),
     child: AppText(text.toUpperCase(), style: filterPanelSectionLabelStyle),
   );
 
@@ -996,28 +1012,29 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   );
 
   Widget _feedIntro() => SizedBox(
+    key: const ValueKey('news-feed-intro'),
     width: double.infinity,
     child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisSize: MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-               Flexible(
+              Flexible(
                 child: AppText(
                   'Discover what’s new',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: AppTypography.sectionTitle.copyWith(
                     color: _newsInk,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
                     letterSpacing: -.5,
                     height: 1.1,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
               _subtitleInfoButton(
                 key: 'news-feed-intro-info',
@@ -1027,7 +1044,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               ),
             ],
           ),
-          const SizedBox(height: 3),
         ],
       ),
     ),
@@ -1041,9 +1057,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     key: ValueKey(key),
     tooltip: appLanguageText('About $title', 'About $title'),
     visualDensity: VisualDensity.compact,
-    padding: EdgeInsets.zero,
-    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-    icon:  Icon(Icons.info_outline_rounded, size: 18, color: _newsMuted),
+    alignment: Alignment.bottomCenter,
+    padding: AppSpacing.buttonPadding,
+    constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+    icon: Icon(Icons.info_outline_rounded, size: 18, color: _newsMuted),
     onPressed: () => showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1073,7 +1090,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     style: IconButton.styleFrom(
       shape: const CircleBorder(),
       backgroundColor: AppColors.page,
-      foregroundColor: _courtMapExpanded ? _newsOrange : _newsInk,
+      foregroundColor: _courtMapExpanded ? _newsAccentForeground : _newsInk,
     ),
   );
 
@@ -1096,8 +1113,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             child: AppText(
               'Could not load ${widget.venueNoun == 'courts' ? 'court' : 'venue'} locations: ${snapshot.error}',
               textAlign: TextAlign.center,
-              style:  TextStyle(color: _newsMuted, fontSize: 12),
-             localize: true,),
+              style: TextStyle(color: _newsMuted, fontSize: 12),
+              localize: true,
+            ),
           ),
         );
       }
@@ -1211,12 +1229,13 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 child: AppText(
                   '${pinnedCourts.length} ${widget.venueNoun} on map'
                   '${courtsWithoutPin.isEmpty ? '' : ' · ${courtsWithoutPin.length} need pins'}',
-                  style:  TextStyle(
+                  style: TextStyle(
                     color: _newsInk,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
             ),
           ),
@@ -1238,7 +1257,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     height: 42,
     child: GestureDetector(
       onTap: () => _openCourtMapLocation(court.business, court.point),
-      child: Icon(Icons.location_on, color: _newsOrange, size: 34),
+      child: Icon(Icons.location_on, color: _newsAccentForeground, size: 34),
     ),
   );
 
@@ -1265,17 +1284,13 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           children: [
             AppText(
               name.isEmpty ? 'Venue' : name,
-              style:  TextStyle(
-                color: _newsInk,
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-              ),
+              style: AppTypography.sectionTitle.copyWith(color: _newsInk),
             ),
             if (category.isNotEmpty) ...[
-              const SizedBox(height: 5),
+              const SizedBox(height: 6),
               AppText(
                 category,
-                style:  TextStyle(
+                style: TextStyle(
                   color: _newsMuted,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -1283,20 +1298,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               ),
             ],
             if (address.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
                     Icons.location_on_outlined,
-                    color: _newsOrange,
+                    color: _newsAccentForeground,
                     size: 19,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Flexible(
                     child: AppText(
                       address,
-                      style:  TextStyle(
+                      style: TextStyle(
                         color: _newsInk,
                         fontSize: 13,
                         height: 1.35,
@@ -1306,10 +1321,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 ],
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 if (price != 'Price not listed')
                   _mapDetailChip(Icons.sell_outlined, price),
@@ -1320,7 +1335,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -1347,11 +1362,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: _newsOrange),
-        const SizedBox(width: 5),
+        Icon(icon, size: 16, color: _newsAccentForeground),
+        const SizedBox(width: 6),
         AppText(
           label,
-          style:  TextStyle(
+          style: TextStyle(
             color: _newsInk,
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -1369,7 +1384,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
         mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: AppText('Could not open map directions for $name.', localize: true)),
+        SnackBar(
+          content: AppText(
+            'Could not open map directions for $name.',
+            localize: true,
+          ),
+        ),
       );
     }
   }
@@ -1453,8 +1473,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Widget _mainSearchBar() => Container(
+    key: const ValueKey('news-feed-search-container'),
     color: _newsPage,
-    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
     child: TextField(
       key: const ValueKey('news-feed-search'),
       controller: _searchController,
@@ -1486,7 +1507,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         filled: true,
         fillColor: AppColors.surface,
         isDense: true,
-        prefixIconColor: _newsOrange,
+        prefixIconColor: _newsAccentForeground,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
@@ -1498,7 +1519,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
-          borderSide: BorderSide(color: _newsOrange, width: 1.4),
+          borderSide: BorderSide(color: _newsAccentForeground, width: 1.4),
         ),
       ),
     ),
@@ -1528,11 +1549,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       key: const ValueKey('news-feed-content-list'),
       physics: const AlwaysScrollableScrollPhysics(),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
       children: [
         _sectionHeader('Most popular', 'Most hearts from users', popular),
         if (featured.isEmpty)
-           Padding(
+          Padding(
             key: ValueKey('news-feed-most-popular-empty'),
             padding: EdgeInsets.symmetric(vertical: 20),
             child: AppText(
@@ -1542,18 +1563,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
-             localize: true,),
+              localize: true,
+            ),
           )
         else
           _horizontalVenues(featured, identifier: 'most-popular'),
-        const SizedBox(height: 22),
+        const SizedBox(height: 6),
         _sectionHeader(
           widget.highestRatedSectionTitle,
           'Highest average review rating',
           highestRated,
         ),
         if (rated.isEmpty)
-           Padding(
+          Padding(
             key: ValueKey('news-feed-highest-rated-empty'),
             padding: EdgeInsets.symmetric(vertical: 20),
             child: AppText(
@@ -1563,7 +1585,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
-             localize: true,),
+              localize: true,
+            ),
           )
         else
           _horizontalVenues(
@@ -1572,33 +1595,30 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 .toLowerCase()
                 .replaceAll(' ', '-'),
           ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 6),
         Row(
           children: [
             Expanded(
               child: AppText(
                 widget.allVenuesHeading,
-                style: TextStyle(
-                  color: _newsInk,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: AppTypography.sectionTitle.copyWith(color: _newsInk),
               ),
             ),
             AppText(
               '${posts.length} venues',
-              style:  TextStyle(
+              style: TextStyle(
                 color: _newsMuted,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
-             localize: true,),
+              localize: true,
+            ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
         for (final post in posts) ...[
           _postCard(post),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
         ],
       ],
     );
@@ -1617,15 +1637,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Flexible(
                   child: AppText(
                     title,
-                    style:  TextStyle(
-                      color: _newsInk,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: AppTypography.sectionTitle.copyWith(color: _newsInk),
                   ),
                 ),
                 _subtitleInfoButton(
@@ -1636,7 +1653,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
           ],
         ),
       ),
@@ -1648,8 +1665,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         icon: const Icon(Icons.chevron_right_rounded, size: 17),
         label: AppText('See all (${sectionPosts.length})', localize: true),
         style: TextButton.styleFrom(
-          foregroundColor: _newsOrange,
-          padding: EdgeInsets.zero,
+          foregroundColor: _newsAccentForeground,
+          padding: AppSpacing.buttonPadding,
           textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
         ),
       ),
@@ -1708,18 +1725,18 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     required String identifier,
   }) => Padding(
     key: ValueKey('news-feed-$identifier-section'),
-    padding: const EdgeInsets.only(top: 10),
+    padding: EdgeInsets.zero,
     child: SizedBox(
-      height: 190,
+      height: 196,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final cardWidth = (constraints.maxWidth - 10) / 2;
+          final cardWidth = (constraints.maxWidth - 6) / 2;
           return ListView.separated(
             key: ValueKey('news-feed-$identifier-scroll'),
             scrollDirection: Axis.horizontal,
             physics: const AlwaysScrollableScrollPhysics(),
             itemCount: posts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 6),
             itemBuilder: (_, index) => SizedBox(
               key: ValueKey(
                 'news-feed-$identifier-card-${_venueIdentifier(posts[index])}',
@@ -1804,9 +1821,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     } on Exception catch (error) {
       if (!mounted) return;
       setState(() => _applyHeartState(post, wasHearted, previousCount));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: AppText('Could not update heart: $error', localize: true)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText('Could not update heart: $error', localize: true),
+        ),
+      );
     } finally {
       _heartUpdatesInProgress.remove(key);
     }
@@ -1943,18 +1962,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                             ? Colors.red
                                             : _newsMuted,
                                       ),
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 6),
                                       AppText(
                                         '$heartCount',
                                         key: ValueKey(
                                           'news-feed-mini-heart-count-${_venueIdentifier(post)}',
                                         ),
-                                        style:  TextStyle(
+                                        style: TextStyle(
                                           color: _newsInk,
                                           fontSize: 10,
                                           fontWeight: FontWeight.w800,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -1966,7 +1986,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1974,44 +1994,44 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style:  TextStyle(
+                          style: TextStyle(
                             color: _newsInk,
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             _ratingStars(rating, size: 12),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: 6),
                             AppText(
                               rating == 0 ? 'New' : rating.toStringAsFixed(1),
-                              style:  TextStyle(
+                              localize: true,
+                              style: TextStyle(
                                 color: _newsMuted,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: 6),
                             AppText(
                               '(${_number(post['reviewCount']).toInt()})',
-                              style:  TextStyle(
-                                color: _newsMuted,
-                                fontSize: 10,
-                              ),
-                             localize: true,),
+                              style: TextStyle(color: _newsMuted, fontSize: 10),
+                              localize: true,
+                            ),
                             const Spacer(),
                           ],
                         ),
                         if (_distanceLabel(post) case final distance?)
                           Padding(
-                            padding: const EdgeInsets.only(top: 3),
+                            padding: const EdgeInsets.only(top: 6),
                             child: AppText(
                               distance,
+                              localize: true,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style:  TextStyle(
+                              style: TextStyle(
                                 color: _newsMuted,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -2019,7 +2039,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                             ),
                           ),
                         if (unavailable) ...[
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 6),
                           const AppText(
                             'UNAVAILABLE · Booking disabled',
                             style: TextStyle(
@@ -2027,12 +2047,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               fontSize: 9,
                               fontWeight: FontWeight.w900,
                             ),
-                           localize: true,),
+                            localize: true,
+                          ),
                         ] else if (priceLabel != 'Price not listed') ...[
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 6),
                           AppText(
                             priceLabel,
-                            style:  TextStyle(
+                            localize: true,
+                            style: TextStyle(
                               color: _newsInk,
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
@@ -2060,6 +2082,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       child: AppText(
         text,
+        localize: true,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 9,
@@ -2078,10 +2101,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     errorBuilder: (_, _, _) => _miniImageFallback(),
   );
 
-  Widget _miniImageFallback() =>  ColoredBox(
+  Widget _miniImageFallback() => ColoredBox(
     color: AppColors.softOrange,
     child: Center(
-      child: Icon(Icons.storefront_rounded, color: _newsOrange, size: 30),
+      child: Icon(
+        Icons.storefront_rounded,
+        color: _newsAccentForeground,
+        size: 30,
+      ),
     ),
   );
 
@@ -2308,13 +2335,13 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
     padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
     children: [
-      Icon(Icons.explore_outlined, size: 52, color: _newsOrange),
-      const SizedBox(height: 16),
+      Icon(Icons.explore_outlined, size: 52, color: _newsAccentForeground),
+      const SizedBox(height: 6),
       Center(
         child: AppText(
           text,
           textAlign: TextAlign.center,
-          style:  TextStyle(
+          style: TextStyle(
             color: _newsInk,
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -2355,8 +2382,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             label: const AppText('Contact owner', localize: true),
             style: OutlinedButton.styleFrom(
               foregroundColor: _newsInk,
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              side:  BorderSide(color: AppColors.border),
+              padding: AppSpacing.buttonPadding,
+              side: BorderSide(color: AppColors.border),
             ),
           )
         : OutlinedButton.icon(
@@ -2366,8 +2393,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             label: const AppText('Visit', localize: true),
             style: OutlinedButton.styleFrom(
               foregroundColor: _newsInk,
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              side:  BorderSide(color: AppColors.border),
+              padding: AppSpacing.buttonPadding,
+              side: BorderSide(color: AppColors.border),
             ),
           );
     return Card(
@@ -2428,7 +2455,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                       ),
                       child: AppText(
                         type,
-                        style:  TextStyle(
+                        localize: true,
+                        style: TextStyle(
                           color: _newsInk,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
@@ -2453,8 +2481,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                       ),
                       child: AppText(
                         category,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        localize: true,
+                        style: TextStyle(
+                          color: AppColors.onAccent,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),
@@ -2465,7 +2494,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2478,38 +2507,49 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _newsInk,
-                          fontSize: 19,
+                          fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     IconButton(
                       key: ValueKey('news-feed-save-${_venueIdentifier(post)}'),
                       onPressed: () => _toggleSaved(post),
-                      tooltip: isSaved ? 'Remove from Saved' : 'Save venue',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
+                      tooltip: appLanguageText(
+                        isSaved ? 'Remove from Saved' : 'Save venue',
+                        isSaved ? 'Remove from Saved' : 'Save venue',
+                        languageCode: Localizations.localeOf(context)
+                            .languageCode,
                       ),
-                      color: isSaved ? _newsOrange : _newsInk,
+                      visualDensity: VisualDensity.compact,
+                      padding: AppSpacing.buttonPadding,
+                      constraints: const BoxConstraints(
+                        minWidth: 44,
+                        minHeight: 44,
+                      ),
+                      color: isSaved ? _newsAccentForeground : _newsInk,
                       icon: Icon(
                         isSaved ? savedItemSelectedIcon : savedItemIcon,
                       ),
                     ),
+                    const SizedBox(width: 6),
                     IconButton(
                       key: ValueKey(
                         'news-feed-heart-${_venueIdentifier(post)}',
                       ),
                       onPressed: () => _toggleHeart(post),
-                      tooltip: isHearted ? 'Remove heart' : 'Heart venue',
+                      tooltip: appLanguageText(
+                        isHearted ? 'Remove heart' : 'Heart venue',
+                        isHearted ? 'Remove heart' : 'Heart venue',
+                        languageCode: Localizations.localeOf(context)
+                            .languageCode,
+                      ),
                       visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
+                      padding: AppSpacing.buttonPadding,
                       constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
+                        minWidth: 44,
+                        minHeight: 44,
                       ),
                       color: isHearted ? Colors.red : _newsInk,
                       icon: Icon(
@@ -2518,20 +2558,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                             : Icons.favorite_border_rounded,
                       ),
                     ),
+                    const SizedBox(width: 6),
                     AppText(
                       '$heartCount',
                       key: ValueKey(
                         'news-feed-heart-count-${_venueIdentifier(post)}',
                       ),
-                      style:  TextStyle(
+                      style: TextStyle(
                         color: _newsMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                   ],
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     Expanded(
@@ -2539,12 +2581,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                           ? const SizedBox.shrink()
                           : Row(
                               children: [
-                                 Icon(
+                                Icon(
                                   Icons.location_on_outlined,
                                   color: _newsMuted,
                                   size: 16,
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 6),
                                 Expanded(
                                   child: AppText(
                                     address,
@@ -2559,20 +2601,20 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               ],
                             ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     _priceTag(priceLabel),
                   ],
                 ),
                 if (_distanceLabel(post) case final distance?) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(
                         Icons.near_me_outlined,
-                        color: _newsOrange,
+                        color: _newsAccentForeground,
                         size: 15,
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       AppText(
                         distance,
                         style: TextStyle(
@@ -2584,7 +2626,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     ],
                   ),
                 ],
-                const SizedBox(height: 7),
+                const SizedBox(height: 6),
                 AppText(
                   body,
                   maxLines: 2,
@@ -2595,11 +2637,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                     fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 if (unavailable) ...[
                   Container(
                     width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 12),
+                    margin: const EdgeInsets.only(bottom: 6),
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: AppColors.softOrangeAlt,
@@ -2612,10 +2654,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                       children: [
                         Icon(
                           Icons.info_outline_rounded,
-                          color: _newsOrange,
+                          color: _newsAccentForeground,
                           size: 19,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: AppText(
                             'This court is currently unavailable. Booking cannot proceed.',
@@ -2624,7 +2666,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
-                           localize: true,),
+                            localize: true,
+                          ),
                         ),
                       ],
                     ),
@@ -2633,20 +2676,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 Row(
                   children: [
                     _ratingStars(rating, size: 16),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     AppText(
                       rating == 0 ? 'New' : rating.toStringAsFixed(1),
+                      localize: true,
                       style: TextStyle(
                         color: _newsInk,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     AppText(
                       rating == 0
                           ? 'No ratings yet'
                           : '$reviews ${reviews == 1 ? 'review' : 'reviews'} · '
                                 '$ratedUsers rated',
+                      localize: true,
                       style: TextStyle(color: _newsMuted, fontSize: 12),
                     ),
                     const Spacer(),
@@ -2662,10 +2707,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         type.trim().toLowerCase() == 'event'
                             ? 'Review'
                             : 'Reviews',
+                        localize: true,
                       ),
                       style: TextButton.styleFrom(
                         foregroundColor: _newsInk,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: AppSpacing.buttonPadding,
                       ),
                     ),
                   ],
@@ -2685,11 +2731,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         label: const AppText('Explore venue', localize: true),
                         style: FilledButton.styleFrom(
                           backgroundColor: _newsOrange,
-                          padding: EdgeInsets.symmetric(vertical: 12),
+                          foregroundColor: AppColors.onAccent,
+                          padding: AppSpacing.buttonPadding,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(child: secondaryAction),
                   ],
                 ),
@@ -2772,14 +2819,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     decoration: BoxDecoration(
       color: AppColors.softOrangeAlt,
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _newsOrange.withValues(alpha: .28)),
+      border: Border.all(color: _newsAccentForeground.withValues(alpha: .28)),
     ),
     child: Padding(
       padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.sell_outlined, color: _newsOrange, size: 15),
+          Icon(Icons.sell_outlined, color: _newsAccentForeground, size: 15),
           const SizedBox(width: 6),
           AppText(
             label,
@@ -2811,7 +2858,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       if (owner == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: AppText('This merchant is not available for messages yet.', localize: true),
+            content: AppText(
+              'This merchant is not available for messages yet.',
+              localize: true,
+            ),
           ),
         );
         return;
@@ -2830,7 +2880,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: AppText('Could not contact the owner: $error', localize: true)),
+        SnackBar(
+          content: AppText(
+            'Could not contact the owner: $error',
+            localize: true,
+          ),
+        ),
       );
     }
   }
@@ -2891,9 +2946,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           _savedKeys.remove(key);
         }
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: AppText('Could not update Saved: $error', localize: true)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText('Could not update Saved: $error', localize: true),
+        ),
+      );
     }
   }
 
@@ -2914,18 +2971,27 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: AppText('The venue link could not be opened.', localize: true)),
+          const SnackBar(
+            content: AppText(
+              'The venue link could not be opened.',
+              localize: true,
+            ),
+          ),
         );
       }
     }
   }
 
-  Widget _imageFallback() =>  SizedBox(
+  Widget _imageFallback() => SizedBox(
     height: _newsCardImageHeight,
     width: double.infinity,
     child: ColoredBox(
       color: AppColors.softOrange,
-      child: Icon(Icons.storefront_rounded, size: 52, color: _newsOrange),
+      child: Icon(
+        Icons.storefront_rounded,
+        size: 52,
+        color: _newsAccentForeground,
+      ),
     ),
   );
 
@@ -2981,7 +3047,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             const SnackBar(
               content: AppText(
                 'This venue is currently unavailable and cannot be booked.',
-               localize: true,),
+                localize: true,
+              ),
             ),
           );
         }
@@ -3066,7 +3133,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       if (!type.toLowerCase().contains('sport')) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: AppText('This venue has no business type.', localize: true)),
+          const SnackBar(
+            content: AppText(
+              'This venue has no business type.',
+              localize: true,
+            ),
+          ),
         );
         return;
       }
@@ -3082,7 +3154,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: AppText('Could not open venue page: $error', localize: true)),
+        SnackBar(
+          content: AppText('Could not open venue page: $error', localize: true),
+        ),
       );
     }
   }

@@ -4,6 +4,8 @@
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TinkerPro uses your location to show nearby sports venues.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>TinkerPro uses the camera to scan venue QR codes.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

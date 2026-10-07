@@ -160,6 +160,27 @@ void main() {
       expect(find.textContaining('Alex Coach'), findsOneWidget);
       await tester.tap(find.textContaining('Alex Coach').last);
       await tester.pumpAndSettle();
+      expect(find.text('1 month'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('fitness-coach-duration-increase')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('2 months'), findsOneWidget);
+      expect(find.text('Coach · Alex Coach (2 months)'), findsOneWidget);
+      expect(find.text('PHP 600.00'), findsWidgets);
+      await tester.tap(
+        find.byKey(const ValueKey('fitness-coach-duration-decrease')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 month'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('fitness-coach-duration-decrease')),
+            )
+            .onPressed,
+        isNull,
+      );
 
       final categoryDropdown = find.byWidgetPredicate(
         (widget) =>

@@ -32,7 +32,7 @@ class MerchantNewsCardsSection extends StatelessWidget {
         key: ValueKey('merchant-news-cards-loading-skeleton'),
         children: [
           SkeletonBlock(height: 112, borderRadius: 14),
-          SizedBox(height: 10),
+          SizedBox(height: 6),
           SkeletonBlock(height: 112, borderRadius: 14),
         ],
       );
@@ -73,7 +73,7 @@ class MerchantNewsCardsSection extends StatelessWidget {
               business,
             ))
               _newsCard(postsByBusiness[_businessId(business)]!, business),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
       ],
     );
@@ -86,9 +86,18 @@ class MerchantNewsCardsSection extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.edit_note_rounded, color: Color(0xFFFF8200)),
         title: AppText('${business['name'] ?? 'Business'}'),
-        subtitle: AppText(
-          '${_businessLabel(type, business['category'])}\n'
-          'News Card incomplete — add a short venue update.',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              _businessLabel(type, business['category']),
+              localize: true,
+            ),
+            const AppText(
+              'News Card incomplete — add a short venue update.',
+              localize: true,
+            ),
+          ],
         ),
         isThreeLine: true,
         trailing: FilledButton(
@@ -110,12 +119,25 @@ class MerchantNewsCardsSection extends StatelessWidget {
           color: published ? const Color(0xFF15803D) : const Color(0xFFFF8200),
         ),
         title: AppText('${post['title'] ?? 'News post'}'),
-        subtitle: AppText(
-          '${_businessLabel(type, business['category'])}\n'
-          '${published ? 'PUBLISHED · BOOKING CARD AVAILABLE' : 'DRAFT · Publish to show this Booking Card'}\n'
-          '${post['body'] ?? ''}',
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              _businessLabel(type, business['category']),
+              localize: true,
+            ),
+            AppText(
+              published
+                  ? 'PUBLISHED · BOOKING CARD AVAILABLE'
+                  : 'DRAFT · Publish to show this Booking Card',
+              localize: true,
+            ),
+            AppText(
+              '${post['body'] ?? ''}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
         isThreeLine: true,
         trailing: Row(

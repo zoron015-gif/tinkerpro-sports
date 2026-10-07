@@ -112,6 +112,7 @@ class MessagesController extends ChangeNotifier {
     realtimeRefreshInFlight = true;
     try {
       final stateRevision = conversationStateRevision;
+      final messageRequestIdAtStart = messageRequestId;
       final selectedConversation = selectedConversationId;
       final conversationsFuture = _service.fetchConversations(
         sessionToken,
@@ -137,6 +138,7 @@ class MessagesController extends ChangeNotifier {
       conversations = loadedConversations;
       if (selectedConversation != null &&
           selectedConversation == selectedConversationId &&
+          messageRequestIdAtStart == messageRequestId &&
           loadedMessages != null) {
         messages = loadedMessages;
         _markConversationRead(selectedConversation);
@@ -151,11 +153,7 @@ class MessagesController extends ChangeNotifier {
     final sessionToken = token;
     if (sessionToken == null) return;
 
-    final requestId = ++messageRequestId;
-    selectedConversationId = id;
-    messages = const [];
-    showChat = true;
-    notifyListeners();
+    final requestId = beginSelectingConversation(id);
 
     try {
       final loadedMessages = await _service.fetchMessages(
@@ -172,6 +170,7 @@ class MessagesController extends ChangeNotifier {
       if (requestId == messageRequestId) {
         notifyListeners();
       }
+      rethrow;
     }
   }
 
@@ -197,11 +196,19 @@ class MessagesController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setSelectedConversation(int id) {
+  int beginSelectingConversation(int id) {
+    final requestId = ++messageRequestId;
+    if (selectedConversationId != id) {
+      messages = const [];
+    }
     selectedConversationId = id;
-    messages = const [];
     showChat = true;
     notifyListeners();
+    return requestId;
+  }
+
+  void setSelectedConversation(int id) {
+    beginSelectingConversation(id);
   }
 
   void setMessages(List<Map<String, dynamic>> nextMessages) {
@@ -254,6 +261,7 @@ class MessagesController extends ChangeNotifier {
   }
 
   void backToInbox() {
+    messageRequestId++;
     showChat = false;
     selectedConversationId = null;
     messages = const [];

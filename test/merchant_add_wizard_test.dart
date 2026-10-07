@@ -46,6 +46,10 @@ void main() {
 
     expect(find.text('STEP 1 OF 3  ·  Business basics'), findsOneWidget);
     expect(find.text('SPORTS, SLOTS & RATES'), findsNothing);
+    final continueButton = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('business-setup-next-0')),
+    );
+    expect(continueButton.style!.foregroundColor!.resolve({}), Colors.white);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(

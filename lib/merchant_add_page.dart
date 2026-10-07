@@ -268,7 +268,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   style: TextStyle(fontSize: 12),
                  localize: true,),
                 if (lookupMessage != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   AppText(
                     lookupMessage,
                     style: const TextStyle(
@@ -277,7 +277,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Expanded(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
@@ -318,7 +318,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 AppText(
                   selected == null
                       ? 'No map pin selected'
@@ -942,7 +942,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 1),
+                        const SizedBox(height: 6),
                         AppText(
                           editing
                               ? 'Update this venue for customers'
@@ -953,7 +953,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             fontWeight: FontWeight.normal,
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 6),
                         AppText(
                           'STEP ${setupStep + 1} OF 3  ·  ${currentStepTitle()}',
                           style: TextStyle(
@@ -971,7 +971,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           backgroundColor: _addLine,
                           color: _addOrange,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             _setupStepLabel(
@@ -979,13 +979,13 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               complete: basicsComplete(),
                               current: setupStep == 0,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             _setupStepLabel(
                               'Details',
                               complete: bookingDetailsComplete(),
                               current: setupStep == 1,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             _setupStepLabel(
                               'Schedule',
                               complete: scheduleComplete(),
@@ -1067,7 +1067,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: Color(0xFFB42318),
                                           size: 20,
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: AppText(
                                             validationMessage!,
@@ -1189,7 +1189,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                 ],
                                 if (setupStep == 1) ...[
                                   if (type == 'Sports') ...[
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 6),
                                     _sectionLabel('SPORTS, SLOTS & RATES'),
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -1238,7 +1238,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         });
                                       },
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 6),
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: AppText(
@@ -1379,7 +1379,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       index < sportSlots.length;
                                       index++
                                     ) ...[
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 6),
                                       Builder(
                                         builder: (context) {
                                           final sport = sportSlots[index];
@@ -1519,7 +1519,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                       }
                                                     },
                                                   ),
-                                                const SizedBox(height: 8),
+                                                const SizedBox(height: 6),
                                                 Builder(
                                                   builder: (context) {
                                                     final includedPlayersField =
@@ -1591,7 +1591,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                         children: [
                                                           includedPlayersField,
                                                           const SizedBox(
-                                                            height: 8,
+                                                            height: 6,
                                                           ),
                                                           extraPlayerFeeField,
                                                         ],
@@ -1604,7 +1604,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                               includedPlayersField,
                                                         ),
                                                         const SizedBox(
-                                                          width: 8,
+                                                          width: 6,
                                                         ),
                                                         Expanded(
                                                           child:
@@ -1622,7 +1622,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ],
                                   ],
                                   if (type == 'Fitness & Wellness') ...[
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 6),
                                     _sectionLabel(
                                       'FITNESS CATEGORIES & PRICES',
                                     ),
@@ -1758,7 +1758,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       index < fitnessCategories.length;
                                       index++
                                     ) ...[
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 6),
                                       _fitnessCategoryCard(
                                         fitnessCategories[index],
                                         onDiscountChanged: (value) =>
@@ -1774,7 +1774,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             }),
                                       ),
                                     ],
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 6),
                                     _sectionLabel('COACH STAFF (OPTIONAL)'),
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -1791,7 +1791,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       index < fitnessCoaches.length;
                                       index++
                                     ) ...[
-                                      const SizedBox(height: 8),
+                                      const SizedBox(height: 6),
                                       _fitnessCoachCard(
                                         fitnessCoaches[index],
                                         onPickImage: () async {
@@ -1851,7 +1851,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                   ],
                                   if (type == 'Event') ...[
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 6),
                                     _sectionLabel('EVENT BOOKING DETAILS'),
                                     Align(
                                       alignment: Alignment.centerLeft,
@@ -1864,8 +1864,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                        localize: true,),
                                     ),
                                     Wrap(
-                                      spacing: 8,
-                                      runSpacing: 4,
+                                      spacing: 6,
+                                      runSpacing: 6,
                                       children: [
                                         for (final option in eventTypeOptions)
                                           FilterChip(
@@ -1934,7 +1934,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: TextFormField(
                                             controller: eventAttendanceMax,
@@ -1972,7 +1972,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                   ],
                                 ],
                                 if (setupStep == 2) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   _sectionLabel('SCHEDULE AND PRICING'),
                                   Row(
                                     children: [
@@ -1989,7 +1989,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               : null,
                                         ),
                                       ),
-                                      const SizedBox(width: 10),
+                                      const SizedBox(width: 6),
                                       Expanded(
                                         child: _timePickerField(
                                           context: context,
@@ -2023,7 +2023,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         ? 'Please add the venue’s street address and city.'
                                         : null,
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
                                   Align(
                                     alignment: Alignment.centerLeft,
                                     child: Wrap(
@@ -2058,10 +2058,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                 : 'Adjust map pin',
                                           ),
                                           style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
-                                            ),
+                                            padding: AppSpacing.buttonPadding,
                                             minimumSize: const Size(0, 34),
                                             tapTargetSize: MaterialTapTargetSize
                                                 .shrinkWrap,
@@ -2078,11 +2075,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               longitude = null;
                                             }),
                                             style: TextButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 4,
-                                                  ),
+                                              padding: AppSpacing.buttonPadding,
                                               minimumSize: const Size(0, 30),
                                               tapTargetSize:
                                                   MaterialTapTargetSize
@@ -2165,7 +2158,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addInk,
                                           size: 18,
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: AppText(
                                             'Availability / booking schedule',
@@ -2179,7 +2172,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   Align(
                                     alignment: Alignment.centerLeft,
                                     child: AppText(
@@ -2195,7 +2188,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     alignment: Alignment.centerLeft,
                                     child: Wrap(
                                       spacing: 6,
-                                      runSpacing: 4,
+                                      runSpacing: 6,
                                       children: [
                                         for (final day in _weekdays)
                                           FilterChip(
@@ -2242,7 +2235,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   _sectionLabel('FACILITY DETAILS'),
                                   DropdownButtonFormField<String>(
                                     initialValue: facility,
@@ -2283,7 +2276,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     alignment: Alignment.centerLeft,
                                     child: Wrap(
                                       spacing: 6,
-                                      runSpacing: 2,
+                                      runSpacing: 6,
                                       children: [
                                         for (final amenity in amenityOptions)
                                           FilterChip(
@@ -2459,7 +2452,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               ],
                                             ),
                                             if (index < images.length - 1)
-                                              const SizedBox(width: 8),
+                                              const SizedBox(width: 6),
                                           ],
                                         ],
                                       ),
@@ -2512,10 +2505,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         },
                         style: TextButton.styleFrom(
                           textStyle: const TextStyle(fontSize: 13),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
+                          padding: AppSpacing.buttonPadding,
                         ),
                         child: const AppText('Cancel', localize: true),
                       ),
@@ -2532,6 +2522,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           key: ValueKey('business-setup-next-$setupStep'),
                           style: FilledButton.styleFrom(
                             backgroundColor: _addNavy,
+                            foregroundColor:
+                                AppColors.contrastingForeground(_addNavy),
                             minimumSize: const Size(112, 40),
                             shape: const StadiumBorder(),
                             textStyle: const TextStyle(
@@ -2574,9 +2566,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           key: const ValueKey('business-setup-publish'),
                           style: FilledButton.styleFrom(
                             backgroundColor: _addNavy,
+                            foregroundColor:
+                                AppColors.contrastingForeground(_addNavy),
                             minimumSize: const Size(136, 40),
                             shape: const StadiumBorder(),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            padding: AppSpacing.buttonPadding,
                             textStyle: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -3177,7 +3171,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           category.category.text,
           style: TextStyle(color: _addInk, fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         for (final entry in <(String, TextEditingController)>[
           ('Session price (required)', category.sessionPrice),
           ('Monthly price (required)', category.monthlyPrice),
@@ -3266,7 +3260,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     : null,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
             Expanded(
               child: AppText(
                 'Coach profile photo (optional)',
@@ -3284,7 +3278,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           controller: coach.name,
           decoration: InputDecoration(labelText: appLanguageText('Coach name (required)', 'Coach name (required)')),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         TextFormField(
           controller: coach.monthlyPrice,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -3350,7 +3344,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           padding: const EdgeInsets.only(top: 4),
           child: Wrap(
             spacing: 6,
-            runSpacing: 4,
+            runSpacing: 6,
             children: [
               for (final value in values)
                 InputChip(
@@ -3396,7 +3390,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               ? _addOrange
               : _addMuted,
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Expanded(
           child: AppText(
             label,
@@ -3443,7 +3437,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               size: 19,
               color: complete ? Colors.green.shade700 : _addOrange,
             ),
-            const SizedBox(width: 7),
+            const SizedBox(width: 6),
             Expanded(
               child: AppText(
                 complete ? 'Ready to publish' : 'Finish required details',
@@ -3452,7 +3446,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         _reviewRow('Business type', type),
         _reviewRow('Venue name', name.isEmpty ? 'Not entered' : name),
         _reviewRow(
@@ -3469,7 +3463,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           'Photos',
           imageCount == 0 ? 'Optional · none added' : '$imageCount added',
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         AppText(
           complete
               ? 'Check the information above, then publish your booking card.'
@@ -3518,12 +3512,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         _addSectionTabs(),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         _businessFilterAndSearch(),
         if (_selectedAddSection == 'News cards') ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
           if (widget.businesses.isNotEmpty &&
               _filteredNewsCardBusinesses.isEmpty)
             AppText(
@@ -3541,13 +3535,13 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               onPublish: _publishNewsPost,
             ),
         ] else ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 6),
           if (_newsLoading)
             const Column(
               key: ValueKey('merchant-businesses-loading-skeleton'),
               children: [
                 SkeletonBlock(height: 120, borderRadius: 16),
-                SizedBox(height: 12),
+                SizedBox(height: 6),
                 SkeletonBlock(height: 120, borderRadius: 16),
               ],
             )
@@ -3557,7 +3551,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               child: Column(
                 children: [
                   Icon(Icons.storefront_outlined, size: 42, color: _addMuted),
-                  SizedBox(height: 8),
+                  SizedBox(height: 6),
                   AppText(
                     'No businesses in this category',
                     style: TextStyle(
@@ -3571,7 +3565,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           else
             for (final business in _filteredBusinesses) ...[
               _businessCard(business),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
             ],
         ],
       ],
@@ -3806,7 +3800,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       AppText(
                         category.isEmpty ? type : '$type · $category',
                         maxLines: 1,
@@ -3817,7 +3811,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       AppText(
                         newsText.trim().isEmpty
                             ? 'Your short venue news will appear here.'
@@ -3826,7 +3820,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: _addMuted, fontSize: 12),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
                           const Icon(
@@ -3834,7 +3828,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             color: Colors.amber,
                             size: 17,
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 6),
                           AppText(
                             'No ratings yet',
                             style: TextStyle(
@@ -4028,7 +4022,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             },
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Expanded(
           child: SizedBox(
             height: 48,
@@ -4202,7 +4196,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     'Special rates: ${_formatRatePeriods(ratePeriods)}',
                   ),
                 if (details.isNotEmpty) _detail(Icons.info_outline, details),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 _priceBox(
                   ratePeriods.isNotEmpty
                       ? 'See special rates above'
@@ -4212,7 +4206,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   label: type == 'Event' ? 'Event fee' : 'Price / hour',
                   hasRatePeriods: ratePeriods.isNotEmpty,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 AppText(
                   'Amenities',
                   style: TextStyle(
@@ -4221,7 +4215,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     fontWeight: FontWeight.w800,
                   ),
                  localize: true,),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
                 if (tags.isEmpty)
                   AppText(
                     'No amenities listed',
@@ -4230,10 +4224,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 else
                   Wrap(
                     spacing: 6,
-                    runSpacing: 5,
+                    runSpacing: 6,
                     children: [for (final tag in tags) _tag(null, tag)],
                   ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     Expanded(
@@ -4245,7 +4239,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         label: const AppText('Edit', localize: true),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: id == null
@@ -4265,7 +4259,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -4352,10 +4346,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 fontWeight: FontWeight.w700,
               ),
              localize: true,),
-            if (item != categories.last) const SizedBox(height: 4),
+            if (item != categories.last) const SizedBox(height: 6),
           ],
           if (coaches.isNotEmpty) ...[
-            if (categories.isNotEmpty) const SizedBox(height: 8),
+            if (categories.isNotEmpty) const SizedBox(height: 6),
             for (final coach in coaches)
               AppText(
                 'Coach ${coach['name'] ?? ''} · '
@@ -4529,7 +4523,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         children: [
           if (icon != null) ...[
             Icon(icon, size: 14, color: _addOrange),
-            const SizedBox(width: 5),
+            const SizedBox(width: 6),
           ],
           AppText(
             label,

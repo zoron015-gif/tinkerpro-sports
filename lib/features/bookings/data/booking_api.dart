@@ -14,6 +14,7 @@ extension AuthApiBookingOperations on AuthApi {
     int slotNumber = 1,
     String fitnessPlanType = '',
     String fitnessCoachName = '',
+    int fitnessCoachDurationMonths = 0,
     String eventType = '',
   }) => _request(
     'POST',
@@ -29,6 +30,7 @@ extension AuthApiBookingOperations on AuthApi {
       'slotNumber': slotNumber,
       'fitnessPlanType': fitnessPlanType,
       'fitnessCoachName': fitnessCoachName,
+      'fitnessCoachDurationMonths': fitnessCoachDurationMonths,
       'eventType': eventType,
     },
     headers: _authHeaders(

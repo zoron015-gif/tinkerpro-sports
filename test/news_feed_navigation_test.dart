@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/all_venues_page.dart';
 import 'package:myapp/auth_api.dart';
+import 'package:myapp/customer_bookings_page.dart';
 import 'package:myapp/event_dashboard.dart';
 import 'package:myapp/fitness_dashboard.dart';
 import 'package:myapp/messages_dashboard.dart';
@@ -269,6 +270,7 @@ void main() {
             'firstName': 'Event',
             'lastName': 'Guest',
           });
+
           return http.Response(
             jsonEncode({'review': submittedReviews.last}),
             201,
@@ -410,6 +412,245 @@ void main() {
     expect(find.text('Book Event'), findsOneWidget);
     expect(find.text('BOOKING CONFIGURATION'), findsOneWidget);
     expect(find.text('Request event booking'), findsNothing);
+  });
+
+  testWidgets('Event bookings return to the Event-only Explore feed', (
+    tester,
+  ) async {
+    final requests = <String>[];
+    final eventApi = AuthApi(
+      client: MockClient((request) async {
+        requests.add(request.url.path);
+        if (request.url.path == '/api/news-feed') {
+          fail('Event Explore must not load the sports news feed');
+        }
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {
+                  'id': 91,
+                  'businessType': 'Event',
+                  'name': 'Cebu Event Hall',
+                  'eventTypes': ['Wedding'],
+                  'enabled': true,
+                },
+                {
+                  'id': 92,
+                  'businessType': 'Sports',
+                  'name': 'Sports Court',
+                  'enabled': true,
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({'bookings': [], 'conversations': []}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerBookingsPage(api: eventApi, businessType: 'Event'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('news-feed-nav-explore')));
+    await tester.pumpAndSettle();
+
+    final feed = tester.widget<NewsFeedPage>(find.byType(NewsFeedPage));
+    expect(feed.businessType, 'Event');
+    expect(feed.savedItemType, 'event');
+    expect(feed.pageTitle, 'Event Venues');
+    expect(find.text('Cebu Event Hall'), findsWidgets);
+    expect(find.text('Sports Court'), findsNothing);
+    expect(requests, isNot(contains('/api/news-feed')));
+  });
+
+  testWidgets('Fitness bookings return to a Fitness-only Explore feed', (
+    tester,
+  ) async {
+    final requests = <Uri>[];
+    final fitnessApi = AuthApi(
+      client: MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.path == '/api/news-feed') {
+          return http.Response(
+            jsonEncode({
+              'posts': [
+                {
+                  'businessId': 101,
+                  'businessName': 'Cebu Yoga Studio',
+                  'businessType': 'Fitness & Wellness',
+                  'category': 'Yoga',
+                  'address': 'Cebu City',
+                  'enabled': true,
+                  'title': 'Yoga classes',
+                  'body': 'Join a class',
+                },
+                {
+                  'businessId': 102,
+                  'businessName': 'Sports Court',
+                  'businessType': 'Sports',
+                  'category': 'Basketball',
+                  'address': 'Cebu City',
+                  'enabled': true,
+                  'title': 'Basketball news',
+                  'body': 'Court updates',
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {'id': 101, 'businessType': 'Fitness & Wellness', 'enabled': true},
+                {'id': 102, 'businessType': 'Sports', 'enabled': true},
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({'bookings': [], 'conversations': []}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerBookingsPage(
+          api: fitnessApi,
+          businessType: 'Fitness & Wellness',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('news-feed-nav-explore')));
+    await tester.pumpAndSettle();
+
+    final feed = tester.widget<NewsFeedPage>(find.byType(NewsFeedPage));
+    expect(feed.businessType, 'Fitness');
+    expect(feed.savedItemType, 'fitness');
+    expect(feed.pageTitle, 'Fitness & Wellness');
+    expect(find.text('Cebu Yoga Studio'), findsWidgets);
+    expect(find.text('Sports Court'), findsNothing);
+    expect(
+      requests
+          .where((uri) => uri.path == '/api/news-feed')
+          .map((uri) => uri.queryParameters['businessType']),
+      ['Fitness'],
+    );
+  });
+
+  testWidgets('Fitness messages return to a Fitness-only Explore feed', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'test-token',
+      'session_role': 'customer',
+    });
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'test-token',
+    });
+    final requests = <Uri>[];
+    final fitnessApi = AuthApi(
+      client: MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.path == '/api/news-feed') {
+          return http.Response(
+            jsonEncode({
+              'posts': [
+                {
+                  'businessId': 101,
+                  'businessName': 'Cebu Yoga Studio',
+                  'businessType': 'Fitness & Wellness',
+                  'category': 'Yoga',
+                  'enabled': true,
+                  'title': 'Yoga classes',
+                  'body': 'Join a class',
+                },
+                {
+                  'businessId': 102,
+                  'businessName': 'Sports Court',
+                  'businessType': 'Sports',
+                  'category': 'Basketball',
+                  'enabled': true,
+                  'title': 'Basketball news',
+                  'body': 'Court updates',
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {'id': 101, 'businessType': 'Fitness & Wellness', 'enabled': true},
+                {'id': 102, 'businessType': 'Sports', 'enabled': true},
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/auth/me') {
+          return http.Response(
+            jsonEncode({'user': {'id': 42}}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({'conversations': [], 'contacts': [], 'bookings': []}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesDashboardPage(
+          api: fitnessApi,
+          businessType: 'Fitness & Wellness',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('news-feed-nav-explore')));
+    await tester.pumpAndSettle();
+
+    final feed = tester.widget<NewsFeedPage>(find.byType(NewsFeedPage));
+    expect(feed.businessType, 'Fitness');
+    expect(feed.savedItemType, 'fitness');
+    expect(find.text('Cebu Yoga Studio'), findsWidgets);
+    expect(find.text('Sports Court'), findsNothing);
+    expect(
+      requests
+          .where((uri) => uri.path == '/api/news-feed')
+          .map((uri) => uri.queryParameters['businessType']),
+      ['Fitness'],
+    );
   });
 
   testWidgets('Event dashboard lists event businesses without news posts', (
@@ -1188,6 +1429,15 @@ void main() {
     expect(find.text('Sports Courts'), findsOneWidget);
     expect(find.text('Most popular'), findsOneWidget);
     expect(find.text('Highest rate'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('Sports Courts')).style?.fontSize, 20);
+    expect(
+      tester.widget<Text>(find.text('Discover what’s new')).style?.fontSize,
+      16,
+    );
+    expect(
+      tester.widget<Text>(find.text('Most popular')).style?.fontSize,
+      16,
+    );
     expect(
       tester.getTopLeft(find.text('Discover what’s new')).dx,
       closeTo(tester.getTopLeft(find.text('Most popular')).dx, 1),
@@ -1195,6 +1445,42 @@ void main() {
     expect(
       find.text('Fresh updates, offers, and stories from local venues.'),
       findsNothing,
+    );
+    expect(
+      tester.getTopLeft(
+            find.byKey(const ValueKey('news-feed-search-container')),
+          ).dy -
+          tester.getBottomLeft(
+            find.byKey(const ValueKey('news-feed-intro')),
+          ).dy,
+      0,
+    );
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('news-feed-search-container')),
+          )
+          .padding,
+      const EdgeInsets.fromLTRB(16, 6, 16, 0),
+    );
+    expect(
+      tester.widget<ListView>(
+        find.byKey(const ValueKey('news-feed-content-list')),
+      ).padding!.resolve(TextDirection.ltr).top,
+      6,
+    );
+    expect(
+      tester
+              .getTopLeft(
+                find.byKey(
+                  const ValueKey(
+                    'news-feed-most-popular-card-business-42',
+                  ),
+                ),
+              )
+              .dy -
+          tester.getBottomLeft(find.text('Most popular')).dy,
+      6,
     );
 
     await tester.tap(find.byKey(const ValueKey('news-feed-intro-info')));
@@ -1231,6 +1517,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('SPORT TYPE'), findsOneWidget);
     expect(find.text('COURT TYPE'), findsOneWidget);
+    final filterLabel = find.byKey(
+      const ValueKey('news-feed-filter-label-sport type'),
+    );
+    final filterLabelText = find.text('SPORT TYPE');
+    expect(
+      tester.getBottomLeft(filterLabel).dy -
+          tester.getBottomLeft(filterLabelText).dy,
+      6,
+    );
     expect(
       find.byKey(const ValueKey('news-feed-filter-sport-All sports')),
       findsOneWidget,

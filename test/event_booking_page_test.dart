@@ -58,7 +58,7 @@ void main() {
     expect((summary.decoration! as BoxDecoration).color, AppColors.darkSurface);
     expect(
       tester.widget<Text>(find.text('EVENT')).style!.color,
-      AppPalette.violet.color,
+      AppColors.accentForeground,
     );
     expect(
       tester.widget<Text>(find.text('Garden Venue')).style!.color,

@@ -6,6 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'app_session.dart';
 import 'app_design_system.dart';
 import 'auth_api.dart';
+import 'core/business_type.dart';
+import 'event_dashboard.dart';
+import 'fitness_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'profile_dashboard.dart';
 import 'app_bottom_navigation.dart';
@@ -246,17 +249,17 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                           height: 148,
                           borderRadius: 12,
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 6),
                         const SkeletonBlock(width: 180, height: 18),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         const SkeletonBlock(width: 125, height: 13),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             const Expanded(
                               child: SkeletonBlock(height: 38, borderRadius: 12),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 6),
                             const Expanded(
                               child: SkeletonBlock(height: 38, borderRadius: 12),
                             ),
@@ -265,7 +268,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                       ],
                     ),
                   ),
-                  if (index < 2) const SizedBox(height: 14),
+                  if (index < 2) const SizedBox(height: 6),
                 ],
               ],
             );
@@ -339,9 +342,24 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     indicatorColor: AppColors.accent,
                     indicatorWeight: 3,
                     tabs: [
-                      Tab(text: 'Pending (${pending.length})'),
-                      Tab(text: 'Approved (${approved.length})'),
-                      Tab(text: 'Completed (${completed.length})'),
+                      Tab(
+                        child: AppText(
+                          'Pending (${pending.length})',
+                          localize: true,
+                        ),
+                      ),
+                      Tab(
+                        child: AppText(
+                          'Approved (${approved.length})',
+                          localize: true,
+                        ),
+                      ),
+                      Tab(
+                        child: AppText(
+                          'Completed (${completed.length})',
+                          localize: true,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -464,7 +482,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ? AppColors.success
             : isInactive
             ? AppColors.errorText
-            : AppColors.accent,
+            : AppColors.accentForeground,
       ),
       content: InkWell(
         key: const ValueKey('booking-status-banner-content'),
@@ -475,10 +493,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           child: AppText(
             isCompleted || isInactive
                 ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
-                      '${_statusLabel(status).toLowerCase()}.'
+                      '${_statusLabel(status)}.'
                 : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
                       'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
-            style:  TextStyle(
+                localize: true,
+                style:  TextStyle(
               color: AppColors.ink,
               fontWeight: FontWeight.w700,
             ),
@@ -504,14 +523,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 const SizedBox(height: 180),
-                Center(child: AppText(emptyMessage)),
+                Center(child: AppText(emptyMessage, localize: true)),
               ],
             )
           : ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: bookings.length,
-              separatorBuilder: (_, index) => const SizedBox(height: 12),
+              separatorBuilder: (_, index) => const SizedBox(height: 6),
               itemBuilder: (context, index) => _bookingCard(bookings[index]),
             ),
     );
@@ -525,11 +544,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     if (!mounted) return;
     _replaceWith(
       MaterialPageRoute(
-        builder: (_) => NewsFeedPage(
-          onLogout: widget.onLogout,
-          initialUserPosition: widget.initialUserPosition,
-          businessType: widget.businessType ?? 'Sports',
-        ),
+        builder: (_) => switch (
+          BusinessTypeParser.parse(widget.businessType)
+        ) {
+          BusinessType.event => EventDashboardPage(
+            onLogout: widget.onLogout,
+            api: widget.api,
+            initialUserPosition: widget.initialUserPosition,
+          ),
+          BusinessType.fitness => FitnessDashboardPage(
+            onLogout: widget.onLogout,
+            api: widget.api,
+            initialUserPosition: widget.initialUserPosition,
+          ),
+          _ => NewsFeedPage(
+            onLogout: widget.onLogout,
+            initialUserPosition: widget.initialUserPosition,
+            businessType: widget.businessType ?? 'Sports',
+          ),
+        },
       ),
     );
   }
@@ -578,7 +611,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     child: _imageBadge(
                       category,
                       AppColors.accent,
-                      Colors.white,
+                      AppColors.onAccent,
                     ),
                   ),
               ],
@@ -608,6 +641,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 const SizedBox(height: 6),
                 AppText(
                   _statusGuidance(status),
+                  localize: true,
                   key: ValueKey('booking-status-guidance-$status'),
                   style: TextStyle(
                     color: _statusColor(status),
@@ -616,14 +650,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     height: 1.3,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 _venueDetail(Icons.location_on_outlined, booking['address']),
                 _venueDetail(Icons.access_time_rounded, booking['hours']),
                 if (rate.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
                   _infoPanel('Venue rate', rate),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -633,7 +667,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ink,
                       side:  BorderSide(color: AppColors.border),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: AppSpacing.buttonPadding,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -641,7 +675,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   ),
                 ),
                 if (status == 'finished' && booking.id != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
                   _ratingAction(booking),
                 ],
               ],
@@ -668,6 +702,15 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           )
           .join(' '),
   };
+
+  String _localizedStatusLabel(String status) {
+    final label = _statusLabel(status);
+    return appLanguageText(
+      label,
+      label,
+      languageCode: Localizations.localeOf(context).languageCode,
+    );
+  }
 
   Color _statusColor(String status) => switch (status.toLowerCase()) {
     'pending' => const Color(0xFFB85C00),
@@ -699,7 +742,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: AppText(
-        _statusLabel(status),
+        _localizedStatusLabel(status),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w800,
@@ -719,6 +762,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: AppText(
             text,
+            localize: true,
             style: TextStyle(
               color: foreground,
               fontSize: 11,
@@ -747,9 +791,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               : 'You rated this $existingRating/5',
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.accent,
-          side: BorderSide(color: AppColors.accent.withValues(alpha: .55)),
-          padding: const EdgeInsets.symmetric(vertical: 11),
+          foregroundColor: AppColors.accentForeground,
+          side: BorderSide(
+            color: AppColors.accentForeground.withValues(alpha: .55),
+          ),
+          padding: AppSpacing.buttonPadding,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -782,7 +828,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppText(
-          label.toUpperCase(),
+          appLanguageText(
+            label,
+            label,
+            languageCode: Localizations.localeOf(context).languageCode,
+          ).toUpperCase(),
           style:  TextStyle(
             color: AppColors.muted,
             fontSize: 10,
@@ -790,9 +840,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             letterSpacing: .7,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 6),
         AppText(
           value,
+          localize: true,
           style:  TextStyle(
             color: AppColors.ink,
             fontSize: 13,
@@ -856,6 +907,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final total = _amount(booking['total']);
     final downpayment = _amount(booking['downpayment']);
     final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
+    final coachName = '${booking['fitnessCoachName'] ?? ''}';
+    final coachDurationMonths = int.tryParse(
+      '${booking['fitnessCoachDurationMonths'] ?? ''}',
+    );
     final isEvent = '${booking['businessType']}'.toLowerCase() == 'event';
     final eventType = '${booking['eventType'] ?? ''}';
 
@@ -871,7 +926,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _BookingGallery(images: _imageUrls(booking)),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -884,13 +939,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   ),
                  localize: true,),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _statusPill(status),
             ],
           ),
           const SizedBox(height: 6),
           AppText(
             _statusGuidance(status),
+            localize: true,
             style: TextStyle(
               color: _statusColor(status),
               fontSize: 12,
@@ -898,16 +954,17 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               height: 1.3,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           AppText(
             _scheduleLabel(booking),
+            localize: true,
             style:  TextStyle(
               fontSize: 15,
               color: AppColors.ink,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 6),
           AppText(
             '${fitnessPlanType.isNotEmpty
                 ? 'First visit'
@@ -921,19 +978,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             const SizedBox(height: 6),
             AppText(
               'Event: $eventType',
+              localize: true,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: AppColors.warning,
               ),
-             localize: true,),
+            ),
           ],
           if (fitnessPlanType.isNotEmpty) ...[
             const SizedBox(height: 6),
             AppText(
-              '${booking['fitnessCategory']} · '
-                      '${booking['fitnessPlanType']}'
-                  .toUpperCase(),
+              '${booking['fitnessCategory']} · ${booking['fitnessPlanType']}',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -941,20 +997,26 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               ),
              localize: true,),
             AppText(
-              'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
-              '${'${booking['fitnessCoachName'] ?? ''}'.isEmpty ? '' : '\nCoach: ${booking['fitnessCoachName']} · PHP ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}'}',
+              coachName.isEmpty
+                  ? 'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
+                  : 'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}\n'
+                        'Coach: $coachName'
+                        '${coachDurationMonths == null ? '' : ' · ${coachDurationMonths == 1 ? '1 month' : '$coachDurationMonths months'}'}'
+                        ' · PHP ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}',
+              localize: true,
               style: TextStyle(fontSize: 13, color: AppColors.muted),
-             localize: true,),
+            ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           AppText(
             'Total: PHP ${total.toStringAsFixed(2)}',
+            localize: true,
             style:  TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: AppColors.ink,
             ),
-           localize: true,),
+          ),
           if (_amount(booking['extraPlayerCharge']) > 0)
             Padding(
               padding: const EdgeInsets.only(top: 2),
@@ -964,19 +1026,20 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 style: TextStyle(fontSize: 13, color: AppColors.muted),
                localize: true,),
             ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 6),
           AppText(
             '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Downpayment'}: PHP '
             '${fitnessPlanType.isNotEmpty ? total.toStringAsFixed(2) : downpayment.toStringAsFixed(2)}',
+            localize: true,
             style:  TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: AppColors.ink,
             ),
-           localize: true,),
-          const SizedBox(height: 14),
+          ),
+          const SizedBox(height: 6),
           const Divider(height: 1),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
            AppText(
             'Venue information',
             style: TextStyle(
@@ -985,7 +1048,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               color: AppColors.ink,
             ),
            localize: true,),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _venueDetail(
             Icons.person_outline_rounded,
             _labelValue('Venue owner', booking['ownerName']),
@@ -1024,12 +1087,12 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             Icons.check_circle_outline,
             _labelValue('Availability', booking['availability']),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           _bookingField(
             'Rate',
             'PHP ${_amount(booking['pricePerHour'] ?? booking['venuePricePerHour']).toStringAsFixed(2)} / hr',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
            AppText(
             'Booking information you entered',
             style: TextStyle(
@@ -1038,7 +1101,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               color: AppColors.ink,
             ),
            localize: true,),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _bookingField('Date', booking['date']),
           _bookingField('Start time', _formatTime(booking['startTime'])),
           _bookingField(
@@ -1100,10 +1163,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 16, color: AppColors.muted),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: AppText(
               text,
+              localize: true,
               style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
@@ -1133,12 +1197,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             width: 116,
             child: AppText(
               label,
+              localize: true,
               style:  TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Expanded(
             child: AppText(
               text,
+              localize: true,
               style:  TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -1265,15 +1331,16 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
           'How was your completed booking?',
           style: TextStyle(color: AppColors.muted),
          localize: true,),
-        const SizedBox(height: 14),
+        const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             for (var star = 1; star <= 5; star++)
               IconButton(
                 tooltip: appLanguageText(
-                  'Rate $star out of 5 stars',
-                  'Rate $star out of 5 stars',
+                  '$star stars',
+                  '$star stars',
+                  languageCode: Localizations.localeOf(context).languageCode,
                 ),
                 onPressed: _submitting
                     ? null
@@ -1294,7 +1361,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
           decoration: InputDecoration(labelText: appLanguageText('Comment (optional)', 'Comment (optional)')),
         ),
         if (_error != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           AppText(
             _error!,
             style: TextStyle(color: Theme.of(context).colorScheme.error),

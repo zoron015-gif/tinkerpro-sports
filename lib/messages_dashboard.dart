@@ -19,6 +19,9 @@ import 'customer_bookings_page.dart';
 import 'app_bottom_navigation.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'core/business_type.dart';
+import 'event_dashboard.dart';
+import 'fitness_dashboard.dart';
 
 Color get _messageBackground => AppColors.page;
 Color get _messageInk => AppColors.ink;
@@ -49,7 +52,7 @@ class MessagesDashboardPage extends StatefulWidget {
 }
 
 class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
-  final _messagesService = MessagesService();
+  late final MessagesService _messagesService;
   late final MessagesController _controller;
   final _composer = TextEditingController();
   final _conversationSearch = TextEditingController();
@@ -87,8 +90,9 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   @override
   void initState() {
     super.initState();
+    _messagesService = MessagesService(api: widget.api);
     _controller = MessagesController(
-      service: MessagesService(api: widget.api),
+      service: _messagesService,
       businessType: widget.businessType,
     );
     _controller.addListener(_handleControllerChange);
@@ -138,24 +142,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   }
 
   Future<void> _select(int id) async {
-    final token = _token;
-    if (token == null) return;
-    final requestId = ++_controller.messageRequestId;
-    if (!mounted) return;
-    _controller.setSelectedConversation(id);
     try {
-      final messages = await _messagesService.fetchMessages(
-        token: token,
-        conversationId: id,
-        businessType: widget.businessType,
-      );
-      if (!mounted || requestId != _controller.messageRequestId) return;
-      if (_controller.selectedConversationId != id) return;
-      _controller.setMessages(messages);
+      await _controller.select(id);
     } on Exception catch (error) {
-      if (mounted && requestId == _controller.messageRequestId) {
-        _show(error.toString());
-      }
+      _show(error.toString());
     }
   }
 
@@ -210,7 +200,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const AppText('Delete message?', localize: true),
-        content: const AppText('This message will be permanently deleted.', localize: true),
+        content: const AppText(
+          'This message will be permanently deleted.',
+          localize: true,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -281,11 +274,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (dialogContext) => AlertDialog(
-              title: const AppText('Delete conversation for you?', localize: true),
+              title: const AppText(
+                'Delete conversation for you?',
+                localize: true,
+              ),
               content: const AppText(
                 'This removes the conversation from your inbox only. '
                 'Other participants will still have their messages.',
-               localize: true,),
+                localize: true,
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext, false),
@@ -415,21 +412,25 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
                       ),
-                     localize: true,),
-                    const SizedBox(height: 4),
+                      localize: true,
+                    ),
+                    const SizedBox(height: 6),
                     AppText(
                       selected.isEmpty
                           ? 'Choose who you want to communicate with'
                           : '${selected.length} recipient${selected.length == 1 ? '' : 's'} selected',
                       style: TextStyle(color: Colors.grey.shade700),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 6),
                     TextField(
                       controller: _contactSearch,
                       onChanged: (_) => setDialogState(() {}),
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
-                        hintText: appLanguageText('Search people', 'Search people'),
+                        hintText: appLanguageText(
+                          'Search people',
+                          'Search people',
+                        ),
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: _contactSearch.text.isEmpty
                             ? null
@@ -448,16 +449,19 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                       ),
                     ),
                     if (selected.length > 1) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: titleController,
                         decoration: InputDecoration(
-                          labelText: appLanguageText('Group name (optional)', 'Group name (optional)'),
+                          labelText: appLanguageText(
+                            'Group name (optional)',
+                            'Group name (optional)',
+                          ),
                           prefixIcon: Icon(Icons.group_outlined),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Expanded(
                       child: ListView.builder(
                         keyboardDismissBehavior:
@@ -504,7 +508,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                             child: const AppText('Cancel', localize: true),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: FilledButton(
                             onPressed: selected.isEmpty
@@ -597,13 +601,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        titleTextStyle: _role == 'merchant'
-            ? AppTypography.pageTitle
-            : TextStyle(
-                color: _messageInk,
-                fontSize: 23,
-                fontWeight: FontWeight.w800,
-              ),
+        titleTextStyle: AppTypography.pageTitle.copyWith(color: _messageInk),
         iconTheme: IconThemeData(color: _messageInk),
         leading: _showChat
             ? IconButton(
@@ -620,7 +618,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         actions: [
           if (!_showChat)
             PopupMenuButton<String>(
-              tooltip: appLanguageText('Conversation settings', 'Conversation settings'),
+              tooltip: appLanguageText(
+                'Conversation settings',
+                'Conversation settings',
+              ),
               icon: const Icon(Icons.settings_outlined),
               onSelected: (value) {
                 switch (value) {
@@ -640,7 +641,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                   child: const Row(
                     children: [
                       Icon(Icons.forum_outlined, size: 20),
-                      SizedBox(width: 12),
+                      SizedBox(width: 6),
                       AppText('Chats', localize: true),
                     ],
                   ),
@@ -651,7 +652,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                   child: const Row(
                     children: [
                       Icon(Icons.archive_outlined, size: 20),
-                      SizedBox(width: 12),
+                      SizedBox(width: 6),
                       AppText('Archive', localize: true),
                     ],
                   ),
@@ -662,7 +663,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                   child: const Row(
                     children: [
                       Icon(Icons.block_outlined, size: 20),
-                      SizedBox(width: 12),
+                      SizedBox(width: 6),
                       AppText('Blocked', localize: true),
                     ],
                   ),
@@ -682,25 +683,25 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 const SkeletonBlock(height: 46, borderRadius: 14),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 for (var index = 0; index < 6; index++) ...[
                   const Row(
                     children: [
                       SkeletonBlock(width: 46, height: 46, borderRadius: 23),
-                      SizedBox(width: 12),
+                      SizedBox(width: 6),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             SkeletonBlock(width: 155, height: 15),
-                            SizedBox(height: 8),
+                            SizedBox(height: 6),
                             SkeletonBlock(height: 12),
                           ],
                         ),
                       ),
                     ],
                   ),
-                  if (index < 5) const SizedBox(height: 18),
+                  if (index < 5) const SizedBox(height: 6),
                 ],
               ],
             )
@@ -743,7 +744,10 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                   );
                   final chat = _selectedConversation == null
                       ? const Center(
-                          child: AppText('Select a conversation to start.', localize: true),
+                          child: AppText(
+                            'Select a conversation to start.',
+                            localize: true,
+                          ),
                         )
                       : MessagesChatView(
                           messages: _messages,
@@ -792,12 +796,24 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
           return;
         }
         final page = switch (index) {
-          0 => NewsFeedPage(
-            onLogout: (_) async {},
-            api: widget.api,
-            initialUserPosition: widget.initialUserPosition,
-            businessType: widget.businessType ?? 'Sports',
-          ),
+          0 => switch (BusinessTypeParser.parse(widget.businessType)) {
+            BusinessType.event => EventDashboardPage(
+              onLogout: (_) async {},
+              api: widget.api,
+              initialUserPosition: widget.initialUserPosition,
+            ),
+            BusinessType.fitness => FitnessDashboardPage(
+              onLogout: (_) async {},
+              api: widget.api,
+              initialUserPosition: widget.initialUserPosition,
+            ),
+            _ => NewsFeedPage(
+              onLogout: (_) async {},
+              api: widget.api,
+              initialUserPosition: widget.initialUserPosition,
+              businessType: widget.businessType ?? 'Sports',
+            ),
+          },
           1 => SavedDashboardPage(
             onLogout: (_) async {},
             itemType: SavedDashboardPage.itemTypeForBusinessType(

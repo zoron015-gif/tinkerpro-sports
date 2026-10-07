@@ -1,20 +1,94 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
 import 'package:myapp/merchant_dashboard.dart';
+import 'package:myapp/messages_dashboard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('back from merchant Messages restores the dashboard', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+      'session_role': 'merchant',
+    });
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    final api = AuthApi(
+      client: MockClient((request) async {
+        switch (request.url.path) {
+          case '/api/merchant/profile':
+            return http.Response(
+              jsonEncode({
+                'profile': {
+                  'firstName': 'Merchant',
+                  'lastName': 'Owner',
+                  'email': 'merchant@example.com',
+                  'businessType': 'Sports',
+                },
+              }),
+              200,
+            );
+          case '/api/merchant/businesses':
+            return http.Response(jsonEncode({'businesses': []}), 200);
+          case '/api/merchant/bookings':
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          case '/api/activity-logs':
+            return http.Response(jsonEncode({'activities': []}), 200);
+          case '/api/messages/conversations':
+            return http.Response(jsonEncode({'conversations': []}), 200);
+          case '/api/messages/contacts':
+            return http.Response(jsonEncode({'contacts': []}), 200);
+          case '/api/auth/me':
+            return http.Response(
+              jsonEncode({
+                'user': {'id': 42},
+              }),
+              200,
+            );
+          default:
+            return http.Response(
+              jsonEncode({'error': 'Unexpected request'}),
+              404,
+            );
+        }
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('Data analytics'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-messages')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MessagesDashboardPage), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MessagesDashboardPage), findsNothing);
+    expect(find.text('Merchant Dashboard'), findsOneWidget);
+    expect(find.text('Data analytics'), findsOneWidget);
+  });
+
   testWidgets('merchant dashboard summarizes booking and venue data', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    FlutterSecureStorage.setMockInitialValues({
       'session_api_token': 'merchant-token',
     });
     final date = DateTime.now().toIso8601String().substring(0, 10);
@@ -28,6 +102,7 @@ void main() {
         'customerId': 50,
         'customerName': 'Customer One',
         'venueName': 'Sample Court',
+        'businessType': 'Sports',
         'date': date,
         'players': 4,
         'total': 500,
@@ -39,6 +114,7 @@ void main() {
         'customerId': 51,
         'customerName': 'Customer Two',
         'venueName': 'Sample Court',
+        'businessType': 'Event',
         'date': date,
         'players': 6,
         'total': 200,
@@ -49,7 +125,8 @@ void main() {
         'id': 12,
         'customerId': 52,
         'customerName': 'Customer Three',
-        'venueName': 'Sample Court',
+        'venueName': 'Other Court',
+        'businessType': 'Sports',
         'date': previousMonthDate,
         'players': 8,
         'total': 300,
@@ -79,11 +156,12 @@ void main() {
                   {
                     'id': 1,
                     'name': 'Sample Court',
+                    'businessType': 'Sports',
                     'hasPublishedNewsCard': true,
                     'averageRating': 4.8,
                     'reviewCount': 5,
                   },
-                  {'id': 2, 'name': 'Draft Venue'},
+                  {'id': 2, 'name': 'Draft Venue', 'businessType': 'Event'},
                 ],
               }),
               200,
@@ -156,6 +234,24 @@ void main() {
     );
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
+    final analyticsTypeFilter = find.byKey(
+      const ValueKey('merchant-analytics-booking-type-filter'),
+    );
+    await tester.ensureVisible(analyticsTypeFilter);
+    await tester.tap(analyticsTypeFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Event').last);
+    await tester.pumpAndSettle();
+    expect(find.text('PHP 0.00'), findsWidgets);
+    expect(
+      find.text('PHP 0.00 confirmed sales · PHP 0.00 collected'),
+      findsOneWidget,
+    );
+    await tester.tap(analyticsTypeFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All booking types').last);
+    await tester.pumpAndSettle();
+    expect(find.text('PHP 500.00'), findsOneWidget);
 
     final salesPlot = find.byKey(
       const ValueKey('merchant-chart-plot-Confirmed sales'),
@@ -179,6 +275,26 @@ void main() {
         of: selectedSalesPoint,
         matching: find.text('PHP 500.00'),
       ),
+      findsNWidgets(2),
+    );
+    for (final detail in [
+      'Collected payments',
+      'Bookings',
+      'Confirmed bookings',
+      'Players',
+      'Unique customers',
+      'Avg. confirmed booking',
+    ]) {
+      expect(
+        find.descendant(of: selectedSalesPoint, matching: find.text(detail)),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.descendant(
+        of: selectedSalesPoint,
+        matching: find.text('PHP 250.00'),
+      ),
       findsOneWidget,
     );
     expect(
@@ -188,7 +304,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.drag(find.byType(ListView).first, const Offset(0, 420));
+    await tester.drag(salesPlot, const Offset(0, 420));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('Monthly'));
@@ -254,7 +370,14 @@ void main() {
     expect(
       find.descendant(
         of: selectedCustomerPoint,
-        matching: find.text('3 customers'),
+        matching: find.text('2 customers'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: selectedCustomerPoint,
+        matching: find.text('1 customers'),
       ),
       findsOneWidget,
     );
@@ -324,14 +447,38 @@ void main() {
       find.byKey(const ValueKey('merchant-venue-comparison-metric')),
       findsOneWidget,
     );
-    await tester.tap(find.text('Sales').last);
+    final venueMetricFilter = find.byKey(
+      const ValueKey('merchant-venue-comparison-metric'),
+    );
+    tester
+        .widget<SegmentedButton<String>>(venueMetricFilter)
+        .onSelectionChanged!({'Sales'});
     await tester.pumpAndSettle();
     expect(find.text('Sales by venue'), findsOneWidget);
-    expect(find.text('PHP 800.00'), findsOneWidget);
-    await tester.tap(find.text('Players').last);
+    expect(find.text('PHP 500.00'), findsOneWidget);
+    expect(find.text('PHP 300.00'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('merchant-venue-contribution-chart')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-venue-contribution-total')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-venue-share-Sample Court')),
+      findsOneWidget,
+    );
+    expect(find.text('62.5%'), findsOneWidget);
+    expect(find.text('37.5%'), findsOneWidget);
+    tester
+        .widget<SegmentedButton<String>>(venueMetricFilter)
+        .onSelectionChanged!({'Players'});
     await tester.pumpAndSettle();
     expect(find.text('Players by venue'), findsOneWidget);
-    expect(find.text('18'), findsWidgets);
+    expect(find.text('55.6%'), findsOneWidget);
+    expect(find.text('44.4%'), findsOneWidget);
+    expect(find.text('18 players'), findsOneWidget);
     expect(find.text('Draft Venue'), findsWidgets);
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('merchant-analytics-panel-venue-performance')),
@@ -415,6 +562,12 @@ void main() {
     expect(find.text('Edit profile'), findsOneWidget);
     expect(find.text('Log out'), findsOneWidget);
     expect(find.text('Activity log'), findsOneWidget);
+    expect(find.text('Get alerts when a match starts and ends.'), findsNothing);
+    expect(
+      find.text('Dark mode, colors, text size, and language'),
+      findsNothing,
+    );
+    expect(find.text('Review activity on your account'), findsNothing);
     await tester.tap(find.text('Activity log'));
     await tester.pumpAndSettle();
     expect(find.text('Activity log'), findsOneWidget);
@@ -436,6 +589,9 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    FlutterSecureStorage.setMockInitialValues({
       'session_api_token': 'merchant-token',
     });
     final bookings = <Map<String, dynamic>>[
@@ -509,6 +665,9 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    FlutterSecureStorage.setMockInitialValues({
       'session_api_token': 'merchant-token',
     });
     final api = AuthApi(
