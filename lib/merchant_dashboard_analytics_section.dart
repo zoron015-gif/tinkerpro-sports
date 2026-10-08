@@ -70,6 +70,12 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _bookingBusinessType(Map<String, dynamic> booking) =>
       '${booking['businessType'] ?? booking['business_type'] ?? ''}'.trim();
 
+  double _bookingAmountReceived(Map<String, dynamic> booking) {
+    final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    if (paymentStatus != 'paid') return 0;
+    return _bookingAmount(booking['total']);
+  }
+
   List<String> get _analyticsBookingTypes {
     final types =
         _bookings
@@ -261,6 +267,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         _analyticsSummaryCard,
         const SizedBox(height: _analyticsElementGap),
         _analyticsChartCard,
+        const SizedBox(height: _analyticsElementGap),
+        _analyticsPopularServicesCard,
         if (_analyticsView == 'Venue performance') ...[
           const SizedBox(height: _analyticsElementGap),
           _analyticsVenueCard,
@@ -468,7 +476,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       if (customerId != null) customersByBucket[index].add('$customerId');
       if (_isConfirmedBooking(booking)) {
         sales[index] += _bookingAmount(booking['total']);
-        collected[index] += _bookingAmount(booking['downpayment']);
+        collected[index] += _bookingAmountReceived(booking);
         confirmedBookingCounts[index]++;
       }
     }
@@ -600,10 +608,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   double get _periodCollected => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(
-        0,
-        (total, booking) => total + _bookingAmount(booking['downpayment']),
-      );
+      .fold(0, (total, booking) => total + _bookingAmountReceived(booking));
 
   int get _periodCustomers => _periodBookings
       .map((booking) => booking['customerId'] ?? booking['customerName'])
@@ -630,7 +635,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final primaryLabel = switch (_analyticsView) {
       'Customer count' => 'Players',
       'Venue performance' => 'Bookings in range',
-      _ => 'Confirmed sales',
+      _ => 'Revenue',
     };
     final primaryIcon = switch (_analyticsView) {
       'Customer count' => Icons.people_outline_rounded,
@@ -720,6 +725,84 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       ),
     ),
   );
+
+  Widget get _analyticsPopularServicesCard {
+    final serviceCounts = <String, int>{};
+    for (final booking in _periodBookings) {
+      if (BookingStatusParser.isCancelled(booking['status'])) continue;
+      final service = _bookingServiceLabel(booking).trim();
+      if (service.isEmpty) continue;
+      serviceCounts.update(service, (count) => count + 1, ifAbsent: () => 1);
+    }
+    final rankedServices = serviceCounts.entries.toList()
+      ..sort((a, b) {
+        final countOrder = b.value.compareTo(a.value);
+        return countOrder != 0
+            ? countOrder
+            : a.key.toLowerCase().compareTo(b.key.toLowerCase());
+      });
+    final topServices = rankedServices.take(5).toList();
+    final highestCount = topServices.isEmpty ? 1 : topServices.first.value;
+
+    return _analyticsPanel(
+      title: 'Popular services',
+      subtitle: 'Most booked services in the selected period',
+      child: topServices.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: AppText(
+                'No service bookings in this period.',
+                localize: true,
+              ),
+            )
+          : Column(
+              children: [
+                for (var index = 0; index < topServices.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AppText(
+                              topServices[index].key,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _merchantInk,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            LinearProgressIndicator(
+                              value: topServices[index].value / highestCount,
+                              minHeight: 5,
+                              borderRadius: BorderRadius.circular(8),
+                              backgroundColor: _merchantLine,
+                              color: _merchantOrange,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      AppText(
+                        '${topServices[index].value} bookings',
+                        style: TextStyle(
+                          color: _merchantMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        localize: true,
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
 
   Widget get _analyticsChartCard {
     if (_analyticsView == 'Venue performance') {
@@ -1462,7 +1545,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     ),
   );
 
-  String _formatCurrency(double value) => 'PHP ${value.toStringAsFixed(2)}';
+  String _formatCurrency(double value) => '\u{20B1} ${value.toStringAsFixed(2)}';
 
   String _compactCurrency(double value) {
     if (value >= 1000000) return '₱${(value / 1000000).toStringAsFixed(1)}m';

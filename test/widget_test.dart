@@ -63,9 +63,11 @@ void main() {
 
     await tester.scrollUntilVisible(
       find.text('Explore bookings'),
-      -200,
+      -100,
       scrollable: find.byType(Scrollable),
     );
+    await tester.ensureVisible(find.text('Explore bookings'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Explore bookings'));
     await tester.pumpAndSettle();
     tester.view.physicalSize = const Size(390, 844);

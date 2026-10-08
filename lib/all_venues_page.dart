@@ -22,7 +22,7 @@ class AllVenuesPage extends StatefulWidget {
     this.ratedHeading = 'Courts with the highest ratings',
     this.searchHint = 'Search venues, sports, or areas...',
     this.collectionDescription = 'Browse every venue in this collection.',
-    this.priceFilterLabel = 'Price (PHP / hour)',
+    this.priceFilterLabel = 'Price (\u{20B1} / hour)',
   });
 
   final String title;

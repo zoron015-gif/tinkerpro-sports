@@ -16,19 +16,19 @@ void main() {
     );
     expect(
       appLanguageText(
-        'Plan: PHP 500.00\nCoach: Mina · PHP 200.00',
-        'Plan: PHP 500.00\nCoach: Mina · PHP 200.00',
+        'Plan: \u{20B1} 500.00\nCoach: Mina · \u{20B1} 200.00',
+        'Plan: \u{20B1} 500.00\nCoach: Mina · \u{20B1} 200.00',
         languageCode: 'ko',
       ),
-      '플랜: PHP 500.00\n코치: Mina · PHP 200.00',
+      '플랜: \u{20B1} 500.00\n코치: Mina · \u{20B1} 200.00',
     );
     expect(
       appLanguageText(
-        '09:00 - 10:00 · PHP 250.00 / hr',
-        '09:00 - 10:00 · PHP 250.00 / hr',
+        '09:00 - 10:00 · \u{20B1} 250.00 / hr',
+        '09:00 - 10:00 · \u{20B1} 250.00 / hr',
         languageCode: 'zh',
       ),
-      '09:00 - 10:00 · PHP 250.00 / 小时',
+      '09:00 - 10:00 · \u{20B1} 250.00 / 小时',
     );
     expect(
       appLanguageText('4 guests · Cash', '4 guests · Cash', languageCode: 'ja'),
@@ -65,19 +65,19 @@ void main() {
       );
       expect(
         appLanguageText(
-          'Downpayment received: PHP 100.00',
-          'Downpayment received: PHP 100.00',
+          'Downpayment received: \u{20B1} 100.00',
+          'Downpayment received: \u{20B1} 100.00',
           languageCode: 'ko',
         ),
-        '선금 수령: PHP 100.00',
+        '선금 수령: \u{20B1} 100.00',
       );
       expect(
         appLanguageText(
-          'Remaining balance: PHP 250.00',
-          'Remaining balance: PHP 250.00',
+          'Remaining balance: \u{20B1} 250.00',
+          'Remaining balance: \u{20B1} 250.00',
           languageCode: 'zh',
         ),
-        '剩余金额：PHP 250.00',
+        '剩余金额：\u{20B1} 250.00',
       );
       expect(
         appLanguageText(

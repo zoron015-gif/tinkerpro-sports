@@ -30,16 +30,17 @@ class AppBottomNavigation extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final languageCode = AppPreferences.instance.languageCode;
-      String label(String english, String filipino) => appLanguageText(
-        english,
-        filipino,
-        languageCode: languageCode,
-      );
+      String label(String english, String filipino) =>
+          appLanguageText(english, filipino, languageCode: languageCode);
       final width = constraints.maxWidth;
       final compact = AppResponsive.isCompact(width);
       final veryNarrow = width < AppResponsive.narrowPhone;
       final barHeight = compact ? 68.0 : 72.0;
-      final labelSize = veryNarrow ? 9.0 : compact ? 10.0 : 12.0;
+      final labelSize = veryNarrow
+          ? 9.0
+          : compact
+          ? 10.0
+          : 12.0;
       return Theme(
         data: Theme.of(context).copyWith(
           navigationBarTheme: NavigationBarThemeData(
@@ -79,72 +80,77 @@ class AppBottomNavigation extends StatelessWidget {
           onDestinationSelected: onDestinationSelected,
           destinations: merchantMode
               ? [
-              NavigationDestination(
-                key: ValueKey('merchant-dashboard-nav-dashboard'),
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard_rounded),
-                label: label('Dashboard', 'Dashboard'),
-              ),
-              NavigationDestination(
-                key: ValueKey('merchant-dashboard-nav-add'),
-                icon: Icon(Icons.add_circle_outline),
-                selectedIcon: Icon(Icons.add_circle),
-                label: label('Add', 'Magdagdag'),
-              ),
-              NavigationDestination(
-                key: ValueKey('merchant-dashboard-nav-messages'),
-                icon: Icon(Icons.send_outlined),
-                selectedIcon: Icon(Icons.send_rounded),
-                label: label('Messages', 'Mga mensahe'),
-              ),
-              NavigationDestination(
-                key: ValueKey('merchant-dashboard-nav-payouts'),
-                icon: Icon(Icons.payments_outlined),
-                selectedIcon: Icon(Icons.payments_rounded),
-                label: label('Payouts', 'Mga payout'),
-              ),
-              NavigationDestination(
-                key: ValueKey('merchant-dashboard-nav-profile'),
-                icon: Icon(Icons.person_outline_rounded),
-                selectedIcon: Icon(Icons.person_rounded),
-                label: label('Profile', 'Profile'),
-              ),
+                  NavigationDestination(
+                    key: ValueKey('merchant-dashboard-nav-dashboard'),
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard_rounded),
+                    label: label('Dashboard', 'Dashboard'),
+                  ),
+                  NavigationDestination(
+                    key: ValueKey('merchant-dashboard-nav-add'),
+                    icon: Icon(Icons.add_circle_outline),
+                    selectedIcon: Icon(Icons.add_circle),
+                    label: label('Add', 'Magdagdag'),
+                  ),
+                  NavigationDestination(
+                    key: ValueKey('merchant-dashboard-nav-messages'),
+                    icon: Icon(Icons.send_outlined),
+                    selectedIcon: Icon(Icons.send_rounded),
+                    label: label('Messages', 'Mga mensahe'),
+                  ),
+                  NavigationDestination(
+                    key: ValueKey('merchant-dashboard-nav-payouts'),
+                    icon: Icon(Icons.payments_outlined),
+                    selectedIcon: Icon(Icons.payments_rounded),
+                    label: label('Manage', 'Pamahalaan'),
+                  ),
+                  NavigationDestination(
+                    key: ValueKey('merchant-dashboard-nav-profile'),
+                    icon: Icon(Icons.person_outline_rounded),
+                    selectedIcon: Icon(Icons.person_rounded),
+                    label: label('Profile', 'Profile'),
+                  ),
                 ]
               : [
-              NavigationDestination(
-          key: const ValueKey('news-feed-nav-explore'),
-          icon: Icon(
-            Icons.location_on_outlined,
-            ),
-          selectedIcon: Icon(
-            Icons.location_on_rounded,
-          ),
-          label: label('Explore', 'Mag-explore'),
-        ),
-        NavigationDestination(
-          key: const ValueKey('news-feed-nav-saved'),
-          icon: const Icon(savedItemIcon),
-          selectedIcon: const Icon(savedItemSelectedIcon),
-          label: label('Saved', 'Naka-save'),
-        ),
-        NavigationDestination(
-          key: const ValueKey('news-feed-nav-messages'),
-          icon: _countBadge(Icons.send_outlined, unreadMessageCount),
-          selectedIcon: _countBadge(Icons.send_rounded, unreadMessageCount),
-          label: label('Messages', 'Mga mensahe'),
-        ),
-        NavigationDestination(
-          key: const ValueKey('news-feed-nav-bookings'),
-          icon: _countBadge(Icons.calendar_today_outlined, unreadBookingCount),
-          selectedIcon: _countBadge(Icons.calendar_today_rounded, unreadBookingCount),
-          label: label('Bookings', 'Mga booking'),
-        ),
-        NavigationDestination(
-          key: const ValueKey('news-feed-nav-profile'),
-          icon: const Icon(Icons.person_outline_rounded),
-          selectedIcon: const Icon(Icons.person_rounded),
-          label: label('Profile', 'Profile'),
-        ),
+                  NavigationDestination(
+                    key: const ValueKey('news-feed-nav-explore'),
+                    icon: Icon(Icons.location_on_outlined),
+                    selectedIcon: Icon(Icons.location_on_rounded),
+                    label: label('Explore', 'Mag-explore'),
+                  ),
+                  NavigationDestination(
+                    key: const ValueKey('news-feed-nav-saved'),
+                    icon: const Icon(savedItemIcon),
+                    selectedIcon: const Icon(savedItemSelectedIcon),
+                    label: label('Saved', 'Naka-save'),
+                  ),
+                  NavigationDestination(
+                    key: const ValueKey('news-feed-nav-messages'),
+                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
+                    selectedIcon: _countBadge(
+                      Icons.send_rounded,
+                      unreadMessageCount,
+                    ),
+                    label: label('Messages', 'Mga mensahe'),
+                  ),
+                  NavigationDestination(
+                    key: const ValueKey('news-feed-nav-bookings'),
+                    icon: _countBadge(
+                      Icons.calendar_today_outlined,
+                      unreadBookingCount,
+                    ),
+                    selectedIcon: _countBadge(
+                      Icons.calendar_today_rounded,
+                      unreadBookingCount,
+                    ),
+                    label: label('Bookings', 'Mga booking'),
+                  ),
+                  NavigationDestination(
+                    key: const ValueKey('news-feed-nav-profile'),
+                    icon: const Icon(Icons.person_outline_rounded),
+                    selectedIcon: const Icon(Icons.person_rounded),
+                    label: label('Profile', 'Profile'),
+                  ),
                 ],
         ),
       );

@@ -4178,7 +4178,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                   _detail(
                     Icons.groups_rounded,
                     'Includes $includedPlayerLimit players; '
-                    'PHP ${extraPlayerFee.toStringAsFixed(2)} '
+                    '\u{20B1} ${extraPlayerFee.toStringAsFixed(2)} '
                     'per extra player',
                   ),
                 if (type == 'Event' && category.isNotEmpty)

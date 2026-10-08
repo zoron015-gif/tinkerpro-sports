@@ -131,32 +131,36 @@ void main() {
     },
   );
 
-  test('reopening a conversation keeps its messages visible while loading', () async {
-    controller.token = 'test-token';
-    controller.selectedConversationId = 5;
-    controller.messages = [
-      {'id': 51, 'body': 'previous message'},
-    ];
-    final pending = Completer<List<Map<String, dynamic>>>();
-    service.pendingMessages[5] = pending;
+  test(
+    'reopening a conversation keeps its messages visible while loading',
+    () async {
+      controller.token = 'test-token';
+      controller.selectedConversationId = 5;
+      controller.messages = [
+        {'id': 51, 'body': 'previous message'},
+      ];
+      final pending = Completer<List<Map<String, dynamic>>>();
+      service.pendingMessages[5] = pending;
 
-    final selection = controller.select(5);
-    expect(controller.messages.single['body'], 'previous message');
+      final selection = controller.select(5);
+      expect(controller.messages.single['body'], 'previous message');
 
-    pending.complete([
-      {'id': 51, 'body': 'previous message'},
-      {'id': 52, 'body': 'latest message'},
-    ]);
-    await selection;
+      pending.complete([
+        {'id': 51, 'body': 'previous message'},
+        {'id': 52, 'body': 'latest message'},
+      ]);
+      await selection;
 
-    expect(controller.messages.map((message) => message['body']), [
-      'previous message',
-      'latest message',
-    ]);
-  });
+      expect(controller.messages.map((message) => message['body']), [
+        'previous message',
+        'latest message',
+      ]);
+    },
+  );
 
   test('opening a conversation clears its unread indicator', () async {
     controller.token = 'test-token';
+    controller.currentUserId = 7;
     controller.conversations = [
       {'id': 5, 'unreadCount': 2, 'manuallyUnread': true},
       {'id': 6, 'unreadCount': 1},
@@ -172,6 +176,63 @@ void main() {
     expect(controller.conversations.last['unreadCount'], 1);
     expect(controller.unreadMessageCount, 1);
   });
+
+  test(
+    'opening a merged direct chat clears unread counts from its duplicates',
+    () async {
+      controller.token = 'test-token';
+      controller.currentUserId = 7;
+      controller.conversations = [
+        {
+          'id': 5,
+          'type': 'direct',
+          'unreadCount': 1,
+          'members': [
+            {'id': 7},
+            {'id': 8},
+          ],
+        },
+        {
+          'id': 4,
+          'type': 'direct',
+          'unreadCount': 2,
+          'members': [
+            {'id': 7},
+            {'id': 8},
+          ],
+        },
+        {
+          'id': 3,
+          'type': 'direct',
+          'unreadCount': 3,
+          'archived': true,
+          'members': [
+            {'id': 7},
+            {'id': 8},
+          ],
+        },
+        {
+          'id': 6,
+          'type': 'direct',
+          'unreadCount': 1,
+          'members': [
+            {'id': 7},
+            {'id': 9},
+          ],
+        },
+      ];
+
+      await controller.select(5);
+
+      expect(
+        controller.conversations.map(
+          (conversation) => conversation['unreadCount'],
+        ),
+        [0, 0, 3, 1],
+      );
+      expect(controller.unreadMessageCount, 4);
+    },
+  );
 
   test('archiving immediately removes the conversation from local state', () {
     controller.conversations = [

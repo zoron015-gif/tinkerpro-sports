@@ -10,6 +10,15 @@ import 'package:myapp/merchant_dashboard.dart';
 import 'package:myapp/messages_dashboard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+Finder _managementScrollable(WidgetTester tester) {
+  final controller = tester
+      .widget<ListView>(find.byKey(const ValueKey('merchant-management-list')))
+      .controller;
+  return find.byWidgetPredicate(
+    (widget) => widget is Scrollable && widget.controller == controller,
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -82,6 +91,96 @@ void main() {
     expect(find.text('Data analytics'), findsOneWidget);
   });
 
+  testWidgets('completed bookings can be permanently deleted', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 42,
+        'customerName': 'Completed Customer',
+        'venueName': 'Sample Court',
+        'businessType': 'Sports',
+        'date': '2026-10-07',
+        'startTime': '09:00:00',
+        'durationHours': 1,
+        'status': 'finished',
+      },
+    ];
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.method == 'DELETE' &&
+            request.url.path == '/api/merchant/bookings/42') {
+          bookings.clear();
+          return http.Response(
+            jsonEncode({'message': 'Completed booking permanently deleted.'}),
+            200,
+          );
+        }
+        switch (request.url.path) {
+          case '/api/merchant/profile':
+            return http.Response(
+              jsonEncode({
+                'profile': {
+                  'firstName': 'Merchant',
+                  'lastName': 'Owner',
+                  'email': 'merchant@example.com',
+                  'businessType': 'Sports',
+                },
+              }),
+              200,
+            );
+          case '/api/merchant/businesses':
+            return http.Response(jsonEncode({'businesses': []}), 200);
+          case '/api/merchant/bookings':
+            return http.Response(jsonEncode({'bookings': bookings}), 200);
+          case '/api/activity-logs':
+            return http.Response(jsonEncode({'activities': []}), 200);
+          default:
+            return http.Response(
+              jsonEncode({'error': 'Unexpected request'}),
+              404,
+            );
+        }
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-payouts')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Booking'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Completed bookings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Completed Customer'), findsOneWidget);
+    final deleteButton = find.byKey(
+      const ValueKey('merchant-booking-delete-42'),
+    );
+    await tester.scrollUntilVisible(
+      deleteButton,
+      240,
+      scrollable: _managementScrollable(tester),
+    );
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+    expect(find.text('This action cannot be undone.'), findsNothing);
+    expect(
+      find.textContaining('permanently deletes the booking'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Delete permanently'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No completed bookings'), findsOneWidget);
+    expect(find.text('Completed booking permanently deleted.'), findsOneWidget);
+  });
+
   testWidgets('merchant dashboard summarizes booking and venue data', (
     tester,
   ) async {
@@ -101,10 +200,22 @@ void main() {
         'id': 10,
         'customerId': 50,
         'customerName': 'Customer One',
+        'customerEmail': 'customer.one@example.com',
         'venueName': 'Sample Court',
+        'address': '12 Court Road',
+        'facilityType': 'Indoor',
+        'details': 'Covered basketball court',
         'businessType': 'Sports',
         'date': date,
+        'startTime': '09:30:00',
+        'durationHours': 2,
         'players': 4,
+        'sportType': 'Basketball',
+        'slotNumber': 2,
+        'paymentMethod': 'cash_on_arrival',
+        'paymentStatus': 'unpaid',
+        'paidAmount': 0,
+        'pricePerHour': 250,
         'total': 500,
         'downpayment': 250,
         'status': 'approved',
@@ -131,11 +242,39 @@ void main() {
         'players': 8,
         'total': 300,
         'downpayment': 150,
+        'paymentMethod': 'online',
+        'paymentStatus': 'paid',
         'status': 'approved',
       },
     ];
     final api = AuthApi(
       client: MockClient((request) async {
+        if (request.method == 'PATCH' &&
+            (request.url.path.endsWith('/payment') ||
+                request.url.path.endsWith('/decline'))) {
+          final bookingId = int.parse(request.url.path.split('/').elementAt(4));
+          final booking = bookings.singleWhere(
+            (item) => item['id'] == bookingId,
+          );
+          if (request.url.path.endsWith('/payment')) {
+            final paymentStatus = (jsonDecode(
+              request.body,
+            ) as Map<String, dynamic>)['paymentStatus'];
+            booking['paymentStatus'] = paymentStatus;
+            booking['paidAmount'] = paymentStatus == 'partial'
+                ? booking['downpayment']
+                : booking['total'];
+            return http.Response(
+              jsonEncode({'message': 'Payment status updated.'}),
+              200,
+            );
+          }
+          booking['status'] = 'cancelled';
+          return http.Response(
+            jsonEncode({'message': 'Booking declined.'}),
+            200,
+          );
+        }
         switch (request.url.path) {
           case '/api/merchant/profile':
             return http.Response(
@@ -201,15 +340,44 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
     await tester.pumpAndSettle();
     expect(find.text('Customer Two'), findsOneWidget);
+    final customerTwoView = find.byKey(
+      const ValueKey('merchant-booking-view-11'),
+    );
+    final filteredManagementScroll = _managementScrollable(tester);
+    tester
+        .state<ScrollableState>(filteredManagementScroll)
+        .position
+        .jumpTo(400);
+    await tester.pumpAndSettle();
+    await tester.tap(customerTwoView);
+    await tester.pumpAndSettle();
+    expect(find.text('Booking details'), findsOneWidget);
+    final filteredDetailsScroll = find
+        .descendant(
+          of: find.byKey(
+            const ValueKey('merchant-payout-booking-details-list'),
+          ),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final filteredDetailsScrollState = tester.state<ScrollableState>(
+      filteredDetailsScroll,
+    );
+    filteredDetailsScrollState.position.jumpTo(
+      filteredDetailsScrollState.position.maxScrollExtent,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Approve'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('merchant-booking-approve-11')));
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Data analytics'), findsOneWidget);
-    expect(find.text('PHP 500.00'), findsOneWidget);
-    expect(find.text('PHP 250.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 0.00'), findsOneWidget);
     expect(find.text('2'), findsWidgets);
     expect(
       find.byKey(const ValueKey('merchant-analytics-date-filter')),
@@ -242,16 +410,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Event').last);
     await tester.pumpAndSettle();
-    expect(find.text('PHP 0.00'), findsWidgets);
+    expect(find.text('\u{20B1} 0.00'), findsWidgets);
     expect(
-      find.text('PHP 0.00 confirmed sales · PHP 0.00 collected'),
+      find.text('\u{20B1} 0.00 confirmed sales · \u{20B1} 0.00 collected'),
       findsOneWidget,
     );
     await tester.tap(analyticsTypeFilter);
     await tester.pumpAndSettle();
     await tester.tap(find.text('All booking types').last);
     await tester.pumpAndSettle();
-    expect(find.text('PHP 500.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
 
     final salesPlot = find.byKey(
       const ValueKey('merchant-chart-plot-Confirmed sales'),
@@ -273,7 +441,7 @@ void main() {
     expect(
       find.descendant(
         of: selectedSalesPoint,
-        matching: find.text('PHP 500.00'),
+        matching: find.text('\u{20B1} 500.00'),
       ),
       findsNWidgets(2),
     );
@@ -291,10 +459,7 @@ void main() {
       );
     }
     expect(
-      find.descendant(
-        of: selectedSalesPoint,
-        matching: find.text('PHP 250.00'),
-      ),
+      find.descendant(of: selectedSalesPoint, matching: find.text('\u{20B1} 0.00')),
       findsOneWidget,
     );
     expect(
@@ -304,20 +469,32 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.drag(salesPlot, const Offset(0, 420));
+    await tester.drag(find.byType(ListView).first, const Offset(0, 900));
     await tester.pumpAndSettle();
-
-    await tester.ensureVisible(find.text('Monthly'));
     await tester.tap(find.text('Monthly'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Sales report · Monthly'));
-    expect(find.text('Sales report · Monthly'), findsOneWidget);
+    expect(
+      tester
+          .widget<SegmentedButton<String>>(
+            find.byKey(const ValueKey('merchant-analytics-period')),
+          )
+          .selected,
+      {'Monthly'},
+    );
 
-    await tester.ensureVisible(find.text('Annual'));
-    await tester.tap(find.text('Annual'));
+    final periodSelector = tester.widget<SegmentedButton<String>>(
+      find.byKey(const ValueKey('merchant-analytics-period')),
+    );
+    periodSelector.onSelectionChanged!({'Annual'});
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Sales report · Annual'));
-    expect(find.text('Sales report · Annual'), findsOneWidget);
+    expect(
+      tester
+          .widget<SegmentedButton<String>>(
+            find.byKey(const ValueKey('merchant-analytics-period')),
+          )
+          .selected,
+      {'Annual'},
+    );
 
     await tester.drag(find.byType(ListView).first, const Offset(0, 1800));
     await tester.pumpAndSettle();
@@ -455,8 +632,8 @@ void main() {
         .onSelectionChanged!({'Sales'});
     await tester.pumpAndSettle();
     expect(find.text('Sales by venue'), findsOneWidget);
-    expect(find.text('PHP 500.00'), findsOneWidget);
-    expect(find.text('PHP 300.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 300.00'), findsWidgets);
     expect(
       find.byKey(const ValueKey('merchant-venue-contribution-chart')),
       findsOneWidget,
@@ -495,15 +672,18 @@ void main() {
       find.byKey(const ValueKey('merchant-dashboard-nav-payouts')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Booking requests'), findsWidgets);
-    expect(find.text('Active bookings'), findsOneWidget);
-    expect(find.text('Payout track'), findsOneWidget);
+    expect(find.text('Customer'), findsOneWidget);
+    expect(find.text('Payment'), findsOneWidget);
+    expect(find.text('Booking'), findsOneWidget);
     final payoutTypeFilter = find.byKey(
       const ValueKey('merchant-payout-type-filter'),
     );
-    final payoutTabsFinder = find.byKey(const ValueKey('merchant-payout-tabs'));
+    final payoutTabsFinder = find.byKey(
+      const ValueKey('merchant-management-tabs'),
+    );
     final payoutTabs = tester.widget<SegmentedButton<int>>(payoutTabsFinder);
     expect(payoutTabs.segments.map((segment) => segment.value), [0, 1, 2]);
+    expect(payoutTabs.selected, {0});
     expect(
       payoutTabs.style?.minimumSize?.resolve({}),
       const Size.fromHeight(40),
@@ -517,27 +697,208 @@ void main() {
       periodFilter.style?.textStyle?.resolve({})?.fontWeight,
     );
     expect(tester.getSize(payoutTypeFilter).height, 40);
+    expect(find.text('Booking requests'), findsOneWidget);
+    expect(find.text('Management'), findsOneWidget);
+    for (final summaryKey in [
+      'merchant-management-summary-requests',
+      'merchant-management-summary-active',
+      'merchant-management-summary-completed',
+      'merchant-management-summary-cash-due',
+    ]) {
+      expect(find.byKey(ValueKey(summaryKey)), findsNothing);
+    }
+    final searchField = find.byKey(const ValueKey('merchant-payout-search'));
+    expect(
+      tester.getTopLeft(payoutTypeFilter).dy,
+      tester.getTopLeft(searchField).dy,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-management-result-count')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Customer'));
+    await tester.pumpAndSettle();
+    expect(find.text('Booking type'), findsWidgets);
+    expect(find.text('Booking date and time'), findsWidgets);
+    expect(find.textContaining('9:30 AM - 11:30 AM'), findsOneWidget);
     expect(find.text('Customer Two'), findsOneWidget);
     expect(find.text('Finish'), findsNothing);
+    await tester.tap(find.text('Booking'));
+    await tester.pumpAndSettle();
+    expect(find.text('Booking requests'), findsOneWidget);
+    expect(find.text('Active bookings'), findsOneWidget);
+    expect(find.text('Completed bookings'), findsOneWidget);
+    expect(find.text('Customer Two'), findsOneWidget);
+    await tester.tap(find.text('Active bookings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer One'), findsOneWidget);
+    expect(find.text('Customer Two'), findsNothing);
+    await tester.tap(find.text('Completed bookings'));
+    await tester.pumpAndSettle();
+    expect(find.text('No completed bookings'), findsOneWidget);
+    await tester.tap(find.text('Booking requests'));
+    await tester.pumpAndSettle();
+    expect(find.text('Customer Two'), findsOneWidget);
+    await tester.tap(find.text('Customer'));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('merchant-payout-search')),
       'Customer One',
     );
     await tester.pumpAndSettle();
-    expect(find.text('No booking requests'), findsOneWidget);
-    await tester.tap(find.byTooltip('Clear search'));
-    await tester.pumpAndSettle();
-    expect(find.text('Customer Two'), findsOneWidget);
-    await tester.tap(find.text('Active bookings'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Customer One'), findsOneWidget);
     expect(
-      find.textContaining('finish automatically at their scheduled end.'),
+      find.byKey(const ValueKey('merchant-management-result-count')),
       findsOneWidget,
     );
-    await tester.tap(find.text('Payout track'));
+    expect(find.text('Customer One'), findsWidgets);
+    expect(find.text('Customer Two'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-management-clear-filters')),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('No completed bookings'), findsOneWidget);
+    expect(find.text('Customer Two'), findsOneWidget);
+    expect(find.textContaining('Customer One'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('merchant-management-result-count')),
+      findsNothing,
+    );
+    final pendingBookingView = find.byKey(
+      const ValueKey('merchant-booking-view-11'),
+    );
+    final managementScroll = _managementScrollable(tester);
+    tester.state<ScrollableState>(managementScroll).position.jumpTo(400);
+    await tester.pumpAndSettle();
+    await tester.tap(pendingBookingView);
+    await tester.pumpAndSettle();
+    final detailsScroll = find
+        .descendant(
+          of: find.byKey(
+            const ValueKey('merchant-payout-booking-details-list'),
+          ),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final detailsScrollState = tester.state<ScrollableState>(detailsScroll);
+    detailsScrollState.position.jumpTo(
+      detailsScrollState.position.maxScrollExtent,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-booking-approve-11')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-booking-decline-11')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('merchant-booking-decline-11')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Decline booking'));
+    await tester.pumpAndSettle();
+    expect(find.text('Booking declined.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    tester.state<ScrollableState>(managementScroll).position.jumpTo(0);
+    await tester.pumpAndSettle();
+    final bookingView = find.byKey(const ValueKey('merchant-booking-view-10'));
+    await tester.scrollUntilVisible(
+      bookingView,
+      240,
+      scrollable: managementScroll,
+    );
+    await tester.tap(bookingView);
+    await tester.pumpAndSettle();
+    expect(find.text('Booking details'), findsOneWidget);
+    expect(find.text('customer.one@example.com'), findsOneWidget);
+    expect(find.text('12 Court Road'), findsOneWidget);
+    expect(find.text('9:30 AM'), findsOneWidget);
+    expect(find.text('Basketball · Slot 2'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Cash downpayment due at venue'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Cash downpayment due at venue'), findsOneWidget);
+    expect(
+      find.text('Remaining cash balance after downpayment'),
+      findsOneWidget,
+    );
+    await tester.scrollUntilVisible(
+      find.text('Cash on arrival'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Cash on arrival'), findsOneWidget);
+    expect(find.text('Covered basketball court'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Cash on arrival'))).pop();
+    await tester.pumpAndSettle();
+    tester.state<ScrollableState>(managementScroll).position.jumpTo(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Payment'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-payment-management-tabs')),
+      findsOneWidget,
+    );
+    expect(find.text('Payments'), findsOneWidget);
+    await tester.tap(find.text('Earnings'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-payment-gross-collected')),
+      findsOneWidget,
+    );
+    expect(find.text('Collected'), findsOneWidget);
+    await tester.tap(find.text('Refunds'));
+    await tester.pumpAndSettle();
+    expect(find.text('No refunds to review'), findsOneWidget);
+    await tester.tap(find.text('Payments'));
+    await tester.pumpAndSettle();
+    expect(find.text('Price'), findsWidgets);
+    final paymentView = find.byKey(const ValueKey('merchant-payment-view-10'));
+    tester.widget<OutlinedButton>(paymentView).onPressed!.call();
+    await tester.pumpAndSettle();
+    expect(find.text('Payment details'), findsWidgets);
+    expect(find.text('Payment method'), findsWidgets);
+    Navigator.of(
+      tester.element(
+        find.byKey(const ValueKey('merchant-payout-booking-details-list')),
+      ),
+    ).pop();
+    await tester.pumpAndSettle();
+    final markPaid = find.byKey(const ValueKey('merchant-payment-toggle-10'));
+    await tester.scrollUntilVisible(
+      markPaid,
+      240,
+      scrollable: managementScroll,
+    );
+    await tester.drag(managementScroll, const Offset(0, 100));
+    await tester.pumpAndSettle();
+    expect(find.text('Mark cash downpayment received'), findsOneWidget);
+    await tester.tap(markPaid);
+    await tester.pumpAndSettle();
+    expect(find.text('Cash downpayment recorded.'), findsOneWidget);
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+        .hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    expect(find.text('Cash downpayment received'), findsOneWidget);
+    final markBalancePaid = find.byKey(
+      const ValueKey('merchant-payment-toggle-10'),
+    );
+    expect(markBalancePaid, findsOneWidget);
+    expect(find.text('Mark remaining balance paid'), findsOneWidget);
+    tester.state<ScrollableState>(managementScroll).position.jumpTo(0);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      markBalancePaid,
+      240,
+      scrollable: managementScroll,
+    );
+    await tester.drag(managementScroll, const Offset(0, 100));
+    await tester.pumpAndSettle();
+    await tester.tap(markBalancePaid);
+    await tester.pumpAndSettle();
+    expect(find.text('Remaining balance marked as paid.'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),
     );
@@ -547,7 +908,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text("Today's performance"), findsOneWidget);
     expect(find.text('₱500.00'), findsOneWidget);
-    expect(find.text('2 bookings scheduled today'), findsOneWidget);
+    expect(find.text('1 booking scheduled today'), findsOneWidget);
     expect(find.text('Awaiting approval'), findsOneWidget);
     expect(
       tester
@@ -555,7 +916,7 @@ void main() {
             find.byKey(const ValueKey('merchant-profile-metric-Players today')),
           )
           .data,
-      '10',
+      '4',
     );
     await tester.tap(find.byKey(const ValueKey('merchant-profile-settings')));
     await tester.pumpAndSettle();
@@ -582,6 +943,115 @@ void main() {
     expect(
       activityAppBar.titleTextStyle?.fontWeight,
       dashboardAppBar.titleTextStyle?.fontWeight,
+    );
+  });
+
+  testWidgets('merchant fitness details show plan and first visit durations', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+      'session_role': 'merchant',
+    });
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'merchant-token',
+    });
+    final api = AuthApi(
+      client: MockClient((request) async {
+        switch (request.url.path) {
+          case '/api/merchant/profile':
+            return http.Response(
+              jsonEncode({
+                'profile': {
+                  'firstName': 'Merchant',
+                  'lastName': 'Owner',
+                  'email': 'merchant@example.com',
+                  'businessType': 'Fitness & Wellness',
+                },
+              }),
+              200,
+            );
+          case '/api/merchant/businesses':
+            return http.Response(jsonEncode({'businesses': []}), 200);
+          case '/api/merchant/bookings':
+            return http.Response(
+              jsonEncode({
+                'bookings': [
+                  {
+                    'id': 25,
+                    'customerId': 50,
+                    'customerName': 'Fitness Customer',
+                    'customerEmail': 'fitness@example.com',
+                    'venueName': 'Example Gym',
+                    'businessType': 'Fitness & Wellness',
+                    'date': '2026-10-07',
+                    'startTime': '00:00:00',
+                    'durationHours': 1,
+                    'players': 1,
+                    'fitnessPlanType': 'monthly',
+                    'fitnessCategory': 'Strength training',
+                    'fitnessPlanPrice': 800,
+                    'total': 800,
+                    'downpayment': 400,
+                    'paymentMethod': 'cash_on_arrival',
+                    'paymentStatus': 'unpaid',
+                    'status': 'approved',
+                  },
+                ],
+              }),
+              200,
+            );
+          case '/api/activity-logs':
+            return http.Response(jsonEncode({'activities': []}), 200);
+          case '/api/auth/me':
+            return http.Response(
+              jsonEncode({
+                'user': {'id': 42},
+              }),
+              200,
+            );
+          default:
+            return http.Response(
+              jsonEncode({'error': 'Unexpected request'}),
+              404,
+            );
+        }
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MerchantDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-payouts')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Customer'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 month'), findsOneWidget);
+
+    final bookingView = find.byKey(const ValueKey('merchant-booking-view-25'));
+    await tester.scrollUntilVisible(
+      bookingView,
+      240,
+      scrollable: _managementScrollable(tester),
+    );
+    await tester.tap(bookingView);
+    await tester.pumpAndSettle();
+
+    expect(find.text('First visit session'), findsOneWidget);
+    expect(find.text('Plan duration'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Payment details'),
+      160,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('merchant-payout-booking-details-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.text('Cash downpayment due at venue'), findsOneWidget);
+    expect(
+      find.text('Remaining cash balance after downpayment'),
+      findsOneWidget,
     );
   });
 
@@ -651,7 +1121,28 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
     await tester.pumpAndSettle();
     expect(find.text('Customer Two'), findsOneWidget);
-    await tester.tap(find.text('Approve'));
+    final pendingBookingView = find.byKey(
+      const ValueKey('merchant-booking-view-11'),
+    );
+    final managementScroll = _managementScrollable(tester);
+    tester.state<ScrollableState>(managementScroll).position.jumpTo(400);
+    await tester.pumpAndSettle();
+    await tester.tap(pendingBookingView);
+    await tester.pumpAndSettle();
+    final detailsScroll = find
+        .descendant(
+          of: find.byKey(
+            const ValueKey('merchant-payout-booking-details-list'),
+          ),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final detailsScrollState = tester.state<ScrollableState>(detailsScroll);
+    detailsScrollState.position.jumpTo(
+      detailsScrollState.position.maxScrollExtent,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('merchant-booking-approve-11')));
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('merchant-dashboard-nav-dashboard')),

@@ -234,51 +234,62 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       if (payment == 'online') {
         provider = await _chooseProvider();
         if (provider == null) return;
-        if (!await widget.api.payMongoPaymentsEnabled(token)) {
-          if (!mounted) return;
-          final useCash = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const AppText(
-                'Online payment unavailable',
-                localize: true,
-              ),
-              content: const AppText(
-                'Online payments are not configured yet. No booking has been '
-                'created. You can choose Cash on Arrival or try again later.',
-                localize: true,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const AppText('Cancel', localize: true),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const AppText('Use Cash on Arrival', localize: true),
-                ),
-              ],
-            ),
-          );
-          if (useCash == true && mounted) {
-            setState(() => _payment = 'cash_on_arrival');
-          }
-          return;
-        }
+      }
+      if (payment == 'online' &&
+          !await widget.api.payMongoPaymentsEnabled(token)) {
+        _message(
+          'Online payments are unavailable right now. No booking has been created.',
+        );
+        return;
       }
       if (!mounted) return;
+      final coaDownpayment = double.parse((_total * 0.5).toStringAsFixed(2));
+      final coaRemaining = _total - coaDownpayment;
+      final bookingStart = DateTime(
+        _date.year,
+        _date.month,
+        _date.day,
+        time.hour,
+        time.minute,
+      );
+      final timeUntilBooking = bookingStart.difference(DateTime.now());
+      final startsWithin24Hours =
+          !timeUntilBooking.isNegative &&
+          timeUntilBooking < const Duration(hours: 24);
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const AppText('Confirm Fitness booking', localize: true),
-          content: AppText(
-            '${widget.business['name'] ?? 'Fitness venue'}\n'
-            '$_category · ${_plan!.toUpperCase()}\n'
-            '${_dateString(_date)} at ${time.format(context)}\n'
-            '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
-            '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
-            'One-time total: PHP ${_total.toStringAsFixed(2)}',
-            localize: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                '${widget.business['name'] ?? 'Fitness venue'}\n'
+                '$_category · ${_plan!.toUpperCase()}\n'
+                '${_dateString(_date)} at ${time.format(context)}\n'
+                '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
+                '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
+                '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
+                localize: true,
+              ),
+              if (startsWithin24Hours) ...[
+                const SizedBox(height: 12),
+                AppText(
+                  'This booking starts within 24 hours. You may cancel it '
+                  'at any time. If cancelled at least 6 hours before it starts, '
+                  'an online payment refund will be requested. If cancelled '
+                  'less than 6 hours before it starts or after it has started, '
+                  'the payment will not be voided or refunded. Cash already '
+                  'collected must be returned manually.',
+                  localize: true,
+                  style: TextStyle(
+                    color: AppColors.errorText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
           ),
           actions: [
             TextButton(
@@ -401,6 +412,8 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   Widget build(BuildContext context) {
     final name = '${widget.business['name'] ?? 'Fitness venue'}';
     final categoryPrice = _basePrice();
+    final coaDownpayment = double.parse((_total * 0.5).toStringAsFixed(2));
+    final coaRemaining = _total - coaDownpayment;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -508,7 +521,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                           ),
                         ),
                         AppText(
-                          'PHP ${categoryPrice.toStringAsFixed(2)}',
+                          '\u{20B1} ${categoryPrice.toStringAsFixed(2)}',
                           style: TextStyle(
                             color: _accentForeground,
                             fontSize: 16,
@@ -599,7 +612,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     final selected = plan == _plan;
                     return ChoiceChip(
                       label: AppText(
-                        '${_planTitle(plan)} · PHP ${_displayPlanPrice(plan)}',
+                        '${_planTitle(plan)} · \u{20B1} ${_displayPlanPrice(plan)}',
                         localize: true,
                       ),
                       selected: selected,
@@ -666,7 +679,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                               SizedBox(
                                 width: coachLabelWidth,
                                 child: AppText(
-                                  '$coachName · PHP '
+                                  '$coachName · ? '
                                   '${monthly.toStringAsFixed(2)}/month',
                                   overflow: TextOverflow.ellipsis,
                                   maxLines: 1,
@@ -771,10 +784,11 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
               const SizedBox(height: 6),
               AppText(
                 _payment == 'cash_on_arrival'
-                    ? 'Pay the selected plan total once on arrival: '
-                          'PHP ${_total.toStringAsFixed(2)}.'
+                    ? 'Pay a 50% cash downpayment at the venue: '
+                          '\u{20B1} ${coaDownpayment.toStringAsFixed(2)}. '
+                          'Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.'
                     : 'Pay securely online once for the selected term: '
-                          'PHP ${_total.toStringAsFixed(2)}.',
+                          '\u{20B1} ${_total.toStringAsFixed(2)}.',
                 style: TextStyle(color: AppColors.muted),
               ),
               const Divider(height: 24),
@@ -797,6 +811,10 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     : '${_dateString(_date)} · ${_time!.format(context)}',
               ),
               _summaryRow('One-time total', _total, strong: true),
+              if (_payment == 'cash_on_arrival') ...[
+                _summaryRow('Cash downpayment (50%)', coaDownpayment),
+                _summaryRow('Remaining cash balance', coaRemaining),
+              ],
               const SizedBox(height: 6),
               SizedBox(
                 width: double.infinity,
@@ -822,8 +840,9 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   label: AppText(
                     _submitting
                         ? 'Submitting...'
-                        : '${_payment == 'cash_on_arrival' ? 'Continue' : 'Pay'} · '
-                              'PHP ${_total.toStringAsFixed(2)}',
+                        : _payment == 'cash_on_arrival'
+                        ? 'Continue · \u{20B1} ${coaDownpayment.toStringAsFixed(2)} downpayment'
+                        : 'Pay · \u{20B1} ${_total.toStringAsFixed(2)}',
                   ),
                 ),
               ),
@@ -978,7 +997,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
         AppText(
           amount == 0 && suffix.isNotEmpty
               ? suffix
-              : 'PHP ${amount.toStringAsFixed(2)}$suffix',
+              : '\u{20B1} ${amount.toStringAsFixed(2)}$suffix',
           style: TextStyle(
             color: strong ? _ink : AppColors.muted,
             fontSize: strong ? 14 : 12,

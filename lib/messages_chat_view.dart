@@ -1,4 +1,5 @@
 import './app_design_system.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -38,7 +39,9 @@ class MessagesChatView extends StatelessWidget {
       children: [
         Expanded(
           child: messages.isEmpty
-              ? const Center(child: AppText('Write the first message.', localize: true))
+              ? const Center(
+                  child: AppText('Write the first message.', localize: true),
+                )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
@@ -53,8 +56,21 @@ class MessagesChatView extends StatelessWidget {
                         attachmentType == 'booking_ticket') {
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 7),
-                        child: Center(
-                          child: MessagesBookingTicket(attachment!),
+                        child: Column(
+                          children: [
+                            Center(child: MessagesBookingTicket(attachment!)),
+                            if (_messageTime(message) case final time?)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  time,
+                                  style: TextStyle(
+                                    color: AppColors.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       );
                     }
@@ -73,29 +89,38 @@ class MessagesChatView extends StatelessWidget {
                                 padding: const EdgeInsets.only(top: 8),
                                 child: AppText(body),
                               ),
-                            if (mine &&
-                                (message['isSeen'] == true ||
-                                    message['isSeen'] == 1 ||
-                                    message['isSeen'] == '1'))
-                               Padding(
-                                padding: EdgeInsets.only(top: 6),
+                            if (_messageTime(message) case final time?)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    Icon(
-                                      Icons.done_all_rounded,
-                                      size: 14,
-                                      color: AppColors.muted,
-                                    ),
-                                    SizedBox(width: 6),
-                                    AppText(
-                                      'Seen',
+                                    Text(
+                                      time,
                                       style: TextStyle(
                                         color: AppColors.muted,
                                         fontSize: 11,
-                                        fontWeight: FontWeight.w600,
                                       ),
-                                     localize: true,),
+                                    ),
+                                    if (mine && _isSeen(message['isSeen'])) ...[
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.done_all_rounded,
+                                        size: 14,
+                                        color: AppColors.muted,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      AppText(
+                                        'Seen',
+                                        style: TextStyle(
+                                          color: AppColors.muted,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        localize: true,
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -122,10 +147,11 @@ class MessagesChatView extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: AppColors.softStatus,
-            child:  AppText(
+            child: AppText(
               'You blocked this person. Unblock them from chat options to send messages.',
               style: TextStyle(color: AppColors.ink, fontSize: 12),
-             localize: true,),
+              localize: true,
+            ),
           ),
         SafeArea(
           child: Column(
@@ -178,7 +204,10 @@ class MessagesChatView extends StatelessWidget {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => onSend(),
                       decoration: InputDecoration(
-                        hintText: appLanguageText('Write a message...', 'Write a message...'),
+                        hintText: appLanguageText(
+                          'Write a message...',
+                          'Write a message...',
+                        ),
                       ),
                     ),
                   ),
@@ -195,3 +224,16 @@ class MessagesChatView extends StatelessWidget {
     );
   }
 }
+
+String? _messageTime(Map<String, dynamic> message) {
+  final createdAt = DateTime.tryParse('${message['createdAt'] ?? ''}');
+  if (createdAt == null) return null;
+
+  final localTime = createdAt.toLocal();
+  final hour = localTime.hour % 12 == 0 ? 12 : localTime.hour % 12;
+  final minute = localTime.minute.toString().padLeft(2, '0');
+  final period = localTime.hour < 12 ? 'AM' : 'PM';
+  return '$hour:$minute $period';
+}
+
+bool _isSeen(dynamic value) => value == true || value == 1 || value == '1';

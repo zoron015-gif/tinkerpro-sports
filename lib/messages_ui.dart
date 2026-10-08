@@ -304,7 +304,7 @@ class MessagesBookingTicket extends StatelessWidget {
                       AppText(
                         'Coach: $fitnessCoachName'
                         '${fitnessCoachDurationMonths == null ? '' : ' · ${fitnessCoachDurationMonths == 1 ? '1 month' : '$fitnessCoachDurationMonths months'}'}'
-                        '${fitnessCoachPrice == null ? '' : ' · PHP ${fitnessCoachPrice.toStringAsFixed(2)}'}',
+                        '${fitnessCoachPrice == null ? '' : ' · \u{20B1} ${fitnessCoachPrice.toStringAsFixed(2)}'}',
                         style: TextStyle(
                           color: messageMuted,
                           fontSize: 12,
@@ -313,7 +313,7 @@ class MessagesBookingTicket extends StatelessWidget {
                        localize: true,),
                     if (fitnessPlanPrice != null)
                       AppText(
-                        'Plan total: PHP ${fitnessPlanPrice.toStringAsFixed(2)}',
+                        'Plan total: \u{20B1} ${fitnessPlanPrice.toStringAsFixed(2)}',
                         style: TextStyle(
                           color: messageMuted,
                           fontSize: 12,
@@ -544,7 +544,7 @@ class MessagesBookingTicket extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         AppText(
-                          'PHP ${amount.toStringAsFixed(2)}',
+                          '\u{20B1} ${amount.toStringAsFixed(2)}',
                           style: TextStyle(
                             color: messageNavy,
                             fontSize: 14,
@@ -553,7 +553,7 @@ class MessagesBookingTicket extends StatelessWidget {
                         ),
                         if (downpayment != null)
                           AppText(
-                            'Downpayment: PHP ${downpayment.toStringAsFixed(2)}',
+                            'Downpayment: \u{20B1} ${downpayment.toStringAsFixed(2)}',
                             style: TextStyle(
                               color: messageMuted,
                               fontSize: 10,

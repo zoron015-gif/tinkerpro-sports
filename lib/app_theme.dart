@@ -17,7 +17,7 @@ abstract final class AppTheme {
     ),
     scaffoldBackgroundColor: AppColors.page,
     useMaterial3: true,
-    textTheme: GoogleFonts.montserratTextTheme(),
+    textTheme: GoogleFonts.latoTextTheme(),
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.page,
       surfaceTintColor: Colors.transparent,
@@ -237,7 +237,7 @@ abstract final class AppTheme {
       error: darkMode ? AppColors.darkError : AppColors.error,
       onError: Colors.white,
     );
-    final textTheme = GoogleFonts.montserratTextTheme(base.textTheme)
+    final textTheme = GoogleFonts.latoTextTheme(base.textTheme)
         .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
     final inputBorder = OutlineInputBorder(
       borderRadius: const BorderRadius.all(Radius.circular(AppRadii.control)),

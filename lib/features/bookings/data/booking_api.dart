@@ -53,6 +53,26 @@ extension AuthApiBookingOperations on AuthApi {
     return asMapList(response['bookings']);
   }
 
+  Future<void> deleteCustomerCompletedBooking({
+    required String token,
+    required int bookingId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/bookings/$bookingId',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<Map<String, dynamic>> cancelCustomerBooking({
+    required String token,
+    required int bookingId,
+  }) => _request(
+    'PATCH',
+    '/api/bookings/$bookingId/cancel',
+    headers: _authHeaders(token),
+  );
+
   Future<List<Map<String, dynamic>>> fitnessBookingAttendance(
     String token,
     int bookingId,
@@ -152,6 +172,33 @@ extension AuthApiBookingOperations on AuthApi {
     );
   }
 
+  Future<void> declineBooking({
+    required String token,
+    required int bookingId,
+  }) async {
+    await _request(
+      'PATCH',
+      '/api/merchant/bookings/$bookingId/decline',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<void> setCashOnArrivalPaymentStatus({
+    required String token,
+    required int bookingId,
+    required String paymentStatus,
+  }) async {
+    await _request(
+      'PATCH',
+      '/api/merchant/bookings/$bookingId/payment',
+      body: {'paymentStatus': paymentStatus},
+      headers: _authHeaders(
+        token,
+        extra: const {'Content-Type': 'application/json'},
+      ),
+    );
+  }
+
   Future<void> finishBooking({
     required String token,
     required int bookingId,
@@ -159,6 +206,17 @@ extension AuthApiBookingOperations on AuthApi {
     await _request(
       'PATCH',
       '/api/merchant/bookings/$bookingId/finish',
+      headers: _authHeaders(token),
+    );
+  }
+
+  Future<void> deleteCompletedBooking({
+    required String token,
+    required int bookingId,
+  }) async {
+    await _request(
+      'DELETE',
+      '/api/merchant/bookings/$bookingId',
       headers: _authHeaders(token),
     );
   }

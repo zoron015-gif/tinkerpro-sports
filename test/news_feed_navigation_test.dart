@@ -398,7 +398,7 @@ void main() {
       (eventContentPanel.decoration! as BoxDecoration).boxShadow,
       isNotEmpty,
     );
-    expect(find.text('PHP 1200.00 / event'), findsWidgets);
+    expect(find.text('\u{20B1} 1200.00 / event'), findsWidgets);
     expect(find.text('Bring your own decorations.'), findsOneWidget);
     expect(find.text('Reserve event'), findsOneWidget);
     final eventTitle = tester.widget<Text>(
@@ -868,7 +868,7 @@ void main() {
       );
       expect(
         tester.widget<AllVenuesPage>(find.byType(AllVenuesPage)).priceFilterLabel,
-        'Price (PHP / event)',
+        'Price (\u{20B1} / event)',
       );
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
@@ -912,7 +912,7 @@ void main() {
     );
     final price = find.descendant(
       of: card,
-      matching: find.text('PHP 200 / hr'),
+      matching: find.text('\u{20B1} 200 / hr'),
     );
     expect(address, findsOneWidget);
     expect(price, findsOneWidget);
@@ -1381,7 +1381,7 @@ void main() {
     expect(find.text('Open daily'), findsOneWidget);
     expect(find.text('FITNESS AMENITIES'), findsOneWidget);
     expect(find.text('Parking'), findsOneWidget);
-    expect(find.text('PHP 500.00 / session'), findsWidgets);
+    expect(find.text('\u{20B1} 500.00 / session'), findsWidgets);
     expect(find.text('Hosted by merchant'), findsOneWidget);
     expect(find.text('Alex Merchant'), findsOneWidget);
 
@@ -1389,7 +1389,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Book Fitness'), findsOneWidget);
     expect(find.text('FITNESS CONFIGURATION'), findsOneWidget);
-    expect(find.textContaining('Session · PHP 500.00'), findsOneWidget);
+    expect(find.textContaining('Session · \u{20B1} 500.00'), findsOneWidget);
   });
 
   testWidgets('See all slides in from the right and reverses in equal time', (
@@ -1716,7 +1716,7 @@ void main() {
       expect(find.text('Pilates Studio'), findsOneWidget);
       expect(find.text('Pilates'), findsOneWidget);
       expect(find.text('Cebu City'), findsOneWidget);
-      expect(find.text('PHP 450 / hr'), findsOneWidget);
+      expect(find.text('\u{20B1} 450 / hr'), findsOneWidget);
       expect(find.text('Get directions'), findsOneWidget);
       await tester.tapAt(const Offset(12, 200));
       await tester.pumpAndSettle();

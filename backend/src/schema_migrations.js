@@ -297,7 +297,8 @@ async function ensureBookingsSchema() {
       idempotency_request_hash CHAR(64) NULL,
       idempotency_response_json JSON NULL,
       idempotency_response_status SMALLINT UNSIGNED NULL,
-      payment_status ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
+      payment_status ENUM('unpaid', 'partial', 'paid', 'not_required') NOT NULL DEFAULT 'not_required',
+      paid_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
       payment_checkout_session_id VARCHAR(100) NULL,
       payment_reference VARCHAR(100) NULL,
       paid_at DATETIME NULL,
@@ -333,9 +334,12 @@ async function ensureBookingsSchema() {
     ['sport_type', 'VARCHAR(100) NULL'],
     ['slot_number', 'INT UNSIGNED NULL'],
     ['occupies_full_studio', 'TINYINT(1) NOT NULL DEFAULT 1'],
-    ['payment_status', "ENUM('unpaid', 'paid', 'not_required') NOT NULL DEFAULT 'not_required'"],
+    ['payment_status', "ENUM('unpaid', 'partial', 'paid', 'not_required') NOT NULL DEFAULT 'not_required'"],
+    ['paid_amount', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
     ['payment_checkout_session_id', 'VARCHAR(100) NULL'],
     ['payment_reference', 'VARCHAR(100) NULL'],
+    ['payment_refund_status', "VARCHAR(32) NOT NULL DEFAULT 'not_requested'"],
+    ['payment_refund_id', 'VARCHAR(100) NULL'],
     ['paid_at', 'DATETIME NULL'],
   ]) {
     await ensureTableColumn('bookings', name, definition);
@@ -595,6 +599,54 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [1, 'legacy-schema-upgrades'],
+      );
+    }
+    if (!appliedVersions.has(2)) {
+      await ensureTableColumn(
+        'bookings',
+        'fitness_coach_duration_months',
+        'INT UNSIGNED NULL',
+      );
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [2, 'booking-fitness-coach-duration-months'],
+      );
+    }
+    if (!appliedVersions.has(3)) {
+      await ensureTableColumn(
+        'bookings',
+        'paid_amount',
+        'DECIMAL(10, 2) NOT NULL DEFAULT 0',
+      );
+      await pool.execute(
+        `UPDATE bookings
+         SET paid_amount = total_amount
+         WHERE payment_status = 'paid' AND paid_amount = 0`,
+      );
+      await connection.execute(
+        `ALTER TABLE bookings
+         MODIFY COLUMN payment_status
+         ENUM('unpaid', 'partial', 'paid', 'not_required')
+         NOT NULL DEFAULT 'not_required'`,
+      );
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [3, 'booking-partial-payment-tracking'],
+      );
+    }
+    if (!appliedVersions.has(4)) {
+      await ensureTableColumn(
+        'bookings',
+        'payment_refund_status',
+        "VARCHAR(32) NOT NULL DEFAULT 'not_requested'",
+      );
+      await ensureTableColumn('bookings', 'payment_refund_id', 'VARCHAR(100) NULL');
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [4, 'booking-cancellation-refund-tracking'],
       );
     }
   } finally {

@@ -27,6 +27,16 @@ function response(rows = []) {
   return [rows, []];
 }
 
+function bookingStartAfterHours(hours) {
+  const manilaTime = new Date(
+    Date.now() + hours * 60 * 60 * 1000 + 8 * 60 * 60 * 1000,
+  ).toISOString();
+  return {
+    bookingDate: manilaTime.slice(0, 10),
+    startTime: `${manilaTime.slice(11, 19)}`,
+  };
+}
+
 function makeConnection() {
   return {
     beginTransaction: async () => {},
@@ -36,6 +46,20 @@ function makeConnection() {
     execute: async (sql, params = []) => {
       db.calls.push({ sql, params });
 
+      if (
+        sql.includes('FROM bookings') &&
+        sql.includes('payment_method AS paymentMethod') &&
+        sql.includes("status IN ('pending', 'approved')") &&
+        sql.includes('FOR UPDATE')
+      ) {
+        return response(
+          db.cancellationBooking &&
+            Number(params[0]) === db.cancellationBooking.id &&
+            String(params[1]) === '42'
+            ? [db.cancellationBooking]
+            : [],
+        );
+      }
       if (sql.includes('FROM users WHERE email = ? LIMIT 1')) {
         return response(db.existingRegistrationUser ? [db.existingRegistrationUser] : []);
       }
@@ -149,6 +173,25 @@ function makeConnection() {
       if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
         return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
       }
+      if (sql.includes('DELETE b FROM bookings b')) {
+        return [{ affectedRows: db.deleteAffected ? 1 : 0 }, []];
+      }
+      if (sql.includes('DELETE FROM bookings')) {
+        return [{ affectedRows: db.deleteAffected ? 1 : 0 }, []];
+      }
+      if (sql.includes("SET status = 'cancelled', payment_refund_status = ?")) {
+        if (db.cancellationBooking) {
+          db.cancellationBooking.paymentRefundStatus = params[0];
+          db.cancellationBooking.status = 'cancelled';
+        }
+        return [{ affectedRows: db.cancelAffected ? 1 : 0 }, []];
+      }
+      if (
+        sql.includes("UPDATE bookings") &&
+        sql.includes("SET b.status = 'cancelled'")
+      ) {
+        return [{ affectedRows: db.cancelAffected ? 1 : 0 }, []];
+      }
       return [{ affectedRows: 1, insertId: 601 }, []];
     },
   };
@@ -222,12 +265,19 @@ function resetDatabase() {
     overlap: false,
     overlapRows: null,
     transitionAffected: true,
+    deleteAffected: true,
+    cancelAffected: true,
+    cancellationBooking: null,
     conversationBusinessType: 'sports',
+    messageReadScope: null,
+    duplicateDirectConversationIds: [],
     paymentBooking: {
       id: 501,
       totalAmount: 270,
+      downpaymentAmount: 135,
       paymentMethod: 'online',
       paymentStatus: 'unpaid',
+      paidAmount: 0,
       status: 'pending',
     },
     webhookBooking: null,
@@ -373,12 +423,52 @@ before(async () => {
       if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
         return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
       }
+      if (sql.includes('DELETE b FROM bookings b')) {
+        return [{ affectedRows: db.deleteAffected ? 1 : 0 }, []];
+      }
+      if (sql.includes('DELETE FROM bookings')) {
+        return [{ affectedRows: db.deleteAffected ? 1 : 0 }, []];
+      }
+      if (sql.includes('SET payment_refund_status = ?')) {
+        const bookingId = Number(params[2]);
+        if (db.cancellationBooking?.id === bookingId) {
+          db.cancellationBooking.paymentRefundStatus = params[0];
+          db.cancellationBooking.paymentRefundId = params[1];
+        }
+        if (db.webhookBooking?.id === bookingId) {
+          db.webhookBooking.paymentRefundStatus = params[0];
+          db.webhookBooking.paymentRefundId = params[1];
+        }
+        return [{ affectedRows: 1 }, []];
+      }
+      if (sql.includes("SET payment_refund_status = 'failed'")) {
+        if (db.cancellationBooking) {
+          db.cancellationBooking.paymentRefundStatus = 'failed';
+        }
+        return [{ affectedRows: 1 }, []];
+      }
+      if (sql.includes("UPDATE bookings") && sql.includes("SET status = 'cancelled'")) {
+        return [{ affectedRows: db.cancelAffected ? 1 : 0 }, []];
+      }
       if (
         sql.includes("JOIN bookings b ON c.title = CONCAT('Booking ', b.id)") &&
         sql.includes('cm.deleted_at IS NULL')
       ) {
         return response(
           db.conversationBusinessType === params[2] ? [{ id: 601 }] : [],
+        );
+      }
+      if (sql.includes('SELECT c.type, cm.archived_at AS archivedAt')) {
+        return response(
+          db.messageReadScope ? [db.messageReadScope] : [],
+        );
+      }
+      if (
+        sql.includes('JOIN conversation_members viewer') &&
+        sql.includes('JOIN conversation_members peer')
+      ) {
+        return response(
+          db.duplicateDirectConversationIds.map((id) => ({ id })),
         );
       }
       if (sql.includes('SELECT 1 FROM conversation_members')) {
@@ -498,6 +588,27 @@ test('conversation routes reject malformed identifiers without querying', async 
     error: 'The conversation is invalid.',
   });
   assert.equal(db.calls.length, 0);
+});
+
+test('opening a direct conversation marks its merged duplicate chats as read', async () => {
+  db.messageReadScope = {
+    type: 'direct',
+    archivedAt: null,
+    peerId: 84,
+  };
+  db.duplicateDirectConversationIds = [601, 602];
+
+  const response = await request('/api/messages/conversations/601');
+
+  assert.equal(response.status, 200);
+  const unreadUpdate = db.calls.find(({ sql }) =>
+    sql.includes('UPDATE conversation_members SET manually_unread_at = NULL'),
+  );
+  assert.deepEqual(unreadUpdate.params, [601, 602, '42']);
+  const readInsert = db.calls.find(({ sql }) =>
+    sql.includes('INSERT IGNORE INTO message_reads (message_id, user_id)'),
+  );
+  assert.deepEqual(readInsert.params, ['42', 601, 602, '42']);
 });
 
 test('booking numeric fields reject booleans and blank numeric strings', async () => {
@@ -1208,7 +1319,7 @@ test('booking success calculates add-on charges and downpayment', async () => {
   assert.equal(response.status, 201);
   const { booking } = await response.json();
   assert.equal(booking.total, 270);
-  assert.equal(booking.downpayment, 135);
+  assert.equal(booking.downpayment, 270);
   assert.equal(booking.extraPlayers, 2);
   assert.equal(booking.extraPlayerCharge, 30);
   assert.equal(booking.status, 'pending');
@@ -1216,6 +1327,10 @@ test('booking success calculates add-on charges and downpayment', async () => {
   assert.equal(typeof booking.bookingToken, 'string');
   assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/i);
   assert.ok(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')));
+  const bookingInsert = db.calls.find(({ sql }) =>
+    sql.includes('INSERT INTO bookings'),
+  );
+  assert.equal(bookingInsert.params[22], 'unpaid');
   const activityInsert = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO user_activity_logs'),
   );
@@ -1233,7 +1348,7 @@ test('booking success calculates add-on charges and downpayment', async () => {
     eventType: null,
     paymentMethod: 'online',
     total: 270,
-    downpayment: 135,
+    downpayment: 270,
   });
   assert.equal(activityInsert.params[8], '42');
   assert.equal(activityInsert.params[9], 'customer');
@@ -1370,6 +1485,30 @@ test('Fitness bookings price coach duration from the requested month count', asy
   assert.equal(insert.params[16], 'Yoga');
   assert.equal(insert.params[17], 'Alex Coach');
   assert.equal(insert.params[20], 3);
+});
+
+test('Fitness cash-on-arrival bookings require half the plan total upfront', async () => {
+  db.venue.businessType = 'Fitness & Wellness';
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Yoga',
+      fitnessPlanType: 'monthly',
+      fitnessCoachName: 'Alex Coach',
+      fitnessCoachDurationMonths: 1,
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.total, 1500);
+  assert.equal(booking.downpayment, 750);
 });
 
 test('Fitness bookings reject coach durations shorter than one month', async () => {
@@ -1640,7 +1779,11 @@ test('merchant approval issues a booking ticket', async () => {
   assert.ok(approvalUpdate);
   assert.match(
     approvalUpdate.sql,
-    /b\.payment_method <> 'online' OR b\.payment_status = 'paid'/,
+    /\(b\.payment_method = 'online' AND b\.payment_status = 'paid'\)/,
+  );
+  assert.match(
+    approvalUpdate.sql,
+    /OR b\.payment_method = 'cash_on_arrival'/,
   );
 });
 
@@ -1686,6 +1829,241 @@ test('merchant approval rejects bookings outside the pending state', async () =>
 
   assert.equal(response.status, 404);
   assert.deepEqual(await response.json(), { error: 'Pending booking not found.' });
+});
+
+test('merchant can decline a pending booking', async () => {
+  const response = await request('/api/merchant/bookings/501/decline', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    message: 'Booking declined.',
+    status: 'cancelled',
+  });
+  const declineUpdate = db.calls.find(({ sql }) =>
+    sql.includes("SET b.status = 'cancelled'"),
+  );
+  assert.ok(declineUpdate);
+  assert.match(declineUpdate.sql, /v\.merchant_id = \?/);
+  assert.match(declineUpdate.sql, /b\.status = 'pending'/);
+});
+
+test('merchant can permanently delete only their completed booking', async () => {
+  const deleted = await request('/api/merchant/bookings/501', {
+    method: 'DELETE',
+    role: 'merchant',
+  });
+
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), {
+    message: 'Completed booking permanently deleted.',
+  });
+  const deleteQuery = db.calls.find(({ sql }) =>
+    sql.includes('DELETE b FROM bookings b'),
+  );
+  assert.ok(deleteQuery);
+  assert.match(deleteQuery.sql, /v\.merchant_id = \?/);
+  assert.match(deleteQuery.sql, /b\.status = 'finished'/);
+  assert.deepEqual(deleteQuery.params, ['501', '88']);
+
+  db.deleteAffected = false;
+  const notCompleted = await request('/api/merchant/bookings/501', {
+    method: 'DELETE',
+    role: 'merchant',
+  });
+  assert.equal(notCompleted.status, 404);
+  assert.deepEqual(await notCompleted.json(), {
+    error: 'Completed booking not found.',
+  });
+});
+
+test('customer can permanently delete only their own completed booking', async () => {
+  const deleted = await request('/api/bookings/501', {
+    method: 'DELETE',
+    role: 'customer',
+  });
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(await deleted.json(), {
+    message: 'Completed booking permanently deleted.',
+  });
+  const deleteQuery = db.calls.find(({ sql }) =>
+    sql.includes('DELETE FROM bookings'),
+  );
+  assert.ok(deleteQuery);
+  assert.match(deleteQuery.sql, /customer_id = \?/);
+  assert.match(deleteQuery.sql, /status = 'finished'/);
+  assert.deepEqual(deleteQuery.params, ['501', '42']);
+
+  db.deleteAffected = false;
+  const notCompleted = await request('/api/bookings/501', {
+    method: 'DELETE',
+    role: 'customer',
+  });
+  assert.equal(notCompleted.status, 404);
+  assert.deepEqual(await notCompleted.json(), {
+    error: 'Completed booking not found.',
+  });
+});
+
+test('customer cancellation refunds online payments only at least six hours before start', async () => {
+  const previousSecret = process.env.PAYMONGO_SECRET_KEY;
+  const originalFetchImpl = global.fetch;
+  process.env.PAYMONGO_SECRET_KEY = 'test-secret';
+  const refundRequests = [];
+  global.fetch = async (url, options) => {
+    if (String(url) === 'https://api.paymongo.com/v1/refunds') {
+      refundRequests.push({ url, options });
+      return new Response(
+        JSON.stringify({
+          data: { id: 'ref_test_501', attributes: { status: 'succeeded' } },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetchImpl(url, options);
+  };
+  try {
+    db.cancellationBooking = {
+      id: 501,
+      ...bookingStartAfterHours(8),
+      paymentMethod: 'online',
+      paymentStatus: 'paid',
+      paidAmount: 270,
+      paymentReference: 'pay_test_501',
+      checkoutSessionId: 'cs_test_501',
+      status: 'approved',
+    };
+    const eligible = await request('/api/bookings/501/cancel', {
+      method: 'PATCH',
+      role: 'customer',
+    });
+    assert.equal(eligible.status, 200);
+    assert.deepEqual(await eligible.json(), {
+      message: 'Booking cancelled. The online payment refund was completed.',
+      status: 'cancelled',
+      paymentRefundStatus: 'succeeded',
+    });
+    assert.equal(refundRequests.length, 1);
+    assert.deepEqual(JSON.parse(refundRequests[0].options.body), {
+      data: {
+        attributes: {
+          amount: 27000,
+          payment_id: 'pay_test_501',
+          reason: 'others',
+          notes: 'Customer cancelled booking 501.',
+        },
+      },
+    });
+    assert.equal(
+      refundRequests[0].options.headers['Idempotency-Key'],
+      'booking-cancellation-refund-501',
+    );
+    assert.equal(db.cancellationBooking.paymentStatus, 'paid');
+    assert.equal(db.cancellationBooking.paidAmount, 270);
+
+    db.cancellationBooking = {
+      id: 502,
+      ...bookingStartAfterHours(5),
+      paymentMethod: 'online',
+      paymentStatus: 'paid',
+      paidAmount: 270,
+      paymentReference: 'pay_test_502',
+      status: 'approved',
+    };
+    const insideWindow = await request('/api/bookings/502/cancel', {
+      method: 'PATCH',
+      role: 'customer',
+    });
+    assert.equal(insideWindow.status, 200);
+    assert.deepEqual(await insideWindow.json(), {
+      message:
+        'Booking cancelled. It is within 6 hours of the start time or has started, so the online payment was not refunded.',
+      status: 'cancelled',
+      paymentRefundStatus: 'not_eligible',
+    });
+    assert.equal(refundRequests.length, 1);
+    assert.equal(db.cancellationBooking.paymentStatus, 'paid');
+    assert.equal(db.cancellationBooking.paidAmount, 270);
+
+    db.cancellationBooking = {
+      id: 503,
+      ...bookingStartAfterHours(24),
+      paymentMethod: 'cash_on_arrival',
+      paymentStatus: 'partial',
+      paidAmount: 135,
+      status: 'approved',
+    };
+    const cash = await request('/api/bookings/503/cancel', {
+      method: 'PATCH',
+      role: 'customer',
+    });
+    assert.equal(cash.status, 200);
+    assert.equal((await cash.json()).paymentRefundStatus, 'manual_cash_return');
+    assert.equal(refundRequests.length, 1);
+
+    db.cancellationBooking = null;
+    const completed = await request('/api/bookings/501/cancel', {
+      method: 'PATCH',
+      role: 'customer',
+    });
+    assert.equal(completed.status, 404);
+    assert.deepEqual(await completed.json(), {
+      error: 'Booking not found or can no longer be cancelled.',
+    });
+  } finally {
+    global.fetch = originalFetchImpl;
+    if (previousSecret === undefined) delete process.env.PAYMONGO_SECRET_KEY;
+    else process.env.PAYMONGO_SECRET_KEY = previousSecret;
+  }
+});
+
+test('merchant payment management records COA cash downpayment before balance', async () => {
+  const downpayment = await request('/api/merchant/bookings/501/payment', {
+    method: 'PATCH',
+    role: 'merchant',
+    body: { paymentStatus: 'partial' },
+  });
+  assert.equal(downpayment.status, 200);
+  assert.deepEqual(await downpayment.json(), {
+    message: 'Payment status updated.',
+    paymentStatus: 'partial',
+  });
+  const downpaymentUpdate = db.calls.find(({ sql }) =>
+    sql.includes("SET b.payment_status = 'partial'"),
+  );
+  assert.ok(downpaymentUpdate);
+  assert.match(downpaymentUpdate.sql, /b\.payment_method = 'cash_on_arrival'/);
+  assert.match(downpaymentUpdate.sql, /b\.paid_amount = b\.downpayment_amount/);
+  assert.match(downpaymentUpdate.sql, /b\.payment_status = 'unpaid'/);
+
+  const paid = await request('/api/merchant/bookings/501/payment', {
+    method: 'PATCH',
+    role: 'merchant',
+    body: { paymentStatus: 'paid' },
+  });
+  assert.equal(paid.status, 200);
+  assert.deepEqual(await paid.json(), {
+    message: 'Payment status updated.',
+    paymentStatus: 'paid',
+  });
+  const balanceUpdate = db.calls.find(({ sql }) =>
+    sql.includes("SET b.payment_status = 'paid'"),
+  );
+  assert.ok(balanceUpdate);
+  assert.match(balanceUpdate.sql, /b\.payment_status = 'partial'/);
+  assert.match(balanceUpdate.sql, /b\.paid_amount = b\.total_amount/);
+
+  const invalid = await request('/api/merchant/bookings/501/payment', {
+    method: 'PATCH',
+    role: 'merchant',
+    body: { paymentStatus: 'unpaid' },
+  });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), {
+    error: 'Record the cash downpayment first, then the remaining balance.',
+  });
 });
 
 test('merchant booking refresh automatically completes bookings at type-specific end dates', async () => {
@@ -1985,12 +2363,32 @@ test('payment checkout creates a provider session for a customer booking', async
     assert.deepEqual(payload.data.attributes.metadata, {
       booking_id: '501',
       transaction_id: 'TP-TXN-00000501',
+      payment_type: 'full',
     });
     assert.equal(payload.data.attributes.reference_number, 'TP-TXN-00000501');
     assert.ok(db.calls.some(({ sql, params }) =>
       sql.includes('SET payment_checkout_session_id = ?') &&
       params[0] === 'cs_test_501',
     ));
+
+    paymentBooking = {
+      ...paymentBooking,
+      paymentMethod: 'cash_on_arrival',
+      paymentStatus: 'unpaid',
+      paidAmount: 0,
+    };
+    const downpaymentResponse = await request(
+      '/api/payments/paymongo/checkout',
+      {
+        method: 'POST',
+        body: {
+          bookingId: 501,
+          paymentMethod: 'gcash',
+          paymentType: 'downpayment',
+        },
+      },
+    );
+    assert.equal(downpaymentResponse.status, 400);
   } finally {
     global.fetch = originalFetchImpl;
     for (const [key, value] of originalConfig) {
@@ -2048,7 +2446,23 @@ test('payment checkout reports provider and missing-booking failures', async () 
 
 test('verified PayMongo payment adds one pending-approval ticket to booking chat', async () => {
   const originalSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
+  const originalPaymongoSecret = process.env.PAYMONGO_SECRET_KEY;
+  const originalFetchImpl = global.fetch;
   process.env.PAYMONGO_WEBHOOK_SECRET = 'test-webhook-secret';
+  process.env.PAYMONGO_SECRET_KEY = 'test-secret';
+  const refundRequests = [];
+  global.fetch = async (url, options) => {
+    if (String(url) === 'https://api.paymongo.com/v1/refunds') {
+      refundRequests.push({ url, options });
+      return new Response(
+        JSON.stringify({
+          data: { id: 'ref_test_late', attributes: { status: 'succeeded' } },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return originalFetchImpl(url, options);
+  };
   db.webhookBooking = {
     id: 501,
     customerId: 42,
@@ -2058,6 +2472,8 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     durationHours: 2,
     players: 6,
     totalAmount: 270,
+    downpaymentAmount: 270,
+    paidAmount: 0,
     paymentMethod: 'online',
     paymentStatus: 'unpaid',
     status: 'pending',
@@ -2075,7 +2491,7 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
         id: 'cs_test_501',
         attributes: {
           reference_number: 'BOOKING-501',
-          metadata: { booking_id: '501' },
+          metadata: { booking_id: '501', payment_type: 'full' },
           payments: [
             {
               id: 'pay_test_501',
@@ -2122,6 +2538,7 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     assert.equal(ticket.amount, 270);
 
     db.webhookBooking.paymentStatus = 'paid';
+    db.webhookBooking.paidAmount = 270;
     const duplicate = await request('/api/payments/paymongo/webhook', {
       method: 'POST',
       headers: {
@@ -2141,7 +2558,123 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
       ).length,
       1,
     );
+
+    db.webhookBooking = {
+      ...db.webhookBooking,
+      paymentStatus: 'unpaid',
+      paidAmount: 0,
+      status: 'cancelled',
+      paymentRefundStatus: 'pending',
+      paymentCheckoutSessionId: 'cs_test_cancelled',
+    };
+    const cancelledPayload = {
+      ...payload,
+      data: {
+        ...payload.data,
+        data: {
+          ...payload.data.data,
+          id: 'cs_test_cancelled',
+          attributes: {
+            ...payload.data.data.attributes,
+            payments: [
+              {
+                id: 'pay_test_cancelled',
+                attributes: {
+                  amount: 27000,
+                  currency: 'PHP',
+                  status: 'paid',
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const cancelledBody = JSON.stringify(cancelledPayload);
+    const cancelledSignature = crypto
+      .createHmac('sha256', process.env.PAYMONGO_WEBHOOK_SECRET)
+      .update(`${timestamp}.${cancelledBody}`)
+      .digest('hex');
+    const latePayment = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: {
+        'paymongo-signature': `t=${timestamp},te=${cancelledSignature},li=`,
+      },
+      body: cancelledPayload,
+    });
+    assert.equal(latePayment.status, 200);
+    assert.deepEqual(await latePayment.json(), {
+      received: true,
+      bookingId: 501,
+      transactionId: 'TP-TXN-00000501',
+      paymentRefundStatus: 'succeeded',
+    });
+    assert.equal(refundRequests.length, 1);
+    assert.equal(db.webhookBooking.paymentRefundStatus, 'succeeded');
+    assert.equal(db.webhookBooking.paymentRefundId, 'ref_test_late');
+    db.webhookBooking.paymentStatus = 'paid';
+    db.webhookBooking.paidAmount = 270;
+    const duplicateLatePayment = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: {
+        'paymongo-signature': `t=${timestamp},te=${cancelledSignature},li=`,
+      },
+      body: cancelledPayload,
+    });
+    assert.deepEqual(await duplicateLatePayment.json(), {
+      received: true,
+      duplicate: true,
+      bookingId: 501,
+      transactionId: 'TP-TXN-00000501',
+      paymentRefundStatus: 'succeeded',
+    });
+    assert.equal(refundRequests.length, 1);
+    const cancelledTicketMessage = db.calls
+      .filter(({ sql }) =>
+        sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+      )
+      .at(-1);
+    assert.ok(cancelledTicketMessage);
+    const cancelledTicket = JSON.parse(cancelledTicketMessage.params[3]);
+    assert.equal(cancelledTicket.approvalStatus, 'cancelled');
+    assert.match(cancelledTicketMessage.params[2], /refund is being processed separately/);
+
+    db.webhookBooking = {
+      ...db.webhookBooking,
+      paymentMethod: 'cash_on_arrival',
+      paymentStatus: 'unpaid',
+      paidAmount: 0,
+      downpaymentAmount: 135,
+      paymentCheckoutSessionId: 'cs_test_coa_501',
+    };
+    const coaPayload = structuredClone(payload);
+    coaPayload.data.data.id = 'cs_test_coa_501';
+    coaPayload.data.data.attributes.metadata.payment_type = 'downpayment';
+    coaPayload.data.data.attributes.payments[0].attributes.amount = 13500;
+    const coaBody = JSON.stringify(coaPayload);
+    const coaSignature = crypto
+      .createHmac('sha256', process.env.PAYMONGO_WEBHOOK_SECRET)
+      .update(`${timestamp}.${coaBody}`)
+      .digest('hex');
+    const coaResponse = await request('/api/payments/paymongo/webhook', {
+      method: 'POST',
+      headers: {
+        'paymongo-signature': `t=${timestamp},te=${coaSignature},li=`,
+      },
+      body: coaPayload,
+    });
+    assert.equal(coaResponse.status, 409);
+    assert.equal(
+      db.calls.some(({ sql, params }) =>
+        sql.includes('SET payment_status = ?, paid_amount = ?') &&
+        params[0] === 'partial',
+      ),
+      false,
+    );
   } finally {
+    global.fetch = originalFetchImpl;
+    if (originalPaymongoSecret === undefined) delete process.env.PAYMONGO_SECRET_KEY;
+    else process.env.PAYMONGO_SECRET_KEY = originalPaymongoSecret;
     if (originalSecret === undefined) delete process.env.PAYMONGO_WEBHOOK_SECRET;
     else process.env.PAYMONGO_WEBHOOK_SECRET = originalSecret;
   }

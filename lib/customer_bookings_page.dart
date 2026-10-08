@@ -245,10 +245,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SkeletonBlock(
-                          height: 148,
-                          borderRadius: 12,
-                        ),
+                        const SkeletonBlock(height: 148, borderRadius: 12),
                         const SizedBox(height: 6),
                         const SkeletonBlock(width: 180, height: 18),
                         const SizedBox(height: 6),
@@ -257,11 +254,17 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                         Row(
                           children: [
                             const Expanded(
-                              child: SkeletonBlock(height: 38, borderRadius: 12),
+                              child: SkeletonBlock(
+                                height: 38,
+                                borderRadius: 12,
+                              ),
                             ),
                             const SizedBox(width: 6),
                             const Expanded(
-                              child: SkeletonBlock(height: 38, borderRadius: 12),
+                              child: SkeletonBlock(
+                                height: 38,
+                                borderRadius: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -278,7 +281,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(24),
-                  child: AppText('Could not load bookings: ${snapshot.error}', localize: true),
+                  child: AppText(
+                    'Could not load bookings: ${snapshot.error}',
+                    localize: true,
+                  ),
                 ),
               ],
             );
@@ -315,7 +321,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     ),
                     content: AppText(
                       _messageCountError!,
-                      style:  TextStyle(color: AppColors.ink),
+                      style: TextStyle(color: AppColors.ink),
                     ),
                     actions: [
                       TextButton(
@@ -496,16 +502,16 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                       '${_statusLabel(status)}.'
                 : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
                       'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
-                localize: true,
-                style:  TextStyle(
-              color: AppColors.ink,
-              fontWeight: FontWeight.w700,
-            ),
+            localize: true,
+            style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: _refresh, child: const AppText('Refresh', localize: true)),
+        TextButton(
+          onPressed: _refresh,
+          child: const AppText('Refresh', localize: true),
+        ),
         TextButton(
           key: const ValueKey('booking-status-banner-dismiss'),
           onPressed: _dismissBookingStatusBanner,
@@ -544,9 +550,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     if (!mounted) return;
     _replaceWith(
       MaterialPageRoute(
-        builder: (_) => switch (
-          BusinessTypeParser.parse(widget.businessType)
-        ) {
+        builder: (_) => switch (BusinessTypeParser.parse(widget.businessType)) {
           BusinessType.event => EventDashboardPage(
             onLogout: widget.onLogout,
             api: widget.api,
@@ -628,12 +632,13 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     Expanded(
                       child: AppText(
                         '${booking['venueName'] ?? 'Venue'}',
-                        style:  TextStyle(
+                        style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                           color: AppColors.ink,
                         ),
-                       localize: true,),
+                        localize: true,
+                      ),
                     ),
                     _statusPill(status),
                   ],
@@ -650,6 +655,22 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     height: 1.3,
                   ),
                 ),
+                if (status.toLowerCase() == 'cancelled' &&
+                    booking.paymentRefundStatus != 'not_requested') ...[
+                  const SizedBox(height: 6),
+                  AppText(
+                    _paymentRefundGuidance(booking.paymentRefundStatus),
+                    localize: true,
+                    style: TextStyle(
+                      color: booking.paymentRefundStatus == 'failed'
+                          ? AppColors.errorText
+                          : AppColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 _venueDetail(Icons.location_on_outlined, booking['address']),
                 _venueDetail(Icons.access_time_rounded, booking['hours']),
@@ -657,16 +678,42 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   const SizedBox(height: 6),
                   _infoPanel('Venue rate', rate),
                 ],
+                if (status.toLowerCase() == 'pending' ||
+                    status.toLowerCase() == 'approved') ...[
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: ValueKey('customer-booking-cancel-${booking.id}'),
+                      onPressed: booking.id == null
+                          ? null
+                          : () => _cancelCustomerBooking(booking),
+                      icon: const Icon(Icons.event_busy_outlined),
+                      label: const AppText('Cancel booking', localize: true),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.errorText,
+                        side: BorderSide(color: AppColors.errorText),
+                        padding: AppSpacing.buttonPadding,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () => _showBookingInfo(booking),
                     icon: const Icon(Icons.visibility_outlined, size: 18),
-                    label: const AppText('View booking details', localize: true),
+                    label: const AppText(
+                      'View booking details',
+                      localize: true,
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ink,
-                      side:  BorderSide(color: AppColors.border),
+                      side: BorderSide(color: AppColors.border),
                       padding: AppSpacing.buttonPadding,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -677,6 +724,33 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 if (status == 'finished' && booking.id != null) ...[
                   const SizedBox(height: 6),
                   _ratingAction(booking),
+                ],
+                if (const {
+                  'finished',
+                  'done',
+                  'completed',
+                }.contains(status.toLowerCase())) ...[
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: ValueKey('customer-booking-delete-${booking.id}'),
+                      onPressed: () => _deleteCompletedBooking(booking),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const AppText(
+                        'Delete completed booking',
+                        localize: true,
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.errorText,
+                        side: BorderSide(color: AppColors.errorText),
+                        padding: AppSpacing.buttonPadding,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -810,11 +884,188 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       builder: (_) => _BookingRatingDialog(booking: booking, api: _api),
     );
     if (!mounted || submitted != true) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: AppText('Your rating was submitted.', localize: true)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: AppText('Your rating was submitted.', localize: true),
+      ),
+    );
     await _refresh();
   }
+
+  Future<void> _deleteCompletedBooking(Booking booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const AppText('Delete completed booking?', localize: true),
+        content: const AppText(
+          'This permanently deletes the booking and its attendance and review '
+          'records. This action cannot be undone.',
+          localize: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const AppText('Keep booking', localize: true),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const AppText('Delete permanently', localize: true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException(
+          'Please sign in again to delete this booking.',
+          401,
+        );
+      }
+      final bookingId = booking.id;
+      if (bookingId == null) {
+        throw const AuthApiException(
+          'This booking cannot be deleted right now.',
+          400,
+        );
+      }
+      await _api.deleteCustomerCompletedBooking(
+        token: token,
+        bookingId: bookingId,
+      );
+      if (!mounted) return;
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: AppText(
+            'Completed booking permanently deleted.',
+            localize: true,
+          ),
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText(
+            'Could not delete completed booking: $error',
+            localize: true,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelCustomerBooking(Booking booking) async {
+    final paymentWarning = _cancellationPaymentWarning(booking);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const AppText('Cancel this booking?', localize: true),
+        content: AppText(
+          'You can cancel this booking at any time before it is completed. '
+          '$paymentWarning',
+          localize: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const AppText('Keep booking', localize: true),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const AppText('Cancel booking', localize: true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException(
+          'Please sign in again to cancel this booking.',
+          401,
+        );
+      }
+      final bookingId = booking.id;
+      if (bookingId == null) {
+        throw const AuthApiException(
+          'This booking cannot be cancelled right now.',
+          400,
+        );
+      }
+      final result = await _api.cancelCustomerBooking(
+        token: token,
+        bookingId: bookingId,
+      );
+      if (!mounted) return;
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText(
+            '${result['message'] ?? 'Booking cancelled.'}',
+            localize: true,
+          ),
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText('Could not cancel booking: $error', localize: true),
+        ),
+      );
+    }
+  }
+
+  String _cancellationPaymentWarning(Booking booking) {
+    if (booking.paymentMethod == 'cash_on_arrival' && booking.paidAmount > 0) {
+      return 'Cash already collected cannot be voided by the app; it must be '
+          'returned manually.';
+    }
+    if (booking.paymentMethod == 'cash_on_arrival') {
+      return 'Any cash already collected must be returned manually; the app '
+          'cannot void cash payments.';
+    }
+    if (booking.paymentStatus.toLowerCase() != 'paid' ||
+        booking.paymentMethod != 'online') {
+      return 'Any online payment completed after cancellation will be handled '
+          'under the same cancellation policy.';
+    }
+    final start = _bookingStartDateTime(booking);
+    if (start == null) {
+      return 'The payment refund eligibility will be checked using the '
+          'booking start time.';
+    }
+    final timeUntilStart = start.difference(DateTime.now());
+    if (timeUntilStart >= const Duration(hours: 6)) {
+      return 'The booking is at least 6 hours away, so the online payment '
+          'refund will be requested.';
+    }
+    return 'Because the booking starts in less than 6 hours or has already '
+        'started, the online payment cannot be voided or refunded.';
+  }
+
+  DateTime? _bookingStartDateTime(Booking booking) {
+    final time = booking.startTime.length >= 5
+        ? booking.startTime.substring(0, 5)
+        : booking.startTime;
+    return DateTime.tryParse('${booking.date}T$time');
+  }
+
+  String _paymentRefundGuidance(String status) => switch (status) {
+    'pending' => 'Online payment refund is being processed.',
+    'succeeded' => 'Online payment refund completed.',
+    'failed' =>
+      'Online payment refund could not be confirmed. Please contact support.',
+    'not_eligible' => 'Payment was not refunded because the booking starts within 6 hours or has started.',
+    'manual_cash_return' => 'Cash already collected must be returned manually; it cannot be voided by the app.',
+    _ => '',
+  };
 
   Widget _infoPanel(String label, String value) => Container(
     width: double.infinity,
@@ -833,7 +1084,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             label,
             languageCode: Localizations.localeOf(context).languageCode,
           ).toUpperCase(),
-          style:  TextStyle(
+          style: TextStyle(
             color: AppColors.muted,
             fontSize: 10,
             fontWeight: FontWeight.w800,
@@ -844,7 +1095,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         AppText(
           value,
           localize: true,
-          style:  TextStyle(
+          style: TextStyle(
             color: AppColors.ink,
             fontSize: 13,
             height: 1.35,
@@ -862,15 +1113,15 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         final start = period['start'] ?? '';
         final end = period['end'] ?? '';
         final price = _amount(period['pricePerHour']);
-        return '$start - $end · PHP ${price.toStringAsFixed(2)} / hr';
+        return '$start - $end · \u{20B1} ${price.toStringAsFixed(2)} / hr';
       }).toList();
       if (labels.isNotEmpty) return labels.join('\n');
     }
 
     final value = _amount(booking['venuePricePerHour']);
-    if (value > 0) return 'PHP ${value.toStringAsFixed(2)} / hr';
+    if (value > 0) return '\u{20B1} ${value.toStringAsFixed(2)} / hr';
     final fee = _amount(booking['eventFee']);
-    return fee > 0 ? 'PHP ${fee.toStringAsFixed(2)} per booking' : '';
+    return fee > 0 ? '\u{20B1} ${fee.toStringAsFixed(2)} per booking' : '';
   }
 
   double _amount(dynamic value) {
@@ -886,7 +1137,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             title: const AppText(
               'Booking details',
               style: TextStyle(fontWeight: FontWeight.w900),
-             localize: true,),
+              localize: true,
+            ),
             backgroundColor: AppColors.page,
             foregroundColor: AppColors.ink,
             surfaceTintColor: Colors.transparent,
@@ -906,6 +1158,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final status = '${booking['status'] ?? 'pending'}';
     final total = _amount(booking['total']);
     final downpayment = _amount(booking['downpayment']);
+    final paidAmount = booking.paidAmount;
+    final paymentStatus = booking.paymentStatus.toLowerCase();
+    final isCashOnArrival = booking.paymentMethod == 'cash_on_arrival';
+    final remainingBalance = (total - paidAmount).clamp(0, total).toDouble();
     final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
     final coachName = '${booking['fitnessCoachName'] ?? ''}';
     final coachDurationMonths = int.tryParse(
@@ -932,12 +1188,13 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               Expanded(
                 child: AppText(
                   '${booking['venueName'] ?? 'Venue'}',
-                  style:  TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: AppColors.ink,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
               ),
               const SizedBox(width: 6),
               _statusPill(status),
@@ -958,7 +1215,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           AppText(
             _scheduleLabel(booking),
             localize: true,
-            style:  TextStyle(
+            style: TextStyle(
               fontSize: 15,
               color: AppColors.ink,
               fontWeight: FontWeight.w600,
@@ -973,7 +1230,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 : '${booking['players']} players'} · '
             '${booking['paymentMethod']}',
             style: TextStyle(fontSize: 14, color: AppColors.muted),
-           localize: true,),
+            localize: true,
+          ),
           if (isEvent && eventType.isNotEmpty) ...[
             const SizedBox(height: 6),
             AppText(
@@ -995,23 +1253,29 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 fontWeight: FontWeight.w700,
                 color: AppColors.success,
               ),
-             localize: true,),
+              localize: true,
+            ),
+            AppText(
+              'Plan duration: ${_fitnessPlanDuration(fitnessPlanType)}',
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
+              localize: true,
+            ),
             AppText(
               coachName.isEmpty
-                  ? 'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
-                  : 'Plan: PHP ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}\n'
+                  ? 'Plan: \u{20B1} ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
+                  : 'Plan: \u{20B1} ${_amount(booking['fitnessPlanPrice']).toStringAsFixed(2)}\n'
                         'Coach: $coachName'
                         '${coachDurationMonths == null ? '' : ' · ${coachDurationMonths == 1 ? '1 month' : '$coachDurationMonths months'}'}'
-                        ' · PHP ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}',
+                        ' · \u{20B1} ${_amount(booking['fitnessCoachPrice']).toStringAsFixed(2)}',
               localize: true,
               style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ],
           const SizedBox(height: 6),
           AppText(
-            'Total: PHP ${total.toStringAsFixed(2)}',
+            'Total: \u{20B1} ${total.toStringAsFixed(2)}',
             localize: true,
-            style:  TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: AppColors.ink,
@@ -1021,33 +1285,50 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: AppText(
-                'Includes extra-player fee: PHP '
+                'Includes extra-player fee: ? '
                 '${_amount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
                 style: TextStyle(fontSize: 13, color: AppColors.muted),
-               localize: true,),
+                localize: true,
+              ),
             ),
           const SizedBox(height: 6),
           AppText(
-            '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Downpayment'}: PHP '
-            '${fitnessPlanType.isNotEmpty ? total.toStringAsFixed(2) : downpayment.toStringAsFixed(2)}',
+            isCashOnArrival && paymentStatus == 'partial'
+                ? 'Cash downpayment received: \u{20B1} ${paidAmount.toStringAsFixed(2)}'
+                : isCashOnArrival && paymentStatus != 'paid'
+                ? 'Cash downpayment due at venue: \u{20B1} ${downpayment.toStringAsFixed(2)}'
+                : paymentStatus == 'paid'
+                ? 'Amount paid: \u{20B1} ${paidAmount.toStringAsFixed(2)}'
+                : '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Amount due'}: ? '
+                      '${total.toStringAsFixed(2)}',
             localize: true,
-            style:  TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: AppColors.ink,
             ),
           ),
+          if (isCashOnArrival && paymentStatus != 'paid')
+            AppText(
+              paymentStatus == 'partial'
+                  ? 'Remaining cash balance due on arrival: \u{20B1} ${remainingBalance.toStringAsFixed(2)}'
+                  : 'Remaining cash balance after downpayment: ? '
+                        '${(total - downpayment).clamp(0, total).toStringAsFixed(2)}',
+              localize: true,
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
+            ),
           const SizedBox(height: 6),
           const Divider(height: 1),
           const SizedBox(height: 6),
-           AppText(
+          AppText(
             'Venue information',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
               color: AppColors.ink,
             ),
-           localize: true,),
+            localize: true,
+          ),
           const SizedBox(height: 6),
           _venueDetail(
             Icons.person_outline_rounded,
@@ -1090,24 +1371,30 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           const SizedBox(height: 6),
           _bookingField(
             'Rate',
-            'PHP ${_amount(booking['pricePerHour'] ?? booking['venuePricePerHour']).toStringAsFixed(2)} / hr',
+            '\u{20B1} ${_amount(booking['pricePerHour'] ?? booking['venuePricePerHour']).toStringAsFixed(2)} / hr',
           ),
           const SizedBox(height: 6),
-           AppText(
+          AppText(
             'Booking information you entered',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
               color: AppColors.ink,
             ),
-           localize: true,),
+            localize: true,
+          ),
           const SizedBox(height: 6),
           _bookingField('Date', booking['date']),
           _bookingField('Start time', _formatTime(booking['startTime'])),
           _bookingField(
-            'Duration',
+            fitnessPlanType.isNotEmpty ? 'First visit session' : 'Duration',
             '${_amount(booking['durationHours']).toStringAsFixed(0)} hour(s)',
           ),
+          if (fitnessPlanType.isNotEmpty)
+            _bookingField(
+              'Plan duration',
+              _fitnessPlanDuration(fitnessPlanType),
+            ),
           _bookingField('Players', booking['players']),
           _bookingField('Payment method', booking['paymentMethod']),
         ],
@@ -1198,14 +1485,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             child: AppText(
               label,
               localize: true,
-              style:  TextStyle(fontSize: 13, color: AppColors.muted),
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
           Expanded(
             child: AppText(
               text,
               localize: true,
-              style:  TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: AppColors.ink,
@@ -1222,12 +1509,24 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final start = _formatTime(booking['startTime']);
     final duration = _amount(booking['durationHours']);
     final end = _endTime(booking['startTime'], duration);
+    final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
+    final sessionLabel = fitnessPlanType.isNotEmpty
+        ? 'First visit session'
+        : 'Duration';
     if (end == null) {
-      return '$date · $start · ${duration.toStringAsFixed(0)} hour(s)';
+      return '$date · $start · $sessionLabel: '
+          '${duration.toStringAsFixed(0)} hour(s)';
     }
-    return '$date · $start - $end · '
+    return '$date · $start - $end · $sessionLabel: '
         '${duration.toStringAsFixed(0)} hour(s)';
   }
+
+  String _fitnessPlanDuration(String planType) => switch (planType) {
+    'monthly' => '1 month',
+    'yearly' => '1 year',
+    'session' => '1 session',
+    _ => planType,
+  };
 
   String _formatTime(dynamic value) {
     final raw = '$value'.trim();
@@ -1327,10 +1626,11 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-         AppText(
+        AppText(
           'How was your completed booking?',
           style: TextStyle(color: AppColors.muted),
-         localize: true,),
+          localize: true,
+        ),
         const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1358,7 +1658,12 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         TextField(
           controller: _comment,
           maxLines: 3,
-          decoration: InputDecoration(labelText: appLanguageText('Comment (optional)', 'Comment (optional)')),
+          decoration: InputDecoration(
+            labelText: appLanguageText(
+              'Comment (optional)',
+              'Comment (optional)',
+            ),
+          ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 6),

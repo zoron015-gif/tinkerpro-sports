@@ -323,6 +323,9 @@ class AuthApi {
           response.statusCode == 404
               ? path.contains('/merchant/businesses/')
                     ? 'The business management API is unavailable. Restart the backend server and try again.'
+                    : path.startsWith('/api/merchant/bookings/') &&
+                          path.endsWith('/decline')
+                    ? 'Booking decline is unavailable on the connected server. Update or restart the backend server, then try again.'
                     : path.startsWith('/api/saved-items')
                     ? 'The saved-items API is unavailable. Restart the backend server and try again.'
                     : path.startsWith('/api/messages/conversations/')

@@ -79,8 +79,22 @@ void main() {
     });
     Map<String, dynamic>? submittedBooking;
     String? submittedIdempotencyKey;
+    Map<String, dynamic>? checkoutPayload;
     final api = AuthApi(
       client: MockClient((request) async {
+        if (request.url.path == '/api/payments/paymongo/config') {
+          return http.Response(
+            jsonEncode({'onlinePaymentsEnabled': true}),
+            200,
+          );
+        }
+        if (request.url.path == '/api/payments/paymongo/checkout') {
+          checkoutPayload = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({'checkoutUrl': 'https://checkout.example.test'}),
+            200,
+          );
+        }
         if (request.method == 'POST' && request.url.path == '/api/bookings') {
           submittedBooking = jsonDecode(request.body) as Map<String, dynamic>;
           submittedIdempotencyKey = request.headers['idempotency-key'];
@@ -177,19 +191,31 @@ void main() {
     );
     final cashOption = find.text('COA');
     await tester.ensureVisible(cashOption);
+    await tester.pumpAndSettle();
     await tester.tap(cashOption);
     await tester.pumpAndSettle();
     expect(
-      find.text('Pay PHP 5000.00 now and PHP 5000.00 on arrival.'),
+      find.text(
+        'Pay \u{20B1} 5000.00 cash as a downpayment at the venue and \u{20B1} 5000.00 cash as the remaining balance.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Event total'), findsOneWidget);
-    expect(find.text('Pay now'), findsOneWidget);
-    final submitButton = find.text('Continue · PHP 5000.00');
-    await tester.ensureVisible(submitButton);
+    expect(find.text('Cash downpayment due at venue'), findsOneWidget);
+    final submitButton = find.byKey(const ValueKey('event-booking-submit'));
+    await tester.scrollUntilVisible(
+      submitButton,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
     expect(find.text('Confirm event booking'), findsOneWidget);
+    expect(find.textContaining('starts within 24 hours'), findsOneWidget);
+    expect(
+      find.textContaining('payment will not be voided or refunded'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Confirm booking'));
     await tester.pumpAndSettle();
 
@@ -200,84 +226,111 @@ void main() {
     expect(submittedBooking!['paymentMethod'], 'cash_on_arrival');
     expect(submittedBooking!['durationHours'], 4);
     expect(submittedBooking!['startTime'], matches(r'^\d{2}:\d{2}:00$'));
+    expect(checkoutPayload, isNull);
     expect(submittedIdempotencyKey, matches(RegExp(r'^[0-9a-f]{32}$')));
     expect(find.text('Open booking'), findsOneWidget);
   });
 
-  testWidgets('online event payment offers cash if payments are not enabled', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    SharedPreferences.setMockInitialValues({});
-    FlutterSecureStorage.setMockInitialValues({
-      'session_api_token': 'test-token',
-    });
-    var bookingRequests = 0;
-    final api = AuthApi(
-      client: MockClient((request) async {
-        if (request.url.path == '/api/payments/paymongo/config') {
-          return http.Response(
-            jsonEncode({'onlinePaymentsEnabled': false}),
-            200,
-          );
-        }
-        if (request.url.path == '/api/bookings') {
-          bookingRequests++;
-          return http.Response(
-            jsonEncode({
-              'booking': {'id': 501},
-            }),
-            201,
-          );
-        }
-        return http.Response('{}', 404);
-      }),
-    );
+  testWidgets(
+    'offline COA booking works when online payments are unavailable',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      var bookingRequests = 0;
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/payments/paymongo/config') {
+            return http.Response(
+              jsonEncode({'onlinePaymentsEnabled': false}),
+              200,
+            );
+          }
+          if (request.url.path == '/api/bookings') {
+            bookingRequests++;
+            return http.Response(
+              jsonEncode({
+                'booking': {'id': 501},
+              }),
+              201,
+            );
+          }
+          return http.Response('{}', 404);
+        }),
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: EventBookingPage(
-          api: api,
-          asCheckoutSheet: true,
-          business: {
-            'id': 7,
-            'name': 'Garden Venue',
-            'eventTypes': ['Wedding'],
-            'attendanceMin': 50,
-            'eventFee': 10000,
-          },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EventBookingPage(
+            api: api,
+            asCheckoutSheet: true,
+            business: {
+              'id': 7,
+              'name': 'Garden Venue',
+              'eventTypes': ['Wedding'],
+              'attendanceMin': 50,
+              'eventFee': 10000,
+            },
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final submitButton = find.byKey(const ValueKey('event-booking-submit'));
-    expect(find.text('Book Event'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      submitButton,
-      120,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(submitButton);
-    expect(find.text('Online'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.tap(submitButton);
-    await tester.pumpAndSettle();
-    expect(find.text('Choose online payment'), findsOneWidget);
+      final submitButton = find.byKey(const ValueKey('event-booking-submit'));
+      expect(find.text('Book Event'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        submitButton,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(submitButton);
+      expect(find.text('Online'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(submitButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Choose online payment'), findsOneWidget);
 
-    await tester.tap(find.text('PayMaya'));
-    await tester.pumpAndSettle();
-    expect(find.text('Online payment unavailable'), findsOneWidget);
-    expect(bookingRequests, 0);
+      await tester.tap(find.text('PayMaya'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Online payments are unavailable right now'),
+        findsOneWidget,
+      );
+      tester
+          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
+          .hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      expect(bookingRequests, 0);
+      expect(find.text('Use Cash on Arrival'), findsNothing);
 
-    await tester.tap(find.text('Use Cash on Arrival'));
-    await tester.pumpAndSettle();
-    expect(find.text('Continue · PHP 5000.00'), findsOneWidget);
-    expect(bookingRequests, 0);
-  });
+      final coaOption = find.text('COA');
+      await tester.scrollUntilVisible(
+        coaOption,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(coaOption);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        submitButton,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
+      await tester.pumpAndSettle();
+      await tester.tap(submitButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm event booking'), findsOneWidget);
+      await tester.tap(find.text('Confirm booking'));
+      await tester.pumpAndSettle();
+      expect(bookingRequests, 1);
+    },
+  );
 }

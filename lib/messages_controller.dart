@@ -247,13 +247,40 @@ class MessagesController extends ChangeNotifier {
 
   void _markConversationRead(int conversationId) {
     conversationStateRevision++;
+    Map<String, dynamic>? selectedConversation;
+    for (final conversation in conversations) {
+      if ((conversation['id'] as num?)?.toInt() == conversationId) {
+        selectedConversation = conversation;
+        break;
+      }
+    }
+    final selectedPeerId = _directPeerId(selectedConversation);
+    final selectedArchived = _isArchived(selectedConversation?['archived']);
     conversations = conversations.map((conversation) {
-      if ((conversation['id'] as num?)?.toInt() != conversationId) {
+      final isSelected = (conversation['id'] as num?)?.toInt() == conversationId;
+      final isMergedDirectChat =
+          selectedPeerId != null &&
+          _directPeerId(conversation) == selectedPeerId &&
+          _isArchived(conversation['archived']) == selectedArchived;
+      if (!isSelected && !isMergedDirectChat) {
         return conversation;
       }
       return {...conversation, 'unreadCount': 0, 'manuallyUnread': false};
     }).toList();
   }
+
+  int? _directPeerId(Map<String, dynamic>? conversation) {
+    if (conversation == null || conversation['type'] != 'direct') return null;
+    final members = conversation['members'] as List<dynamic>? ?? const [];
+    final otherMembers = members.whereType<Map>().where((member) {
+      return (member['id'] as num?)?.toInt() != currentUserId;
+    });
+    if (otherMembers.length != 1) return null;
+    return (otherMembers.first['id'] as num?)?.toInt();
+  }
+
+  bool _isArchived(dynamic value) =>
+      value == true || value == 1 || value == '1' || value == 'true';
 
   void setSending(bool nextSending) {
     sending = nextSending;

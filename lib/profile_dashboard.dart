@@ -1619,7 +1619,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         _bookingAmount(booking['total']) ??
         ((_bookingAmount(booking['fitnessPlanPrice']) ?? 0) +
             (_bookingAmount(booking['fitnessCoachPrice']) ?? 0));
-    return 'PHP ${total.toStringAsFixed(2)}';
+    return '\u{20B1} ${total.toStringAsFixed(2)}';
   }
 
   Future<void> _showFitnessBookingCalendar(
@@ -2173,7 +2173,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           ? _isEventProfile
                                 ? 'Event fee unavailable'
                                 : 'Hourly rate unavailable'
-                          : 'PHP ${amount.toStringAsFixed(2)}'
+                          : '\u{20B1} ${amount.toStringAsFixed(2)}'
                                 '${_isEventProfile ? ' / event' : ' / hour'}',
                       style: TextStyle(
                         color: _profileInk,
@@ -2750,19 +2750,19 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 if (bookingRate != null)
                   _bookingDetailLine(
                     Icons.sell_outlined,
-                    'PHP ${bookingRate.toStringAsFixed(2)}'
+                    '\u{20B1} ${bookingRate.toStringAsFixed(2)}'
                     '${_isEventProfile ? ' / event' : ' / hour'}',
                   ),
                 if (extraPlayerCharge != null && extraPlayerCharge > 0)
                   _bookingDetailLine(
                     Icons.group_add_outlined,
-                    'Extra player fee: PHP '
+                    'Extra player fee: ? '
                     '${extraPlayerCharge.toStringAsFixed(2)}',
                   ),
                 if (total != null)
                   _bookingDetailLine(
                     Icons.receipt_long_outlined,
-                    'Booking total: PHP ${total.toStringAsFixed(2)}',
+                    'Booking total: \u{20B1} ${total.toStringAsFixed(2)}',
                   ),
                 const SizedBox(height: 6),
                 Align(

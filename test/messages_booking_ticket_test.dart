@@ -37,7 +37,7 @@ void main() {
     expect(find.text('Test Basketball Court'), findsOneWidget);
     expect(find.text('BK-501'), findsOneWidget);
     expect(find.text('TP-TXN-00000501'), findsOneWidget);
-    expect(find.text('PHP 270.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 270.00'), findsOneWidget);
     expect(find.text('TOTAL PAID'), findsOneWidget);
     expect(find.text('Payment ref: pay_test_501'), findsOneWidget);
     expect(find.text('Online'), findsOneWidget);
@@ -106,8 +106,8 @@ void main() {
     expect(find.text('PENDING REVIEW'), findsOneWidget);
     expect(find.text('TP-TXN-00000504'), findsOneWidget);
     expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
-    expect(find.text('PHP 500.00'), findsOneWidget);
-    expect(find.text('Downpayment: PHP 250.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.text('Downpayment: \u{20B1} 250.00'), findsOneWidget);
   });
 
   testWidgets('Fitness ticket displays the selected term and coach', (
@@ -142,7 +142,7 @@ void main() {
     expect(find.text('Yoga · Yearly plan'), findsOneWidget);
     expect(find.textContaining('Alex Coach'), findsOneWidget);
     expect(find.textContaining('3 months'), findsOneWidget);
-    expect(find.text('Plan total: PHP 10800.00'), findsOneWidget);
+    expect(find.text('Plan total: \u{20B1} 10800.00'), findsOneWidget);
     expect(find.text('Whole studio'), findsNothing);
   });
 
@@ -170,7 +170,7 @@ void main() {
     expect(find.text('TINKERPRO  ·  EVENT PASS'), findsOneWidget);
     expect(find.text('PAYMENT RECEIPT'), findsOneWidget);
     expect(find.text('TP-TXN-00000503'), findsOneWidget);
-    expect(find.text('PHP 25000.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 25000.00'), findsOneWidget);
     expect(find.text('TINKERPRO  ·  COURT PASS'), findsNothing);
   });
 }

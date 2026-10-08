@@ -534,7 +534,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           _detailRow(
                             Icons.groups_outlined,
                             'Includes ${widget.venue.includedPlayers} players · '
-                            'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
+                            '\u{20B1} ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
                             'per extra player',
                           ),
                         if (widget.venue.tags.isNotEmpty) ...[
@@ -814,7 +814,7 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                         widget.venue.includedPlayers > 0)
                       AppText(
                         '${widget.venue.includedPlayers} included · '
-                        'PHP ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
+                        '\u{20B1} ${widget.venue.additionalPlayerFee.toStringAsFixed(2)} '
                         'per extra player',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1152,7 +1152,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             final start = period['start'] ?? period['start_time'] ?? '';
             final end = period['end'] ?? period['end_time'] ?? '';
             final amount = period['pricePerHour'] ?? period['price_per_hour'];
-            return '$start - $end|PHP ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr';
+            return '$start - $end|\u{20B1} ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr';
           }).toList()
         : <String>[];
     final totalSlots =
@@ -1189,9 +1189,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       final included = (sport['includedPlayers'] as num).toInt();
       final extraFee = (sport['additionalPlayerFee'] as num).toDouble();
       final playerFee = included > 0 && extraFee > 0
-          ? ' · $included included · PHP ${extraFee.toStringAsFixed(2)} / extra player'
+          ? ' · $included included · \u{20B1} ${extraFee.toStringAsFixed(2)} / extra player'
           : '';
-      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / '
+      return '${sport['sportType']}: \u{20B1} ${rate.toStringAsFixed(2)} / hr / '
           '$rateUnit$playerFee';
     }).toList();
     final maxPrice = [
@@ -1213,12 +1213,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       details: '${b['details'] ?? ''}',
       image: _merchantImage(b),
       images: images,
-      priceDay: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
-      priceNight: 'PHP ${maxPrice.toStringAsFixed(0)} / hr',
+      priceDay: '\u{20B1} ${maxPrice.toStringAsFixed(0)} / hr',
+      priceNight: '\u{20B1} ${maxPrice.toStringAsFixed(0)} / hr',
       priceLines: sportRateLabels.isNotEmpty
           ? sportRateLabels
           : periods.isEmpty
-          ? ['Booking rate|PHP ${price.toStringAsFixed(0)} / hr']
+          ? ['Booking rate|\u{20B1} ${price.toStringAsFixed(0)} / hr']
           : periods,
       maxPrice: maxPrice,
       averageRating:
@@ -1429,7 +1429,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             feePerExtraPlayer: selectedAdditionalPlayerFee,
           );
           final total = rate * hours + extraPlayerCharge;
-          final cashOnArrival = total / 2;
+          final cashOnArrival = double.parse((total * 0.5).toStringAsFixed(2));
           final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
           final selectedSlotBooked = _bookingSlotOverlaps(
             bookingTime,
@@ -1554,7 +1554,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 ),
                               ),
                               AppText(
-                                'PHP ${rate.toStringAsFixed(2)}',
+                                '\u{20B1} ${rate.toStringAsFixed(2)}',
                                 style: TextStyle(
                                   color: _sportsAccentForeground,
                                   fontSize: 16,
@@ -1603,7 +1603,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           DropdownMenuItem(
                             value: '${sport['sportType']}',
                             child: AppText(
-                              '${sport['sportType']} · PHP '
+                              '${sport['sportType']} · ? '
                               '${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr',
                               localize: true,
                             ),
@@ -1687,7 +1687,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     AppText(
                       selectedSportIsFullStudio
                           ? 'This sport uses the whole studio; its bookings block every small slot.'
-                          : 'PHP ${rate.toStringAsFixed(2)} per slot per hour. '
+                          : '\u{20B1} ${rate.toStringAsFixed(2)} per slot per hour. '
                                 'Different slots can be booked at the same time.',
                       style: TextStyle(color: _sportsMuted, fontSize: 12),
                     ),
@@ -1919,7 +1919,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         padding: const EdgeInsets.only(top: 8),
                         child: AppText(
                           '$selectedIncludedPlayers players included; '
-                          'each additional player costs PHP '
+                          'each additional player costs ? '
                           '${selectedAdditionalPlayerFee.toStringAsFixed(2)}.',
                           style: TextStyle(
                             color: AppColors.warning,
@@ -1977,10 +1977,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     const SizedBox(height: 6),
                     AppText(
                       payment == 'cash_on_arrival'
-                          ? 'Pay PHP ${cashOnArrival.toStringAsFixed(2)} now and '
-                                'PHP ${cashOnArrival.toStringAsFixed(2)} on arrival.'
+                          ? 'Pay \u{20B1} ${cashOnArrival.toStringAsFixed(2)} cash as a downpayment at the venue. '
+                                'Remaining cash balance: \u{20B1} ${(total - cashOnArrival).toStringAsFixed(2)}.'
                           : 'Pay securely online. Amount due: '
-                                'PHP ${total.toStringAsFixed(2)}.',
+                                '\u{20B1} ${total.toStringAsFixed(2)}.',
                       style: TextStyle(color: _sportsMuted),
                     ),
                     const Divider(height: 24),
@@ -1994,7 +1994,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     if (extraPlayerCharge > 0)
                       _bookingAmountRow(
                         'Extra players (${players - selectedIncludedPlayers} × '
-                            'PHP ${selectedAdditionalPlayerFee.toStringAsFixed(2)})',
+                            '\u{20B1} ${selectedAdditionalPlayerFee.toStringAsFixed(2)})',
                         extraPlayerCharge,
                         '',
                       ),
@@ -2006,7 +2006,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     _bookingAmountRow('Booking total', total, ''),
                     _bookingAmountRow(
-                      payment == 'cash_on_arrival' ? 'Pay now' : 'Amount due',
+                      payment == 'cash_on_arrival'
+                          ? 'Cash downpayment due at venue'
+                          : 'Amount due',
                       dueNow,
                       '',
                       strong: true,
@@ -2076,8 +2078,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         icon: const Icon(Icons.lock_outline_rounded),
                         label: AppText(
                           payment == 'cash_on_arrival'
-                              ? 'Continue · PHP ${dueNow.toStringAsFixed(2)}'
-                              : 'Pay · PHP ${dueNow.toStringAsFixed(2)}',
+                              ? 'Continue · \u{20B1} ${dueNow.toStringAsFixed(2)}'
+                              : 'Pay · \u{20B1} ${dueNow.toStringAsFixed(2)}',
                         ),
                       ),
                     ),
@@ -2277,31 +2279,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           : null;
       if (payment == 'online' && onlineProvider == null) return;
       if (payment == 'online' && !await _api.payMongoPaymentsEnabled(token)) {
-        if (!mounted || !modalContext.mounted) return;
-        final useCashOnArrival = await showDialog<bool>(
-          context: modalContext,
-          builder: (dialogContext) => AlertDialog(
-            title: const AppText('Online payment unavailable', localize: true),
-            content: const AppText(
-              'Online payments are not configured yet. No booking has been '
-              'created. You can choose Cash on Arrival or try again later.',
-              localize: true,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const AppText('Cancel', localize: true),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const AppText('Use Cash on Arrival', localize: true),
-              ),
-            ],
-          ),
+        _showMessage(
+          'Online payments are unavailable right now. No booking has been created.',
         );
-        if (useCashOnArrival == true && modalContext.mounted) {
-          onPaymentChanged('cash_on_arrival');
-        }
         return;
       }
       final confirmed = await _confirmBookingDetails(
@@ -2369,7 +2349,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           booking['downpayment'] ?? (venue.maxPrice * hours / 2);
       _showMessage(
         'Booking request sent to ${venue.ownerName}. '
-        'Downpayment: PHP $downpayment. Waiting for approval.',
+        'Cash downpayment due at venue: \u{20B1} $downpayment. Waiting for approval.',
       );
     } on Exception catch (error) {
       _showMessage('Could not submit booking: $error');
@@ -2413,11 +2393,26 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required double total,
     required double extraPlayerCharge,
   }) async {
-    final paymentLabel = payment == 'online'
+    final paymentLabel = payment == 'cash_on_arrival'
+        ? 'Cash on Arrival · 50% cash downpayment at venue'
+        : payment == 'online'
         ? onlineProvider == 'gcash'
               ? 'Online payment · GCash'
               : 'Online payment · PayMaya'
         : 'Cash on Arrival (COA)';
+    final coaDownpayment = double.parse((total * 0.5).toStringAsFixed(2));
+    final coaRemaining = total - coaDownpayment;
+    final bookingStart = DateTime(
+      bookingDate.year,
+      bookingDate.month,
+      bookingDate.day,
+      bookingTime.hour,
+      bookingTime.minute,
+    );
+    final timeUntilBooking = bookingStart.difference(DateTime.now());
+    final startsWithin24Hours =
+        !timeUntilBooking.isNegative &&
+        timeUntilBooking < const Duration(hours: 24);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -2452,13 +2447,39 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               if (extraPlayerCharge > 0)
                 _confirmationRow(
                   'Extra-player fee',
-                  'PHP ${extraPlayerCharge.toStringAsFixed(2)}',
+                  '\u{20B1} ${extraPlayerCharge.toStringAsFixed(2)}',
                 ),
               _confirmationRow('Payment', paymentLabel),
               _confirmationRow(
                 'Booking total',
-                'PHP ${total.toStringAsFixed(2)}',
+                '\u{20B1} ${total.toStringAsFixed(2)}',
               ),
+              if (payment == 'cash_on_arrival') ...[
+                _confirmationRow(
+                  'Cash downpayment due at venue',
+                  '\u{20B1} ${coaDownpayment.toStringAsFixed(2)}',
+                ),
+                _confirmationRow(
+                  'Remaining cash balance',
+                  '\u{20B1} ${coaRemaining.toStringAsFixed(2)}',
+                ),
+              ],
+              if (startsWithin24Hours) ...[
+                const SizedBox(height: 12),
+                AppText(
+                  'This booking starts within 24 hours. You may cancel it '
+                  'at any time. If cancelled at least 6 hours before it starts, '
+                  'an online payment refund will be requested. If cancelled '
+                  'less than 6 hours before it starts or after it has started, '
+                  'the payment will not be voided or refunded. Cash already '
+                  'collected must be returned manually.',
+                  localize: true,
+                  style: TextStyle(
+                    color: AppColors.errorText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -2538,7 +2559,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         AppText(
           label == 'Duration'
               ? '${amount.toStringAsFixed(0)}$suffix'
-              : 'PHP ${amount.toStringAsFixed(2)}$suffix',
+              : '\u{20B1} ${amount.toStringAsFixed(2)}$suffix',
           style: TextStyle(
             color: _sportsInk,
             fontWeight: strong ? FontWeight.w900 : FontWeight.w700,

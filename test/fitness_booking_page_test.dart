@@ -61,7 +61,7 @@ void main() {
     );
     expect((summary.decoration! as BoxDecoration).color, AppColors.darkSurface);
     final action = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Pay · PHP 500.00'),
+      find.widgetWithText(FilledButton, 'Pay · \u{20B1} 500.00'),
     );
     expect(action.style!.backgroundColor!.resolve({}), AppPalette.blue.color);
     expect(
@@ -139,16 +139,16 @@ void main() {
       final venueTitle = tester.widget<Text>(find.text('Test Fitness'));
       expect(venueTitle.style?.fontSize, 19);
       expect(venueTitle.style?.fontWeight, FontWeight.w900);
-      expect(find.textContaining('Session · PHP 500.00'), findsOneWidget);
-      expect(find.textContaining('Monthly · PHP 1200.00'), findsOneWidget);
-      expect(find.textContaining('Yearly · PHP 10800.00'), findsOneWidget);
-      expect(find.textContaining('Pay · PHP 500.00'), findsOneWidget);
-      final yearlyPlan = find.textContaining('Yearly · PHP 10800.00');
+      expect(find.textContaining('Session · \u{20B1} 500.00'), findsOneWidget);
+      expect(find.textContaining('Monthly · \u{20B1} 1200.00'), findsOneWidget);
+      expect(find.textContaining('Yearly · \u{20B1} 10800.00'), findsOneWidget);
+      expect(find.textContaining('Pay · \u{20B1} 500.00'), findsOneWidget);
+      final yearlyPlan = find.textContaining('Yearly · \u{20B1} 10800.00');
       await tester.ensureVisible(yearlyPlan);
       await tester.tap(yearlyPlan);
       await tester.pumpAndSettle();
       expect(find.text('Yearly offer: 10% off'), findsOneWidget);
-      expect(find.text('PHP 10800.00'), findsWidgets);
+      expect(find.text('\u{20B1} 10800.00'), findsWidgets);
       final coachDropdown = find.byWidgetPredicate(
         (widget) =>
             widget is DropdownButtonFormField &&
@@ -167,7 +167,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('2 months'), findsOneWidget);
       expect(find.text('Coach · Alex Coach (2 months)'), findsOneWidget);
-      expect(find.text('PHP 600.00'), findsWidgets);
+      expect(find.text('\u{20B1} 600.00'), findsWidgets);
       await tester.tap(
         find.byKey(const ValueKey('fitness-coach-duration-decrease')),
       );

@@ -108,8 +108,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   List<Map<String, dynamic>> _bookings = [];
   int _merchantTab = 0;
   int _payoutTab = 0;
+  int _bookingManagementTab = 0;
+  int _paymentManagementTab = 0;
   String _payoutBookingType = 'All';
   String _payoutSearchQuery = '';
+  final ScrollController _managementScrollController = ScrollController();
   Timer? _payoutRefreshTimer;
 
   String _analyticsPeriod = 'Daily';
@@ -185,6 +188,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     ]) {
       controller.dispose();
     }
+    _managementScrollController.dispose();
     super.dispose();
   }
 
@@ -580,13 +584,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ? Row(
                 children: [
                   AppText(
-                    'Payouts',
+                    'Management',
                     style: AppTypography.pageTitle,
                     localize: true,
                   ),
                   _merchantSectionNotice(
                     key: 'merchant-payouts-info',
-                    title: 'Payouts',
+                    title: 'Management',
                     message: 'Manage booking requests and track your earnings.',
                   ),
                 ],
@@ -594,7 +598,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             : AppText(switch (_merchantTab) {
                 0 => 'Merchant Dashboard',
                 1 => 'Add business',
-                3 => 'Payouts',
+                3 => 'Management',
                 _ => 'Merchant Dashboard',
               }),
         backgroundColor: _merchantPage,
@@ -632,21 +636,115 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _merchantPayouts() => RefreshIndicator(
     onRefresh: _loadBookings,
     child: ListView(
+      key: const ValueKey('merchant-management-list'),
+      controller: _managementScrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
       children: [
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(flex: 2, child: _payoutTypeFilter()),
-            const SizedBox(width: 6),
-            Expanded(flex: 3, child: _payoutSearchBar()),
-          ],
-        ),
+        _managementFilters(),
         const SizedBox(height: 6),
         SegmentedButton<int>(
-          key: const ValueKey('merchant-payout-tabs'),
+          key: const ValueKey('merchant-management-tabs'),
+          style: _analyticsFilterStyle,
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: 0,
+              label: AppText('Booking', localize: true),
+            ),
+            ButtonSegment(
+              value: 1,
+              label: AppText('Customer', localize: true),
+            ),
+            ButtonSegment(
+              value: 2,
+              label: AppText('Payment', localize: true),
+            ),
+          ],
+          selected: {_payoutTab},
+          onSelectionChanged: (selection) {
+            setState(() => _payoutTab = selection.first);
+          },
+        ),
+        const SizedBox(height: 6),
+        if (_payoutSearchQuery.isNotEmpty || _payoutBookingType != 'All')
+          Row(
+            children: [
+              Expanded(
+                child: AppText(
+                  '${_filteredPayoutBookings.length} bookings match your filters',
+                  key: const ValueKey('merchant-management-result-count'),
+                  style: TextStyle(color: _merchantMuted, fontSize: 11),
+                ),
+              ),
+              TextButton.icon(
+                key: const ValueKey('merchant-management-clear-filters'),
+                onPressed: () {
+                  _payoutSearchController.clear();
+                  setState(() {
+                    _payoutSearchQuery = '';
+                    _payoutBookingType = 'All';
+                  });
+                },
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 15),
+                label: const AppText('Clear filters', localize: true),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  textStyle: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        if (_payoutSearchQuery.isNotEmpty || _payoutBookingType != 'All')
+          const SizedBox(height: 8),
+        if (_payoutTab == 1)
+          _customerManagementContent()
+        else if (_payoutTab == 2)
+          _paymentManagementContent()
+        else
+          _bookingManagementContent(),
+      ],
+    ),
+  );
+
+  Widget _managementFilters() => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(flex: 2, child: _payoutTypeFilter()),
+      const SizedBox(width: 8),
+      Expanded(flex: 3, child: _payoutSearchBar()),
+    ],
+  );
+
+  Widget _bookingManagementContent() {
+    final bookings = switch (_bookingManagementTab) {
+      0 => _filteredPayoutBookings.where(_isPendingBooking).toList(),
+      1 => _filteredPayoutBookings.where(_isApprovedBooking).toList(),
+      _ => _filteredPayoutBookings.where(_isFinishedBooking).toList(),
+    };
+    final emptyMessage = switch (_bookingManagementTab) {
+      0 => (
+        Icons.inbox_outlined,
+        'No booking requests',
+        'New customer requests will appear here.',
+      ),
+      1 => (
+        Icons.event_available_outlined,
+        'No active bookings',
+        'Approved bookings will appear here until their scheduled end.',
+      ),
+      _ => (
+        Icons.task_alt_outlined,
+        'No completed bookings',
+        'Completed bookings will appear here after their scheduled end.',
+      ),
+    };
+    return Column(
+      children: [
+        SegmentedButton<int>(
+          key: const ValueKey('merchant-booking-management-status-tabs'),
           style: _analyticsFilterStyle,
           showSelectedIcon: false,
           segments: const [
@@ -660,82 +758,568 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ),
             ButtonSegment(
               value: 2,
-              label: AppText('Payout track', localize: true),
+              label: AppText('Completed bookings', localize: true),
             ),
           ],
-          selected: {_payoutTab},
+          selected: {_bookingManagementTab},
           onSelectionChanged: (selection) {
-            setState(() => _payoutTab = selection.first);
+            setState(() => _bookingManagementTab = selection.first);
           },
         ),
-        const SizedBox(height: 6),
-        if (_payoutTab == 0)
-          _bookingRequestsContent()
-        else if (_payoutTab == 1)
-          _activeBookingsContent()
+        const SizedBox(height: 8),
+        if (bookings.isEmpty)
+          _emptyPayoutCard(
+            emptyMessage.$1,
+            emptyMessage.$2,
+            emptyMessage.$3,
+          )
         else
-          _payoutTrackContent(),
+          for (final booking in bookings) ...[
+            _customerManagementBookingCard(
+              booking,
+              showDelete: _bookingManagementTab == 2,
+            ),
+            const SizedBox(height: 6),
+          ],
       ],
-    ),
-  );
-
-  Widget _bookingRequestsContent() {
-    final requests = _filteredPayoutBookings.where(_isPendingBooking).toList();
-    final hasRequests = requests.isNotEmpty;
-    return hasRequests
-        ? _pendingBookingsCard(requests)
-        : _emptyPayoutCard(
-            Icons.inbox_outlined,
-            'No booking requests',
-            'New customer requests will appear here. Approved bookings move to Active bookings.',
-          );
+    );
   }
 
-  Widget _payoutTrackContent() {
-    final tracked = _filteredPayoutBookings.where(_isFinishedBooking).toList();
-    if (tracked.isEmpty) {
+  Widget _customerManagementContent() {
+    final bookings = _filteredPayoutBookings;
+    if (bookings.isEmpty) {
       return _emptyPayoutCard(
-        Icons.payments_outlined,
-        'No completed bookings',
-        'Bookings will appear here automatically after their scheduled end.',
+        Icons.people_outline_rounded,
+        'No customer bookings',
+        'Customer booking requests and approved bookings will appear here.',
       );
     }
-
     return Column(
       children: [
-        for (final booking in tracked) ...[
-          _payoutBookingCard(booking),
+        for (final booking in bookings) ...[
+          _customerManagementBookingCard(booking),
           const SizedBox(height: 6),
         ],
       ],
     );
   }
 
-  Widget _activeBookingsContent() {
-    final active = _filteredPayoutBookings.where(_isApprovedBooking).toList();
-    if (active.isEmpty) {
-      return _emptyPayoutCard(
-        Icons.event_available_outlined,
-        'No active bookings',
-        'Approved bookings will appear here until their scheduled end time.',
-      );
-    }
+  Widget _paymentManagementContent() {
+    final bookings = _filteredPayoutBookings;
+    final paymentBookings = bookings
+        .where((booking) => !BookingStatusParser.isCancelled(booking['status']))
+        .toList();
+    final refundBookings = bookings.where((booking) {
+      return BookingStatusParser.isCancelled(booking['status']) &&
+          '${booking['paymentRefundStatus'] ?? 'not_requested'}' !=
+              'not_requested';
+    }).toList();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: AppText(
-            'Approved bookings finish automatically at their scheduled end.',
-            style: TextStyle(color: _merchantMuted, fontSize: 13),
-            localize: true,
+        SegmentedButton<int>(
+          key: const ValueKey('merchant-payment-management-tabs'),
+          style: _analyticsFilterStyle,
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: 0,
+              label: AppText('Payments', localize: true),
+            ),
+            ButtonSegment(
+              value: 1,
+              label: AppText('Earnings', localize: true),
+            ),
+            ButtonSegment(
+              value: 2,
+              label: AppText('Refunds', localize: true),
+            ),
+          ],
+          selected: {_paymentManagementTab},
+          onSelectionChanged: (selection) {
+            setState(() => _paymentManagementTab = selection.first);
+          },
+        ),
+        const SizedBox(height: 8),
+        if (_paymentManagementTab == 0)
+          if (paymentBookings.isEmpty)
+            _emptyPayoutCard(
+              Icons.payments_outlined,
+              'No booking payments',
+              'Payments for customer bookings will appear here.',
+            )
+          else
+            for (final booking in paymentBookings) ...[
+              _paymentManagementBookingCard(booking),
+              const SizedBox(height: 6),
+            ]
+        else if (_paymentManagementTab == 1)
+          _paymentEarningsContent(bookings)
+        else if (refundBookings.isEmpty)
+          _emptyPayoutCard(
+            Icons.currency_exchange_rounded,
+            'No refunds to review',
+            'Refund updates for cancelled bookings will appear here.',
+          )
+        else
+          for (final booking in refundBookings) ...[
+            _paymentRefundBookingCard(booking),
+            const SizedBox(height: 6),
+          ],
+      ],
+    );
+  }
+
+  Widget _paymentEarningsContent(List<Map<String, dynamic>> bookings) {
+    final grossCollected = bookings.fold<double>(
+      0,
+      (sum, booking) => sum + _bookingAmountReceived(booking),
+    );
+    final refunded = bookings.fold<double>(0, (sum, booking) {
+      return sum +
+          ('${booking['paymentRefundStatus'] ?? ''}' == 'succeeded'
+              ? _bookingAmountReceived(booking)
+              : 0);
+    });
+    final cashReturnDue = bookings.fold<double>(0, (sum, booking) {
+      return sum +
+          ('${booking['paymentRefundStatus'] ?? ''}' == 'manual_cash_return'
+              ? _bookingAmountReceived(booking)
+              : 0);
+    });
+    final netEarnings = (grossCollected - refunded - cashReturnDue)
+        .clamp(0, grossCollected)
+        .toDouble();
+    final outstanding = bookings.fold<double>(0, (sum, booking) {
+      if (BookingStatusParser.isCancelled(booking['status'])) return sum;
+      final due = _bookingAmount(booking['total']) -
+          _bookingAmountReceived(booking);
+      return sum + due.clamp(0, double.infinity).toDouble();
+    });
+    final onlineCollected = bookings
+        .where((booking) => booking['paymentMethod'] == 'online')
+        .fold<double>(
+          0,
+          (sum, booking) => sum + _bookingAmountReceived(booking),
+        );
+    final cashCollected = bookings
+        .where((booking) => booking['paymentMethod'] == 'cash_on_arrival')
+        .fold<double>(
+          0,
+          (sum, booking) => sum + _bookingAmountReceived(booking),
+        );
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _paymentEarningsMetric(
+                'Net earnings',
+                netEarnings,
+                Icons.account_balance_wallet_outlined,
+                const ValueKey('merchant-payment-net-earnings'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _paymentEarningsMetric(
+                'Collected',
+                grossCollected,
+                Icons.payments_outlined,
+                const ValueKey('merchant-payment-gross-collected'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _paymentEarningsMetric(
+                'Refunded',
+                refunded,
+                Icons.currency_exchange_rounded,
+                const ValueKey('merchant-payment-refunded-total'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _paymentEarningsMetric(
+                'Balance due',
+                outstanding,
+                Icons.hourglass_bottom_rounded,
+                const ValueKey('merchant-payment-outstanding'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          color: AppColors.surface,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppText(
+                  'Collected by payment method',
+                  style: TextStyle(
+                    color: _merchantInk,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  localize: true,
+                ),
+                const SizedBox(height: 8),
+                _payoutManagementInfoRow(
+                  'Online payments',
+                  '\u{20B1} ${onlineCollected.toStringAsFixed(2)}',
+                ),
+                _payoutManagementInfoRow(
+                  'Cash on arrival',
+                  '\u{20B1} ${cashCollected.toStringAsFixed(2)}',
+                ),
+                _payoutManagementInfoRow(
+                  'Cash return due',
+                  '\u{20B1} ${cashReturnDue.toStringAsFixed(2)}',
+                ),
+              ],
+            ),
           ),
         ),
-        for (final booking in active) ...[
-          _payoutBookingCard(booking),
-          const SizedBox(height: 6),
-        ],
       ],
+    );
+  }
+
+  Widget _paymentEarningsMetric(
+    String label,
+    double amount,
+    IconData icon,
+    Key key,
+  ) => Card(
+    key: key,
+    margin: EdgeInsets.zero,
+    elevation: 0,
+    color: AppColors.surface,
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Icon(icon, color: _merchantOrange, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppText(
+                  label,
+                  style: TextStyle(color: _merchantMuted, fontSize: 11),
+                  localize: true,
+                ),
+                const SizedBox(height: 3),
+                AppText(
+                  '\u{20B1} ${amount.toStringAsFixed(2)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _merchantInk,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _paymentRefundBookingCard(Map<String, dynamic> booking) {
+    final refundStatus =
+        '${booking['paymentRefundStatus'] ?? 'not_requested'}';
+    return Card(
+      elevation: 0,
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              '${booking['customerName'] ?? 'Customer'}',
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+              localize: true,
+            ),
+            const SizedBox(height: 5),
+            _payoutManagementInfoRow('Booking', '#${booking['id']} · ${booking['venueName'] ?? 'Venue'}'),
+            _payoutManagementInfoRow(
+              'Payment received',
+              '\u{20B1} ${_bookingAmountReceived(booking).toStringAsFixed(2)}',
+            ),
+            _payoutManagementInfoRow('Payment method', _payoutPaymentLabel(booking['paymentMethod'])),
+            _payoutManagementInfoRow('Refund status', _paymentRefundLabel(refundStatus)),
+            if ('${booking['paymentReference'] ?? ''}'.isNotEmpty)
+              _payoutManagementInfoRow(
+                'Payment reference',
+                booking['paymentReference'],
+              ),
+            if ('${booking['paymentRefundId'] ?? ''}'.isNotEmpty)
+              _payoutManagementInfoRow(
+                'Refund reference',
+                booking['paymentRefundId'],
+              ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                key: ValueKey('merchant-refund-view-${booking['id']}'),
+                onPressed: () =>
+                    _showPayoutBookingDetails(booking, paymentOnly: true),
+                icon: const Icon(Icons.visibility_outlined),
+                label: const AppText('View refund', localize: true),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _paymentRefundLabel(String status) => switch (status) {
+    'pending' => 'Refund processing',
+    'succeeded' => 'Refund completed',
+    'failed' => 'Refund failed · contact support',
+    'not_eligible' => 'Not eligible for refund',
+    'manual_cash_return' => 'Manual cash return required',
+    'not_requested' => 'No refund requested',
+    _ => status,
+  };
+
+  Widget _customerManagementBookingCard(
+    Map<String, dynamic> booking, {
+    bool showDelete = false,
+  }) {
+    final pending = _isPendingBooking(booking);
+    return Card(
+      elevation: 0,
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              '${booking['customerName'] ?? 'Customer'}',
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+              localize: true,
+            ),
+            const SizedBox(height: 6),
+            _payoutManagementInfoRow(
+              'Booking type',
+              '${booking['businessType'] ?? 'Booking'} · '
+                  '${_bookingServiceLabel(booking)}',
+            ),
+            _payoutManagementInfoRow('Venue', booking['venueName']),
+            _payoutManagementInfoRow(
+              'Booking date and time',
+              _bookingTimeRangeLabel(booking),
+            ),
+            _payoutManagementInfoRow(
+              'Duration',
+              _bookingDurationHoursLabel(booking['durationHours']),
+            ),
+            if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty)
+              _payoutManagementInfoRow(
+                'Plan duration',
+                _fitnessPlanDuration('${booking['fitnessPlanType']}'),
+              ),
+            _payoutManagementInfoRow(
+              'Status',
+              BookingStatusParser.label(booking['status']),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: ValueKey('merchant-booking-view-${booking['id']}'),
+                  onPressed: () => _showPayoutBookingDetails(booking),
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: AppText(
+                    pending
+                        ? 'View booking · approve/decline'
+                        : 'View booking',
+                    localize: true,
+                  ),
+                ),
+                if (showDelete)
+                  OutlinedButton.icon(
+                    key: ValueKey('merchant-booking-delete-${booking['id']}'),
+                    onPressed: () => _deleteCompletedBooking(
+                      (booking['id'] as num).toInt(),
+                    ),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const AppText('Delete', localize: true),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _paymentManagementBookingCard(Map<String, dynamic> booking) {
+    final isCashOnArrival = booking['paymentMethod'] == 'cash_on_arrival';
+    final isCancelled = BookingStatusParser.isCancelled(booking['status']);
+    final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final paid = paymentStatus == 'paid';
+    final received = _bookingAmountReceived(booking);
+    final total = _bookingAmount(booking['total']);
+    final downpayment = _bookingAmount(booking['downpayment']);
+    final balance = (total - received).clamp(0, total).toDouble();
+    return Card(
+      elevation: 0,
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppText(
+              '${booking['customerName'] ?? 'Customer'}',
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+              localize: true,
+            ),
+            const SizedBox(height: 6),
+            _payoutManagementInfoRow(
+              'Payment method',
+              _payoutPaymentLabel(booking['paymentMethod']),
+            ),
+            _payoutManagementInfoRow(
+              'Price',
+              '\u{20B1} ${total.toStringAsFixed(2)}',
+            ),
+            if (isCashOnArrival && paymentStatus == 'unpaid') ...[
+              _payoutManagementInfoRow(
+                'Cash downpayment due at venue',
+                '\u{20B1} ${downpayment.toStringAsFixed(2)}',
+              ),
+              _payoutManagementInfoRow(
+                'Remaining cash balance after downpayment',
+                '\u{20B1} ${(total - downpayment).clamp(0, total).toStringAsFixed(2)}',
+              ),
+            ] else
+              _payoutManagementInfoRow(
+                paymentStatus == 'partial' ? 'Cash downpayment received' : 'Balance',
+                paymentStatus == 'partial'
+                    ? '\u{20B1} ${received.toStringAsFixed(2)}'
+                    : '\u{20B1} ${balance.toStringAsFixed(2)}',
+              ),
+            if (paymentStatus == 'partial')
+              _payoutManagementInfoRow(
+                'Cash balance due',
+                '\u{20B1} ${(total - downpayment).clamp(0, total).toStringAsFixed(2)}',
+              ),
+            _payoutManagementInfoRow(
+              'Payment status',
+              paid
+                  ? 'Fully paid'
+                  : paymentStatus == 'partial'
+                  ? 'Downpayment received · balance due'
+                  : 'Unpaid',
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                key: ValueKey('merchant-payment-view-${booking['id']}'),
+                onPressed: () =>
+                    _showPayoutBookingDetails(booking, paymentOnly: true),
+                icon: const Icon(Icons.visibility_outlined),
+                label: const AppText('View payment', localize: true),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: isCashOnArrival &&
+                      (paymentStatus == 'unpaid' ||
+                          paymentStatus == 'partial') &&
+                      !isCancelled
+                  ? OutlinedButton.icon(
+                      key: ValueKey('merchant-payment-toggle-${booking['id']}'),
+                      onPressed: () => _setCashOnArrivalPaymentStatus(
+                        booking,
+                        paymentStatus == 'unpaid' ? 'partial' : 'paid',
+                      ),
+                      icon: const Icon(Icons.check_circle_outline_rounded),
+                      label: AppText(
+                        paymentStatus == 'unpaid'
+                            ? 'Mark cash downpayment received'
+                            : 'Mark remaining balance paid',
+                        localize: true,
+                      ),
+                    )
+                  : AppText(
+                      isCancelled
+                          ? 'Cancelled booking'
+                          : isCashOnArrival && paymentStatus == 'unpaid'
+                          ? 'Waiting for cash downpayment'
+                          : 'Online payment status is provider-managed',
+                      localize: true,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _payoutManagementInfoRow(String label, dynamic value) {
+    final text = '${value ?? ''}'.trim();
+    if (text.isEmpty || text == 'null') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: AppText(
+              label,
+              style: TextStyle(color: _merchantMuted, fontSize: 12),
+              localize: true,
+            ),
+          ),
+          Expanded(
+            child: AppText(
+              text,
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              localize: true,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -747,12 +1331,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       if (!matchesType || _payoutSearchQuery.isEmpty) return matchesType;
       final searchable = [
         booking['customerName'],
+        booking['customerId'],
         booking['customerEmail'],
         booking['venueName'],
         booking['businessName'],
         booking['businessType'],
         booking['date'],
         booking['status'],
+        booking['paymentMethod'],
+        booking['paymentStatus'],
         booking['id'],
       ].whereType<Object>().join(' ').toLowerCase();
       return searchable.contains(_payoutSearchQuery);
@@ -896,89 +1483,364 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.done;
 
-  Widget _payoutBookingCard(Map<String, dynamic> booking) {
+  Future<void> _showPayoutBookingDetails(
+    Map<String, dynamic> booking,
+    {bool paymentOnly = false}
+  ) async {
     final total = _bookingAmount(booking['total']);
+    final received = _bookingAmountReceived(booking);
     final downpayment = _bookingAmount(booking['downpayment']);
-    final balance = total - downpayment;
-    final finished = _isFinishedBooking(booking);
-    final coachName = '${booking['fitnessCoachName'] ?? ''}';
-    final coachDurationMonths = int.tryParse(
-      '${booking['fitnessCoachDurationMonths'] ?? ''}',
-    );
-    return Card(
-      elevation: 0,
-      color: AppColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: AppText(
-                    '${booking['venueName'] ?? 'Venue'} · '
-                    '${booking['customerName'] ?? 'Customer'}',
-                    style: TextStyle(
-                      color: _merchantInk,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    localize: true,
-                  ),
-                ),
-                Chip(
-                  label: AppText(
-                    finished ? 'Finished' : 'Active',
-                    localize: true,
-                  ),
-                  backgroundColor: finished
-                      ? const Color(0xFFE4F5E9)
-                      : AppColors.softOrange,
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            AppText(
-              '${_bookingServiceLabel(booking)} · '
-              '${booking['date']} ${booking['startTime']} · '
-              '${_bookingVisitLabel(booking)}',
-              style: TextStyle(color: Colors.grey.shade700),
-              localize: true,
-            ),
-            const SizedBox(height: 6),
-            AppText('Total: PHP ${total.toStringAsFixed(2)}', localize: true),
-            if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty)
+    final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
+    final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
+    final isCashOnArrival = booking['paymentMethod'] == 'cash_on_arrival';
+    final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final balance = (total - received).clamp(0, total).toDouble();
+    final playersLabel = isEvent ? 'Guests' : 'Players';
+    final status = '${booking['status'] ?? 'pending'}';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: .88,
+          child: ListView(
+            key: const ValueKey('merchant-payout-booking-details-list'),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            children: [
               AppText(
-                coachName.isEmpty
-                    ? 'Plan: PHP ${_bookingAmount(booking['fitnessPlanPrice']).toStringAsFixed(2)}'
-                    : 'Plan: PHP ${_bookingAmount(booking['fitnessPlanPrice']).toStringAsFixed(2)} · '
-                          'Coach $coachName'
-                          '${coachDurationMonths == null ? '' : ' · ${coachDurationMonths == 1 ? '1 month' : '$coachDurationMonths months'}'}'
-                          ': PHP ${_bookingAmount(booking['fitnessCoachPrice']).toStringAsFixed(2)}',
+                paymentOnly ? 'Payment details' : 'Booking details',
+                style: TextStyle(
+                  color: _merchantInk,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
                 localize: true,
               ),
-            if (_bookingAmount(booking['extraPlayerCharge']) > 0)
+              const SizedBox(height: 4),
               AppText(
-                'Extra-player fee: PHP '
-                '${_bookingAmount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
+                'Booking #${booking['id']} · $status',
+                style: TextStyle(color: _merchantMuted),
                 localize: true,
               ),
-            AppText(
-              'Downpayment received: PHP ${downpayment.toStringAsFixed(2)}',
-              localize: true,
-            ),
-            AppText(
-              'Remaining balance: PHP ${balance.toStringAsFixed(2)}',
-              localize: true,
-            ),
-          ],
+              if (!paymentOnly) _payoutDetailsSection('Customer information', [
+                _payoutDetailRow('Customer', booking['customerName']),
+                _payoutDetailRow('Email', booking['customerEmail']),
+                _payoutDetailRow('Customer ID', booking['customerId']),
+              ]),
+              if (!paymentOnly) _payoutDetailsSection('Venue information', [
+                _payoutDetailRow('Venue', booking['venueName']),
+                _payoutDetailRow('Business type', booking['businessType']),
+                _payoutDetailRow('Address', booking['address']),
+                _payoutDetailRow('Facility', booking['facilityType']),
+                _payoutDetailRow('Venue details', booking['details']),
+              ]),
+              if (!paymentOnly) _payoutDetailsSection('Booking information', [
+                _payoutDetailRow('Reference', 'BK-${booking['id']}'),
+                _payoutDetailRow('Date', booking['date']),
+                _payoutDetailRow(
+                  'Start time',
+                  _formatPayoutTime(booking['startTime']),
+                ),
+                _payoutDetailRow(
+                  fitnessPlanType.isNotEmpty
+                      ? 'First visit session'
+                      : 'Duration',
+                  '${booking['durationHours'] ?? '—'} hour(s)',
+                ),
+                _payoutDetailRow(playersLabel, booking['players']),
+                _payoutDetailRow(
+                  'Booking type',
+                  _bookingServiceLabel(booking),
+                ),
+                if (fitnessPlanType.isEmpty && !isEvent)
+                  _payoutDetailRow(
+                    'Booked area',
+                    booking['occupiesFullStudio'] == true ||
+                            booking['occupiesFullStudio'] == 1
+                        ? 'Whole studio'
+                        : 'Slot ${booking['slotNumber'] ?? '—'}',
+                  ),
+                if (booking['eventType'] != null)
+                  _payoutDetailRow('Event type', booking['eventType']),
+                if (fitnessPlanType.isNotEmpty) ...[
+                  _payoutDetailRow('Fitness plan', fitnessPlanType),
+                  _payoutDetailRow(
+                    'Plan duration',
+                    _fitnessPlanDuration(fitnessPlanType),
+                  ),
+                ],
+                if (booking['fitnessCategory'] != null)
+                  _payoutDetailRow(
+                    'Fitness category',
+                    booking['fitnessCategory'],
+                  ),
+                if (booking['fitnessCoachName'] != null)
+                  _payoutDetailRow(
+                    'Coach',
+                    '${booking['fitnessCoachName']}'
+                    '${booking['fitnessCoachDurationMonths'] == null ? '' : ' · ${booking['fitnessCoachDurationMonths']} month(s)'}',
+                  ),
+              ]),
+              _payoutDetailsSection('Payment details', [
+                _payoutDetailRow(
+                  'Payment method',
+                  _payoutPaymentLabel(booking['paymentMethod']),
+                ),
+                _payoutDetailRow('Payment status', paymentStatus),
+                _payoutDetailRow(
+                  'Payment reference',
+                  booking['paymentReference'],
+                ),
+                _payoutDetailRow(
+                  'Refund status',
+                  _paymentRefundLabel(
+                    '${booking['paymentRefundStatus'] ?? 'not_requested'}',
+                  ),
+                ),
+                _payoutDetailRow(
+                  'Refund reference',
+                  booking['paymentRefundId'],
+                ),
+                _payoutDetailRow(
+                  'Rate',
+                  '\u{20B1} ${_bookingAmount(booking['pricePerHour']).toStringAsFixed(2)}',
+                ),
+                _payoutDetailRow(
+                  'Extra-player fee',
+                  '\u{20B1} ${_bookingAmount(booking['extraPlayerCharge']).toStringAsFixed(2)}',
+                ),
+                _payoutDetailRow(
+                  'Plan price',
+                  '\u{20B1} ${_bookingAmount(booking['fitnessPlanPrice']).toStringAsFixed(2)}',
+                ),
+                _payoutDetailRow(
+                  'Coach price',
+                  '\u{20B1} ${_bookingAmount(booking['fitnessCoachPrice']).toStringAsFixed(2)}',
+                ),
+                _payoutDetailRow(
+                  'Total',
+                  '\u{20B1} ${total.toStringAsFixed(2)}',
+                ),
+                if (isCashOnArrival && paymentStatus == 'unpaid')
+                  _payoutDetailRow(
+                    'Cash downpayment due at venue',
+                    '\u{20B1} ${downpayment.toStringAsFixed(2)}',
+                  )
+                else
+                  _payoutDetailRow(
+                    paymentStatus == 'partial'
+                        ? 'Cash downpayment received'
+                        : 'Amount received',
+                    '\u{20B1} ${received.toStringAsFixed(2)}',
+                  ),
+                _payoutDetailRow(
+                  isCashOnArrival && paymentStatus == 'unpaid'
+                      ? 'Remaining cash balance after downpayment'
+                      : 'Remaining balance',
+                  '\u{20B1} ${(isCashOnArrival && paymentStatus == 'unpaid' ? (total - downpayment).clamp(0, total).toDouble() : balance).toStringAsFixed(2)}',
+                ),
+              ]),
+              if (!paymentOnly && _isPendingBooking(booking))
+                Padding(
+                  padding: const EdgeInsets.only(top: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_bookingAmountReceived(booking) > 0)
+                        const AppText(
+                          'Return the received payment before declining.',
+                          localize: true,
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              key: ValueKey(
+                                'merchant-booking-decline-${booking['id']}',
+                              ),
+                              onPressed: _bookingAmountReceived(booking) > 0
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context);
+                                      _declineMerchantBooking(
+                                        (booking['id'] as num).toInt(),
+                                      );
+                                    },
+                              child: const AppText('Decline', localize: true),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              key: ValueKey(
+                                'merchant-booking-approve-${booking['id']}',
+                              ),
+                              onPressed: booking['paymentMethod'] == 'online' &&
+                                      booking['paymentStatus'] != 'paid'
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context);
+                                      _approveMerchantBooking(
+                                        (booking['id'] as num).toInt(),
+                                      );
+                                    },
+                              child: const AppText('Approve', localize: true),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _payoutDetailsSection(String title, List<Widget> rows) => Padding(
+    padding: const EdgeInsets.only(top: 18),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppText(
+          title,
+          style: TextStyle(
+            color: _merchantInk,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+          localize: true,
+        ),
+        const Divider(height: 14),
+        ...rows,
+      ],
+    ),
+  );
+
+  Widget _payoutDetailRow(String label, dynamic value) {
+    final text = '${value ?? ''}'.trim();
+    if (text.isEmpty || text == 'null') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: AppText(
+              label,
+              style: TextStyle(color: _merchantMuted, fontSize: 13),
+              localize: true,
+            ),
+          ),
+          Expanded(
+            child: AppText(
+              text,
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              localize: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPayoutTime(dynamic value) {
+    final raw = '${value ?? ''}';
+    final parts = raw.split(':');
+    if (parts.length < 2) return raw;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null || hour < 0 || hour > 23) return raw;
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    return '$displayHour:${minute.toString().padLeft(2, '0')} '
+        '${hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  String _bookingTimeRangeLabel(Map<String, dynamic> booking) {
+    final date = DateTime.tryParse('${booking['date'] ?? ''}');
+    final timeParts = '${booking['startTime'] ?? ''}'.split(':');
+    final duration = _bookingAmount(booking['durationHours']);
+    if (date == null ||
+        timeParts.length < 2 ||
+        duration <= 0 ||
+        int.tryParse(timeParts[0]) == null ||
+        int.tryParse(timeParts[1]) == null) {
+      return '${booking['date'] ?? ''} ${_formatPayoutTime(booking['startTime'])}';
+    }
+    final start = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      int.parse(timeParts[0]),
+      int.parse(timeParts[1]),
+    );
+    final end = start.add(Duration(minutes: (duration * 60).round()));
+    final startDateLabel =
+        '${start.year.toString().padLeft(4, '0')}-'
+        '${start.month.toString().padLeft(2, '0')}-'
+        '${start.day.toString().padLeft(2, '0')}';
+    final endDateLabel =
+        '${end.year.toString().padLeft(4, '0')}-'
+        '${end.month.toString().padLeft(2, '0')}-'
+        '${end.day.toString().padLeft(2, '0')}';
+    final startTimeLabel = _formatPayoutTime(
+      '${start.hour.toString().padLeft(2, '0')}:'
+      '${start.minute.toString().padLeft(2, '0')}',
+    );
+    final endTimeLabel = _formatPayoutTime(
+      '${end.hour.toString().padLeft(2, '0')}:'
+      '${end.minute.toString().padLeft(2, '0')}',
+    );
+    return startDateLabel == endDateLabel
+        ? '$startDateLabel · $startTimeLabel - $endTimeLabel'
+        : '$startDateLabel $startTimeLabel - $endDateLabel $endTimeLabel';
+  }
+
+  String _bookingDurationHoursLabel(dynamic value) {
+    final hours = _bookingAmount(value);
+    final number = hours == hours.roundToDouble()
+        ? hours.toInt().toString()
+        : '$hours';
+    return '$number ${hours == 1 ? 'hour' : 'hours'}';
+  }
+
+  String _fitnessPlanDuration(String planType) => switch (planType) {
+    'monthly' => '1 month',
+    'yearly' => '1 year',
+    'session' => '1 session',
+    _ => planType,
+  };
+
+  String _payoutPaymentLabel(dynamic value) => switch ('$value') {
+    'cash_on_arrival' => 'Cash on arrival',
+    'online' => 'Online',
+    _ => '${value ?? ''}',
+  };
+
   double _bookingAmount(dynamic value) {
     return value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+  }
+
+  double _bookingAmountReceived(Map<String, dynamic> booking) {
+    final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final paidAmount = booking['paidAmount'];
+    if (paidAmount != null) {
+      final amount = _bookingAmount(paidAmount);
+      if (amount > 0 || paymentStatus != 'paid') return amount;
+    }
+    if (paymentStatus == 'paid') return _bookingAmount(booking['total']);
+    return 0;
   }
 
   String _bookingServiceLabel(Map<String, dynamic> booking) {
@@ -1001,15 +1863,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         ? 'Whole studio'
         : 'Slot ${booking['slotNumber'] ?? '—'}';
     return '${booking['sportType'] ?? 'Sport'} · $area';
-  }
-
-  String _bookingVisitLabel(Map<String, dynamic> booking) {
-    if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty) {
-      return 'First visit';
-    }
-    return '${booking['businessType'] ?? ''}'.toLowerCase() == 'event'
-        ? '${booking['players']} guests'
-        : '${booking['players']} players';
   }
 
   Widget _merchantHome() => RefreshIndicator(
@@ -1095,58 +1948,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       business['details'],
     ].whereType<String>().join(' ').toLowerCase();
     return searchable.contains(_venueSearchQuery);
-  }
-
-  Widget _pendingBookingsCard(List<Map<String, dynamic>> pending) {
-    return Card(
-      elevation: 0,
-      color: AppColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppText(
-              'Booking requests',
-              style: TextStyle(
-                color: _merchantInk,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-              localize: true,
-            ),
-            const SizedBox(height: 6),
-            for (final booking in pending)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person_outline_rounded),
-                ),
-                title: AppText(
-                  booking['customerName'] as String? ?? 'Customer',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: AppText(
-                  '${booking['venueName'] ?? 'Venue'} · '
-                  '${_bookingServiceLabel(booking)} · '
-                  '${booking['date']} ${booking['startTime']} · '
-                  '${_bookingVisitLabel(booking)} · '
-                  'PHP ${booking['total']}',
-                  localize: true,
-                ),
-                trailing: _isPendingBooking(booking)
-                    ? FilledButton(
-                        onPressed: () => _approveMerchantBooking(
-                          (booking['id'] as num).toInt(),
-                        ),
-                        child: const AppText('Approve', localize: true),
-                      )
-                    : const Chip(label: AppText('Active', localize: true)),
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _businessGrid(List<Map<String, dynamic>> businesses, bool wide) {
@@ -1793,6 +2594,99 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       _showMessage('Booking approved. The customer will be notified.');
     } on Exception catch (error) {
       _showMessage('Could not approve booking: $error');
+    }
+  }
+
+  Future<void> _declineMerchantBooking(int bookingId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const AppText('Decline booking?', localize: true),
+        content: const AppText(
+          'This will cancel the customer booking request.',
+          localize: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const AppText('Keep booking', localize: true),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const AppText('Decline booking', localize: true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) return;
+      await _api.declineBooking(token: token, bookingId: bookingId);
+      await _loadBookings();
+      _showMessage('Booking declined.');
+    } on Exception catch (error) {
+      _showMessage('Could not decline booking: $error');
+    }
+  }
+
+  Future<void> _deleteCompletedBooking(int bookingId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const AppText('Delete completed booking?', localize: true),
+        content: const AppText(
+          'This permanently deletes the booking and its attendance and review '
+          'records. This action cannot be undone.',
+          localize: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const AppText('Keep booking', localize: true),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const AppText('Delete permanently', localize: true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        _showMessage('Please sign in again to delete this booking.');
+        return;
+      }
+      await _api.deleteCompletedBooking(token: token, bookingId: bookingId);
+      await _loadBookings();
+      if (mounted) _showMessage('Completed booking permanently deleted.');
+    } on Exception catch (error) {
+      if (mounted) _showMessage('Could not delete completed booking: $error');
+    }
+  }
+
+  Future<void> _setCashOnArrivalPaymentStatus(
+    Map<String, dynamic> booking,
+    String paymentStatus,
+  ) async {
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) return;
+      await _api.setCashOnArrivalPaymentStatus(
+        token: token,
+        bookingId: (booking['id'] as num).toInt(),
+        paymentStatus: paymentStatus,
+      );
+      await _loadBookings();
+      _showMessage(
+        paymentStatus == 'partial'
+            ? 'Cash downpayment recorded.'
+            : 'Remaining balance marked as paid.',
+      );
+    } on Exception catch (error) {
+      _showMessage('Could not update payment status: $error');
     }
   }
 

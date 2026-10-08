@@ -310,6 +310,84 @@ function paymongoIsConfigured() {
   ].every(isConfiguredPaymentValue);
 }
 
+function bookingStartsAtLeastSixHoursAway(booking, now = new Date()) {
+  const date = dateOnly(booking.bookingDate);
+  const time = String(booking.startTime ?? '').slice(0, 8);
+  if (!validCalendarDate(date) || !/^\d{2}:\d{2}:\d{2}$/.test(time)) {
+    return false;
+  }
+  const startTimestamp = Date.parse(`${date}T${time}+08:00`);
+  return Number.isFinite(startTimestamp) &&
+    startTimestamp - now.getTime() >= 6 * 60 * 60 * 1000;
+}
+
+async function requestPaymongoBookingRefund(booking) {
+  const bookingId = Number(booking.id);
+  const paymentReference = String(booking.paymentReference ?? '');
+  const amount = Number(booking.paidAmount);
+  try {
+    if (!isConfiguredPaymentValue(process.env.PAYMONGO_SECRET_KEY)) {
+      throw new Error('PayMongo refunds are not configured.');
+    }
+    if (!/^pay_[A-Za-z0-9_-]+$/.test(paymentReference)) {
+      throw new Error('The booking has no refundable PayMongo payment reference.');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('The booking has no paid amount to refund.');
+    }
+    const response = await fetch('https://api.paymongo.com/v1/refunds', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${process.env.PAYMONGO_SECRET_KEY}:`).toString('base64')}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Idempotency-Key': `booking-cancellation-refund-${bookingId}`,
+      },
+      body: JSON.stringify({
+        data: {
+          attributes: {
+            amount: Math.round(amount * 100),
+            payment_id: paymentReference,
+            reason: 'others',
+            notes: `Customer cancelled booking ${bookingId}.`,
+          },
+        },
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        payload?.errors?.[0]?.detail || 'PayMongo could not process the refund.',
+      );
+    }
+    const refundId = payload?.data?.id;
+    if (typeof refundId !== 'string' || refundId.trim().length === 0) {
+      throw new Error('PayMongo returned no refund reference.');
+    }
+    const refundStatus =
+      payload?.data?.attributes?.status === 'succeeded' ? 'succeeded' : 'pending';
+    await pool.execute(
+      `UPDATE bookings
+       SET payment_refund_status = ?, payment_refund_id = ?
+       WHERE id = ? AND payment_refund_status = 'pending'`,
+      [refundStatus, refundId, bookingId],
+    );
+    return refundStatus;
+  } catch (error) {
+    console.error('Booking payment refund failed.', {
+      bookingId,
+      error,
+    });
+    await pool.execute(
+      `UPDATE bookings
+       SET payment_refund_status = 'failed'
+       WHERE id = ? AND payment_refund_status = 'pending'`,
+      [bookingId],
+    );
+    return 'failed';
+  }
+}
+
 async function recordUserActivity(
   executor,
   userId,
@@ -787,16 +865,80 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
     ) {
       return res.status(404).json({ error: 'Conversation not found.' });
     }
+    const [readScopeRows] = await pool.execute(
+      `SELECT c.type, cm.archived_at AS archivedAt,
+              (SELECT peer.user_id FROM conversation_members peer
+               WHERE peer.conversation_id = c.id
+                 AND peer.user_id <> cm.user_id
+                 AND peer.deleted_at IS NULL
+               LIMIT 1) AS peerId
+       FROM conversations c
+       JOIN conversation_members cm ON cm.conversation_id = c.id
+       WHERE c.id = ? AND cm.user_id = ? AND cm.deleted_at IS NULL`,
+      [conversationId, req.auth.sub],
+    );
+    const readScope = readScopeRows[0];
+    let readConversationIds = [conversationId];
+    const peerId = positiveIntegerId(readScope?.peerId);
+    if (readScope?.type === 'direct' && peerId !== null) {
+      const businessTypeFilter = businessType
+        ? `AND EXISTS (
+             SELECT 1 FROM bookings b
+             JOIN merchant_businesses v ON v.id = b.venue_id
+             WHERE c.title = CONCAT('Booking ', b.id)
+               AND LOWER(v.business_type) = ?
+           )`
+        : '';
+      const duplicateParams = [
+        req.auth.sub,
+        peerId,
+        readScope.archivedAt,
+        req.auth.sub,
+        peerId,
+      ];
+      if (businessType) duplicateParams.push(businessType);
+      const [duplicateConversations] = await pool.execute(
+        `SELECT c.id
+         FROM conversations c
+         JOIN conversation_members viewer
+           ON viewer.conversation_id = c.id
+          AND viewer.user_id = ? AND viewer.deleted_at IS NULL
+         JOIN conversation_members peer
+           ON peer.conversation_id = c.id
+          AND peer.user_id = ? AND peer.deleted_at IS NULL
+         WHERE c.type = 'direct'
+           AND viewer.archived_at <=> ?
+           AND NOT EXISTS (
+             SELECT 1 FROM conversation_members extra
+             WHERE extra.conversation_id = c.id
+               AND extra.deleted_at IS NULL
+               AND extra.user_id NOT IN (?, ?)
+           )
+           ${businessTypeFilter}`,
+        duplicateParams,
+      );
+      readConversationIds = [
+        ...new Set([
+          conversationId,
+          ...duplicateConversations.map((row) => Number(row.id)),
+        ]),
+      ];
+    }
+    const readConversationPlaceholders = readConversationIds
+      .map(() => '?')
+      .join(', ');
     await pool.execute(
       `UPDATE conversation_members SET manually_unread_at = NULL
-       WHERE conversation_id = ? AND user_id = ?`,
-      [conversationId, req.auth.sub],
+       WHERE conversation_id IN (${readConversationPlaceholders})
+         AND user_id = ?`,
+      [...readConversationIds, req.auth.sub],
     );
     await pool.execute(
       `INSERT IGNORE INTO message_reads (message_id, user_id)
        SELECT id, ? FROM messages
-       WHERE conversation_id = ? AND sender_id <> ?`,
-      [req.auth.sub, conversationId, req.auth.sub],
+       WHERE conversation_id IN (${readConversationPlaceholders})
+         AND sender_id <> ?`,
+      [req.auth.sub, ...readConversationIds, req.auth.sub],
     );
     const [rows] = await pool.execute(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.created_at AS createdAt,
@@ -1969,22 +2111,27 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
   const bookingId = Number(req.body.bookingId);
   const paymentMethod = typeof req.body.paymentMethod === 'string'
     ? req.body.paymentMethod.trim() : '';
+  const paymentType = typeof req.body.paymentType === 'string'
+    ? req.body.paymentType.trim() : 'full';
   if (!isNumericInput(req.body.bookingId) ||
       !Number.isSafeInteger(bookingId) || bookingId <= 0 ||
-      !['gcash', 'paymaya'].includes(paymentMethod)) {
+      !['gcash', 'paymaya'].includes(paymentMethod) ||
+      paymentType !== 'full') {
     return res.status(400).json({
-      error: 'Choose GCash or PayMaya before starting online payment.',
+      error: 'Choose a valid GCash or PayMaya payment before starting checkout.',
     });
   }
   if (!paymongoIsConfigured()) {
     return res.status(503).json({
-      error: 'Online payment is not fully configured. Ask the app administrator to configure PayMongo checkout and its payment webhook, or choose Cash on Arrival.',
+      error: 'Online payment is not fully configured. Ask the app administrator to configure PayMongo checkout and its payment webhook.',
     });
   }
   try {
     const [rows] = await pool.execute(
-      `SELECT id, total_amount AS totalAmount, payment_method AS paymentMethod,
-              payment_status AS paymentStatus, status
+      `SELECT id, total_amount AS totalAmount,
+              downpayment_amount AS downpaymentAmount,
+              payment_method AS paymentMethod,
+              payment_status AS paymentStatus, paid_amount AS paidAmount, status
          FROM bookings
         WHERE id = ? AND customer_id = ?
         LIMIT 1`,
@@ -1992,14 +2139,18 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
     );
     const booking = rows[0];
     if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-    if (booking.paymentMethod !== 'online' || booking.status !== 'pending') {
+    if (
+      booking.status !== 'pending' ||
+      booking.paymentMethod !== 'online'
+    ) {
       return res.status(409).json({
-        error: 'Only pending online bookings can start checkout.',
+        error: 'Payment type does not match the pending booking.',
       });
     }
     if (booking.paymentStatus === 'paid') {
-      return res.status(409).json({ error: 'This booking has already been paid.' });
+      return res.status(409).json({ error: 'This booking amount has already been paid.' });
     }
+    const checkoutAmount = Number(booking.totalAmount);
     const response = await fetch('https://api.paymongo.com/v1/checkout_sessions', {
       method: 'POST',
       headers: {
@@ -2012,7 +2163,7 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
           attributes: {
             line_items: [{
               currency: 'PHP',
-              amount: Math.round(Number(booking.totalAmount) * 100),
+              amount: Math.round(checkoutAmount * 100),
               name: `TinkerPro booking #${booking.id}`,
               quantity: 1,
             }],
@@ -2024,6 +2175,7 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
             metadata: {
               booking_id: String(booking.id),
               transaction_id: bookingTransactionId(booking.id),
+              payment_type: 'full',
             },
           },
         },
@@ -2047,8 +2199,9 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
     }
     await pool.execute(
       `UPDATE bookings
-       SET payment_checkout_session_id = ?, payment_status = 'unpaid'
-       WHERE id = ? AND customer_id = ? AND payment_status <> 'paid'`,
+       SET payment_checkout_session_id = ?
+       WHERE id = ? AND customer_id = ? AND status = 'pending'
+         AND payment_status <> 'paid'`,
       [checkoutSessionId, booking.id, req.auth.sub],
     );
     return res.json({ checkoutUrl });
@@ -2113,7 +2266,11 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.fitness_coach_price AS fitnessCoachPrice,
               b.occupies_full_studio AS occupiesFullStudio,
               b.total_amount AS totalAmount, b.payment_method AS paymentMethod,
-              b.payment_status AS paymentStatus, b.status,
+              b.downpayment_amount AS downpaymentAmount,
+              b.paid_amount AS paidAmount,
+              b.payment_status AS paymentStatus,
+              b.payment_refund_status AS paymentRefundStatus,
+              b.payment_refund_id AS paymentRefundId, b.status,
               v.business_type AS businessType,
               v.name AS venueName,
               COALESCE(b.sport_type, v.category) AS sportType,
@@ -2145,31 +2302,42 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       await connection.rollback();
       return res.status(400).json({ error: 'Checkout does not match its booking.' });
     }
+    const expectedPaymentAmount = Number(booking.totalAmount);
     if (
       booking.paymentMethod !== 'online' ||
-      booking.status !== 'pending' ||
-      Number(paidPayment.attributes.amount) !==
-        Math.round(Number(booking.totalAmount) * 100)
+      !['pending', 'cancelled'].includes(booking.status) ||
+      attributes?.metadata?.payment_type !== 'full' ||
+      Number(paidPayment.attributes.amount) !== Math.round(expectedPaymentAmount * 100)
     ) {
       await connection.rollback();
-      return res.status(409).json({ error: 'Paid checkout does not match the pending booking.' });
+      return res.status(409).json({ error: 'Paid checkout does not match the booking.' });
     }
     if (booking.paymentStatus === 'paid') {
       await connection.commit();
+      const paymentRefundStatus =
+        booking.status === 'cancelled' &&
+        booking.paymentRefundStatus === 'pending' &&
+        !booking.paymentRefundId
+          ? await requestPaymongoBookingRefund(booking)
+          : booking.paymentRefundStatus;
       return res.json({
         received: true,
         duplicate: true,
         bookingId: booking.id,
         transactionId,
+        paymentRefundStatus,
       });
     }
 
+    const nextPaymentStatus = 'paid';
+    const bookingWasCancelled = booking.status === 'cancelled';
     const paymentReference = paidPayment.id ?? attributes?.payment_intent?.id ?? checkoutSessionId;
     await connection.execute(
       `UPDATE bookings
-       SET payment_status = 'paid', payment_reference = ?, paid_at = CURRENT_TIMESTAMP
+       SET payment_status = ?, paid_amount = ?, payment_reference = ?,
+           paid_at = CURRENT_TIMESTAMP
        WHERE id = ? AND payment_status <> 'paid'`,
-      [paymentReference, booking.id],
+      [nextPaymentStatus, expectedPaymentAmount, paymentReference, booking.id],
     );
     const [conversations] = await connection.execute(
       'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
@@ -2199,7 +2367,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       businessType: booking.businessType,
       eventType: booking.eventType,
       status: 'payment_received',
-      approvalStatus: 'pending',
+      approvalStatus: bookingWasCancelled ? 'cancelled' : 'pending',
       venueName: booking.venueName,
       sportType: booking.sportType,
       fitnessPlanType: booking.fitnessPlanType,
@@ -2214,7 +2382,12 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       startTime: booking.startTime,
       durationHours: booking.durationHours,
       players: booking.players,
-      amount: booking.totalAmount,
+      amount: expectedPaymentAmount,
+      totalAmount: Number(booking.totalAmount),
+      downpaymentAmount: Number(booking.downpaymentAmount),
+      paidAmount: expectedPaymentAmount,
+      paymentStatus: nextPaymentStatus,
+      remainingBalance: Math.max(0, Number(booking.totalAmount) - expectedPaymentAmount),
       paymentReference,
       checkoutSessionId,
     };
@@ -2224,7 +2397,9 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       [
         conversationId,
         booking.merchantId,
-        `Payment received for booking #${booking.id}. The venue is reviewing your booking.`,
+        bookingWasCancelled
+          ? `Payment received for cancelled booking #${booking.id}. The applicable cancellation refund is being processed separately.`
+          : `Payment received for booking #${booking.id}. The venue is reviewing your booking.`,
         JSON.stringify(ticketDetails),
       ],
     );
@@ -2233,7 +2408,9 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       booking.customerId,
       'booking_paid',
       'Payment received',
-      `Payment received for booking #${booking.id} at ${booking.venueName}.`,
+      bookingWasCancelled
+        ? `Payment received for cancelled booking #${booking.id} at ${booking.venueName}. The applicable cancellation refund is being processed separately.`
+        : `Payment received for booking #${booking.id} at ${booking.venueName}.`,
       {
         venueId: booking.venueId,
         venueName: booking.venueName,
@@ -2251,7 +2428,22 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       },
     );
     await connection.commit();
-    return res.json({ received: true, bookingId: booking.id, transactionId });
+    const paymentRefundStatus =
+      bookingWasCancelled &&
+      booking.paymentRefundStatus === 'pending' &&
+      !booking.paymentRefundId
+        ? await requestPaymongoBookingRefund({
+            ...booking,
+            paymentReference,
+            paidAmount: expectedPaymentAmount,
+          })
+        : booking.paymentRefundStatus;
+    return res.json({
+      received: true,
+      bookingId: booking.id,
+      transactionId,
+      paymentRefundStatus,
+    });
   } catch (error) {
     if (connection) await connection.rollback();
     return next(error);
@@ -2580,7 +2772,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       ).toFixed(2),
     );
     const downpayment = Number(
-      (isFitness ? total : total * 0.50).toFixed(2),
+      (paymentMethod === 'cash_on_arrival' ? total * 0.50 : total).toFixed(2),
     );
     const bookingToken = createBookingToken();
     const [result] = await connection.execute(
@@ -2605,7 +2797,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
        isFitness ? fitnessCoachPrice : null,
        isFitness && fitnessCoach ? fitnessCoachDurationMonths : null,
        hashBookingToken(bookingToken),
-       paymentMethod === 'online' ? 'unpaid' : 'not_required',
+       'unpaid',
        idempotencyKey, idempotencyRequestHash],
     );
     const [conversation] = await connection.execute(
@@ -2820,6 +3012,9 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.extra_player_charge AS extraPlayerCharge,
               b.downpayment_amount AS downpayment,
               b.payment_status AS paymentStatus,
+              b.paid_amount AS paidAmount,
+              b.payment_refund_status AS paymentRefundStatus,
+              b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
               b.status, b.created_at AS createdAt,
               r.id AS reviewId, r.rating AS reviewRating
@@ -2865,6 +3060,94 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
       }
     }
     return res.json({ bookings });
+  } catch (error) { return next(error); }
+});
+
+app.patch('/api/bookings/:bookingId/cancel', requireAuth, requireRole('customer'), async (req, res, next) => {
+  let connection;
+  try {
+    const bookingId = positiveIntegerId(req.params.bookingId);
+    if (bookingId === null) {
+      return res.status(400).json({ error: 'Invalid booking ID.' });
+    }
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [bookings] = await connection.execute(
+      `SELECT id, booking_date AS bookingDate, start_time AS startTime,
+              payment_method AS paymentMethod, payment_status AS paymentStatus,
+              paid_amount AS paidAmount, payment_reference AS paymentReference,
+              payment_checkout_session_id AS checkoutSessionId
+       FROM bookings
+       WHERE id = ? AND customer_id = ? AND status IN ('pending', 'approved')
+       LIMIT 1 FOR UPDATE`,
+      [bookingId, req.auth.sub],
+    );
+    const booking = bookings[0];
+    if (!booking) {
+      await connection.rollback();
+      return res.status(404).json({
+        error: 'Booking not found or can no longer be cancelled.',
+      });
+    }
+    const refundEligible = bookingStartsAtLeastSixHoursAway(booking);
+    const isOnline = booking.paymentMethod === 'online';
+    const hasPayment = Number(booking.paidAmount) > 0;
+    let paymentRefundStatus = 'not_requested';
+    if (isOnline && refundEligible && (hasPayment || booking.checkoutSessionId)) {
+      paymentRefundStatus = 'pending';
+    } else if (isOnline && hasPayment) {
+      paymentRefundStatus = 'not_eligible';
+    } else if (!isOnline && hasPayment) {
+      paymentRefundStatus = 'manual_cash_return';
+    }
+    const [result] = await connection.execute(
+      `UPDATE bookings
+       SET status = 'cancelled', payment_refund_status = ?
+       WHERE id = ? AND customer_id = ? AND status IN ('pending', 'approved')`,
+      [paymentRefundStatus, bookingId, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(404).json({
+        error: 'Booking not found or can no longer be cancelled.',
+      });
+    }
+    await connection.commit();
+
+    if (paymentRefundStatus === 'pending' && hasPayment) {
+      paymentRefundStatus = await requestPaymongoBookingRefund(booking);
+    }
+    const message = paymentRefundStatus === 'succeeded'
+      ? 'Booking cancelled. The online payment refund was completed.'
+      : paymentRefundStatus === 'pending'
+      ? 'Booking cancelled. The online payment refund is being processed.'
+      : paymentRefundStatus === 'failed'
+      ? 'Booking cancelled, but the online payment refund could not be confirmed. Please contact support.'
+      : paymentRefundStatus === 'not_eligible'
+      ? 'Booking cancelled. It is within 6 hours of the start time or has started, so the online payment was not refunded.'
+      : paymentRefundStatus === 'manual_cash_return'
+      ? 'Booking cancelled. Cash already collected must be returned manually; it cannot be voided by the app.'
+      : 'Booking cancelled.';
+    return res.json({ message, status: 'cancelled', paymentRefundStatus });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
+});
+
+app.delete('/api/bookings/:bookingId', requireAuth, requireRole('customer'), async (req, res, next) => {
+  try {
+    const [result] = await pool.execute(
+      `DELETE FROM bookings
+       WHERE id = ? AND customer_id = ? AND status = 'finished'`,
+      [req.params.bookingId, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Completed booking not found.' });
+    }
+    return res.json({ message: 'Completed booking permanently deleted.' });
   } catch (error) { return next(error); }
 });
 
@@ -3004,6 +3287,7 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
       `SELECT b.id, b.customer_id AS customerId,
               CONCAT_WS(' ', u.first_name, u.last_name) AS customerName, u.email AS customerEmail,
               b.venue_id AS venueId, v.name AS venueName,
+              v.address, v.facility_type AS facilityType, v.details,
               v.business_type AS businessType, b.booking_date AS date,
               b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
@@ -3018,6 +3302,11 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.payment_method AS paymentMethod, b.price_per_hour AS pricePerHour,
               b.extra_player_charge AS extraPlayerCharge,
               b.total_amount AS total, b.downpayment_amount AS downpayment,
+              b.payment_status AS paymentStatus,
+              b.paid_amount AS paidAmount,
+              b.payment_refund_status AS paymentRefundStatus,
+              b.payment_refund_id AS paymentRefundId,
+              b.payment_reference AS paymentReference,
               b.status, b.created_at AS createdAt
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        JOIN users u ON u.id = b.customer_id
@@ -3025,6 +3314,85 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
       [req.auth.sub],
     );
     return res.json({ bookings });
+  } catch (error) { return next(error); }
+});
+
+app.patch('/api/merchant/bookings/:id/decline', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const [result] = await pool.execute(
+      `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+       SET b.status = 'cancelled'
+       WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+         AND b.paid_amount = 0`,
+      [req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      const [paidOnline] = await pool.execute(
+        `SELECT b.id FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+           AND b.paid_amount > 0
+         LIMIT 1`,
+        [req.params.id, req.auth.sub],
+      );
+      if (paidOnline.length > 0) {
+        return res.status(409).json({
+          error: 'Return the received payment before declining this booking.',
+        });
+      }
+      return res.status(404).json({ error: 'Pending booking not found.' });
+    }
+    return res.json({ message: 'Booking declined.', status: 'cancelled' });
+  } catch (error) { return next(error); }
+});
+
+app.delete('/api/merchant/bookings/:id', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const [result] = await pool.execute(
+      `DELETE b FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
+       WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'finished'`,
+      [req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Completed booking not found.' });
+    }
+    return res.json({ message: 'Completed booking permanently deleted.' });
+  } catch (error) { return next(error); }
+});
+
+app.patch('/api/merchant/bookings/:id/payment', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  try {
+    const paymentStatus = req.body?.paymentStatus;
+    if (!['partial', 'paid'].includes(paymentStatus)) {
+      return res.status(400).json({
+        error: 'Record the cash downpayment first, then the remaining balance.',
+      });
+    }
+    const [result] = await pool.execute(
+      paymentStatus === 'partial'
+        ? `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+           SET b.payment_status = 'partial',
+               b.paid_amount = b.downpayment_amount,
+               b.paid_at = CURRENT_TIMESTAMP
+           WHERE b.id = ? AND v.merchant_id = ?
+             AND b.payment_method = 'cash_on_arrival'
+             AND b.status <> 'cancelled' AND b.payment_status = 'unpaid'
+             AND b.downpayment_amount > 0`
+        : `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+           SET b.payment_status = 'paid', b.paid_amount = b.total_amount,
+               b.paid_at = CURRENT_TIMESTAMP
+           WHERE b.id = ? AND v.merchant_id = ?
+             AND b.payment_method = 'cash_on_arrival'
+             AND b.status <> 'cancelled' AND b.payment_status = 'partial'`,
+      [req.params.id, req.auth.sub],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        error: 'Cash-on-arrival booking not found.',
+      });
+    }
+    return res.json({ message: 'Payment status updated.', paymentStatus });
   } catch (error) { return next(error); }
 });
 
@@ -3038,7 +3406,10 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        SET b.status = 'approved', b.ticket_token_hash = ?
        WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
-         AND (b.payment_method <> 'online' OR b.payment_status = 'paid')`,
+         AND (
+           (b.payment_method = 'online' AND b.payment_status = 'paid')
+           OR b.payment_method = 'cash_on_arrival'
+         )`,
       [hashBookingToken(ticketCode), req.params.id, req.auth.sub],
     );
     if (!result.affectedRows) {
@@ -3053,7 +3424,7 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       await connection.rollback();
       if (unpaid.length > 0) {
         return res.status(409).json({
-          error: 'Payment must be verified before approving this booking.',
+          error: 'The required online payment must be verified before approving this booking.',
         });
       }
       return res.status(404).json({ error: 'Pending booking not found.' });

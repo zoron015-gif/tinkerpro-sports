@@ -59,6 +59,145 @@ void main() {
     );
   });
 
+  testWidgets('customer can permanently delete a completed booking', (
+    tester,
+  ) async {
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 24,
+        'venueName': 'Completed Court',
+        'status': 'finished',
+        'date': '2026-10-01',
+        'startTime': '10:00:00',
+        'durationHours': 1,
+      },
+    ];
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings' && request.method == 'GET') {
+          return http.Response(jsonEncode({'bookings': bookings}), 200);
+        }
+        if (request.url.path == '/api/bookings/24' &&
+            request.method == 'DELETE') {
+          bookings.clear();
+          return http.Response(
+            jsonEncode({'message': 'Completed booking permanently deleted.'}),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Completed (1)'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('customer-booking-delete-24')),
+    );
+    await tester.tap(find.byKey(const ValueKey('customer-booking-delete-24')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('permanently deletes the booking'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Delete permanently'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Completed (0)'), findsOneWidget);
+    expect(find.text('Completed Court'), findsNothing);
+    expect(find.text('Completed booking permanently deleted.'), findsOneWidget);
+  });
+
+  testWidgets('customer can cancel an approved booking within six hours', (
+    tester,
+  ) async {
+    final bookingStart = DateTime.now().add(const Duration(hours: 3));
+    final bookingDate =
+        '${bookingStart.year.toString().padLeft(4, '0')}-'
+        '${bookingStart.month.toString().padLeft(2, '0')}-'
+        '${bookingStart.day.toString().padLeft(2, '0')}';
+    final bookingTime =
+        '${bookingStart.hour.toString().padLeft(2, '0')}:'
+        '${bookingStart.minute.toString().padLeft(2, '0')}:00';
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 25,
+        'venueName': 'Paid Court',
+        'status': 'approved',
+        'paymentStatus': 'paid',
+        'paymentMethod': 'online',
+        'paidAmount': 500,
+        'total': 500,
+        'date': bookingDate,
+        'startTime': bookingTime,
+        'durationHours': 1,
+      },
+    ];
+    var cancellationRequestCount = 0;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings' && request.method == 'GET') {
+          return http.Response(jsonEncode({'bookings': bookings}), 200);
+        }
+        if (request.url.path == '/api/bookings/25/cancel' &&
+            request.method == 'PATCH') {
+          cancellationRequestCount++;
+          bookings.single['status'] = 'cancelled';
+          return http.Response(
+            jsonEncode({
+              'message': 'Booking cancelled. It is within 6 hours of the start time or has started, so the online payment was not refunded.',
+              'status': 'cancelled',
+              'paymentRefundStatus': 'not_eligible',
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved (1)'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('customer-booking-cancel-25')),
+    );
+    await tester.tap(find.byKey(const ValueKey('customer-booking-cancel-25')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('starts in less than 6 hours or has already started'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel booking').last);
+    await tester.pumpAndSettle();
+
+    expect(cancellationRequestCount, 1);
+    expect(bookings.single['paymentStatus'], 'paid');
+    expect(bookings.single['paidAmount'], 500);
+    expect(bookings.single['status'], 'cancelled');
+    expect(
+      find.text(
+        'Booking cancelled. It is within 6 hours of the start time or has started, so the online payment was not refunded.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('booking tabs and card accents use the selected palette', (
     tester,
   ) async {

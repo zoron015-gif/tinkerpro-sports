@@ -66,7 +66,8 @@ void main() {
     expect(attempts, 2);
     expect(find.text('Getting your courts ready...'), findsOneWidget);
     retryAttempt.complete(await AppSession.load());
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.byType(OverviewPage), findsOneWidget);
   });
 
@@ -89,7 +90,8 @@ void main() {
         initialize: () async => session,
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(AppPreferences.instance.palette, AppPalette.violet);
     expect(AppPreferences.instance.languageCode, 'ko');

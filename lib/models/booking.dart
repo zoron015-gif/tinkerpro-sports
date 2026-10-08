@@ -93,6 +93,9 @@ class Booking {
     this.slotNumber,
     this.occupiesFullStudio = true,
     this.paymentMethod = '',
+    this.paymentStatus = '',
+    this.paymentRefundStatus = 'not_requested',
+    this.paidAmount = 0,
     this.pricePerHour = 0,
     this.total = 0,
     this.downpayment = 0,
@@ -121,6 +124,9 @@ class Booking {
   final int? slotNumber;
   final bool occupiesFullStudio;
   final String paymentMethod;
+  final String paymentStatus;
+  final String paymentRefundStatus;
+  final double paidAmount;
   final double pricePerHour;
   final double total;
   final double downpayment;
@@ -150,6 +156,12 @@ class Booking {
     occupiesFullStudio:
         json['occupiesFullStudio'] == true || json['occupiesFullStudio'] == 1,
     paymentMethod: _text(json['paymentMethod']),
+    paymentStatus: _text(json['paymentStatus']),
+    paymentRefundStatus: _text(
+      json['paymentRefundStatus'],
+      fallback: 'not_requested',
+    ),
+    paidAmount: _doubleValue(json['paidAmount']),
     pricePerHour: _doubleValue(json['pricePerHour']),
     total: _doubleValue(json['total']),
     downpayment: _doubleValue(json['downpayment']),
@@ -204,6 +216,9 @@ class Booking {
     'durationHours' => durationHours,
     'players' => players,
     'paymentMethod' => paymentMethod,
+    'paymentStatus' => paymentStatus,
+    'paymentRefundStatus' => paymentRefundStatus,
+    'paidAmount' => paidAmount,
     'pricePerHour' => pricePerHour,
     'total' => total,
     'downpayment' => downpayment,

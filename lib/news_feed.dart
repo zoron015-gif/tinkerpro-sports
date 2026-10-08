@@ -833,7 +833,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                   const SizedBox(
                                     height: filterPanelSectionSpacing,
                                   ),
-                                  _filterLabel('Price (PHP / hour)'),
+                                  _filterLabel('Price (\u{20B1} / hour)'),
                                   Slider(
                                     key: const ValueKey(
                                       'news-feed-filter-price',
@@ -1699,8 +1699,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               ? 'Browse every venue in this collection.'
               : 'Browse all ${widget.venueNoun} in this collection.',
           priceFilterLabel: widget.businessType.trim().toLowerCase() == 'event'
-              ? 'Price (PHP / event)'
-              : 'Price (PHP / hour)',
+              ? 'Price (\u{20B1} / event)'
+              : 'Price (\u{20B1} / hour)',
         ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
             SlideTransition(
@@ -2789,7 +2789,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
             .whereType<double>()
             .firstWhere((amount) => amount > 0, orElse: () => 0);
     if (price > 0) {
-      return 'PHP ${price.toStringAsFixed(0)} / ${isEvent ? 'event' : 'hr'}';
+      return '\u{20B1} ${price.toStringAsFixed(0)} / ${isEvent ? 'event' : 'hr'}';
     }
 
     final rawPeriods = post['ratePeriods'] ?? post['rate_periods'];
@@ -2808,7 +2808,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           .toList();
       if (rates.isNotEmpty) {
         rates.sort();
-        return 'From PHP ${rates.first.toStringAsFixed(0)} / hr';
+        return 'From \u{20B1} ${rates.first.toStringAsFixed(0)} / hr';
       }
     }
 
@@ -3253,7 +3253,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           }
           if (amount <= 0) continue;
           fitnessRates.add(
-            '$categoryName · $label|PHP ${amount.toStringAsFixed(2)} / $unit',
+            '$categoryName · $label|\u{20B1} ${amount.toStringAsFixed(2)} / $unit',
           );
           if (fitnessHeadlinePrice == 0) {
             fitnessHeadlinePrice = amount;
@@ -3266,7 +3266,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         final price = _number(coach['monthlyPrice']);
         if (coachName.isNotEmpty && price > 0) {
           fitnessRates.add(
-            'Coach $coachName|PHP ${price.toStringAsFixed(2)} / month',
+            'Coach $coachName|\u{20B1} ${price.toStringAsFixed(2)} / month',
           );
         }
       }
@@ -3292,14 +3292,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final priceText = priceRaw == null || '$priceRaw'.trim().isEmpty
         ? ''
         : fitness && fitnessHeadlinePrice > 0
-        ? 'PHP ${fitnessHeadlinePrice.toStringAsFixed(2)} / $fitnessHeadlineLabel'
+        ? '\u{20B1} ${fitnessHeadlinePrice.toStringAsFixed(2)} / $fitnessHeadlineLabel'
         : event
-        ? 'PHP ${_number(priceRaw).toStringAsFixed(2)} / event'
+        ? '\u{20B1} ${_number(priceRaw).toStringAsFixed(2)} / event'
         : (priceRaw is num
-              ? 'PHP ${priceRaw.toStringAsFixed(0)} / hour'
-              : priceRaw.toString().startsWith('PHP')
+              ? '\u{20B1} ${priceRaw.toStringAsFixed(0)} / hour'
+              : priceRaw.toString().startsWith('\u{20B1}')
               ? priceRaw.toString()
-              : 'PHP $priceRaw / hour');
+              : '\u{20B1} $priceRaw / hour');
     final image = _stringValue([
       post['imageUrl'],
       business['imageUrl'],
@@ -3331,7 +3331,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         final amount = item['pricePerHour'] ?? item['price_per_hour'];
         if ('$amount'.trim().isNotEmpty && '$amount' != 'null') {
           rateLabels.add(
-            '$start - $end|PHP ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr',
+            '$start - $end|\u{20B1} ${double.tryParse('$amount')?.toStringAsFixed(0) ?? amount} / hr',
           );
         }
       }
@@ -3369,9 +3369,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final included = (sport['includedPlayers'] as num).toInt();
       final extraFee = (sport['additionalPlayerFee'] as num).toDouble();
       final playerFee = included > 0 && extraFee > 0
-          ? ' · $included included · PHP ${extraFee.toStringAsFixed(2)} / extra player'
+          ? ' · $included included · \u{20B1} ${extraFee.toStringAsFixed(2)} / extra player'
           : '';
-      return '${sport['sportType']}: PHP ${rate.toStringAsFixed(2)} / hr / '
+      return '${sport['sportType']}: \u{20B1} ${rate.toStringAsFixed(2)} / hr / '
           '${sport['fullStudio'] == true ? 'whole studio' : 'per slot'}'
           '$playerFee';
     }).toList();

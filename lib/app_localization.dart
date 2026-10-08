@@ -1854,17 +1854,17 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'コート簡単チェックイン',
     'zh': '球场快捷签到',
   },
-  'Extra-player fee: PHP {amount}': {
-    'fil': 'Bayad para sa dagdag na manlalaro: PHP {amount}',
-    'ko': '추가 선수 요금: PHP {amount}',
-    'ja': '追加プレイヤー料金：PHP {amount}',
-    'zh': '额外球员费用：PHP {amount}',
+  'Extra-player fee: \u{20B1} {amount}': {
+    'fil': 'Bayad para sa dagdag na manlalaro: \u{20B1} {amount}',
+    'ko': '추가 선수 요금: \u{20B1} {amount}',
+    'ja': '追加プレイヤー料金：\u{20B1} {amount}',
+    'zh': '额外球员费用：\u{20B1} {amount}',
   },
-  'Includes extra-player fee: PHP {amount}': {
-    'fil': 'Kasama ang bayad para sa dagdag na manlalaro: PHP {amount}',
-    'ko': '추가 선수 요금 포함: PHP {amount}',
-    'ja': '追加プレイヤー料金込み：PHP {amount}',
-    'zh': '含额外球员费用：PHP {amount}',
+  'Includes extra-player fee: \u{20B1} {amount}': {
+    'fil': 'Kasama ang bayad para sa dagdag na manlalaro: \u{20B1} {amount}',
+    'ko': '추가 선수 요금 포함: \u{20B1} {amount}',
+    'ja': '追加プレイヤー料金込み：\u{20B1} {amount}',
+    'zh': '含额外球员费用：\u{20B1} {amount}',
   },
   'Could not load bookings: {error}': {
     'fil': 'Hindi ma-load ang mga booking: {error}',
@@ -1982,17 +1982,17 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'すべて表示（{count}）',
     'zh': '查看全部（{count}）',
   },
-  'Downpayment received: PHP {amount}': {
-    'fil': 'Natanggap na paunang bayad: PHP {amount}',
-    'ko': '선금 수령: PHP {amount}',
-    'ja': '前金受領額：PHP {amount}',
-    'zh': '已收定金：PHP {amount}',
+  'Downpayment received: \u{20B1} {amount}': {
+    'fil': 'Natanggap na paunang bayad: \u{20B1} {amount}',
+    'ko': '선금 수령: \u{20B1} {amount}',
+    'ja': '前金受領額：\u{20B1} {amount}',
+    'zh': '已收定金：\u{20B1} {amount}',
   },
-  'Remaining balance: PHP {amount}': {
-    'fil': 'Natitirang balanse: PHP {amount}',
-    'ko': '잔액: PHP {amount}',
-    'ja': '残額：PHP {amount}',
-    'zh': '剩余金额：PHP {amount}',
+  'Remaining balance: \u{20B1} {amount}': {
+    'fil': 'Natitirang balanse: \u{20B1} {amount}',
+    'ko': '잔액: \u{20B1} {amount}',
+    'ja': '残額：\u{20B1} {amount}',
+    'zh': '剩余金额：\u{20B1} {amount}',
   },
   'Sports, events, and local experiences': {
     'fil': 'Sports, event, at mga lokal na karanasan',
@@ -2311,65 +2311,65 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'イベント：{eventType}',
     'zh': '活动：{eventType}',
   },
-  'Plan: PHP {amount}': {
-    'fil': 'Plano: PHP {amount}',
-    'ko': '플랜: PHP {amount}',
-    'ja': 'プラン：PHP {amount}',
-    'zh': '套餐：PHP {amount}',
+  'Plan: \u{20B1} {amount}': {
+    'fil': 'Plano: \u{20B1} {amount}',
+    'ko': '플랜: \u{20B1} {amount}',
+    'ja': 'プラン：\u{20B1} {amount}',
+    'zh': '套餐：\u{20B1} {amount}',
   },
-  'Coach: {coach} · PHP {amount}': {
-    'fil': 'Coach: {coach} · PHP {amount}',
-    'ko': '코치: {coach} · PHP {amount}',
-    'ja': 'コーチ：{coach} · PHP {amount}',
-    'zh': '教练：{coach} · PHP {amount}',
+  'Coach: {coach} · \u{20B1} {amount}': {
+    'fil': 'Coach: {coach} · \u{20B1} {amount}',
+    'ko': '코치: {coach} · \u{20B1} {amount}',
+    'ja': 'コーチ：{coach} · \u{20B1} {amount}',
+    'zh': '教练：{coach} · \u{20B1} {amount}',
   },
-  'Total: PHP {amount}': {
-    'fil': 'Kabuuan: PHP {amount}',
-    'ko': '합계: PHP {amount}',
-    'ja': '合計：PHP {amount}',
-    'zh': '总计：PHP {amount}',
+  'Total: \u{20B1} {amount}': {
+    'fil': 'Kabuuan: \u{20B1} {amount}',
+    'ko': '합계: \u{20B1} {amount}',
+    'ja': '合計：\u{20B1} {amount}',
+    'zh': '总计：\u{20B1} {amount}',
   },
-  'One-time plan total: PHP {amount}': {
-    'fil': 'Kabuuan ng isang beses na plano: PHP {amount}',
-    'ko': '일회성 플랜 합계: PHP {amount}',
-    'ja': '一回限りのプラン合計：PHP {amount}',
-    'zh': '一次性套餐总额：PHP {amount}',
+  'One-time plan total: \u{20B1} {amount}': {
+    'fil': 'Kabuuan ng isang beses na plano: \u{20B1} {amount}',
+    'ko': '일회성 플랜 합계: \u{20B1} {amount}',
+    'ja': '一回限りのプラン合計：\u{20B1} {amount}',
+    'zh': '一次性套餐总额：\u{20B1} {amount}',
   },
-  'Downpayment: PHP {amount}': {
-    'fil': 'Paunang bayad: PHP {amount}',
-    'ko': '선금: PHP {amount}',
-    'ja': '前払い金：PHP {amount}',
-    'zh': '定金：PHP {amount}',
+  'Downpayment: \u{20B1} {amount}': {
+    'fil': 'Paunang bayad: \u{20B1} {amount}',
+    'ko': '선금: \u{20B1} {amount}',
+    'ja': '前払い金：\u{20B1} {amount}',
+    'zh': '定金：\u{20B1} {amount}',
   },
-  'PHP {amount} / hr': {
-    'fil': 'PHP {amount} / oras',
-    'ko': 'PHP {amount} / 시간',
-    'ja': 'PHP {amount} / 時間',
-    'zh': 'PHP {amount} / 小时',
+  '\u{20B1} {amount} / hr': {
+    'fil': '\u{20B1} {amount} / oras',
+    'ko': '\u{20B1} {amount} / 시간',
+    'ja': '\u{20B1} {amount} / 時間',
+    'zh': '\u{20B1} {amount} / 小时',
   },
-  'PHP {amount} per booking': {
-    'fil': 'PHP {amount} bawat booking',
-    'ko': '예약당 PHP {amount}',
-    'ja': '予約ごとに PHP {amount}',
-    'zh': '每次预订 PHP {amount}',
+  '\u{20B1} {amount} per booking': {
+    'fil': '\u{20B1} {amount} bawat booking',
+    'ko': '예약당 \u{20B1} {amount}',
+    'ja': '予約ごとに \u{20B1} {amount}',
+    'zh': '每次预订 \u{20B1} {amount}',
   },
-  '{start} - {end} · PHP {amount} / hr': {
-    'fil': '{start} - {end} · PHP {amount} / oras',
-    'ko': '{start} - {end} · PHP {amount} / 시간',
-    'ja': '{start} - {end} · PHP {amount} / 時間',
-    'zh': '{start} - {end} · PHP {amount} / 小时',
+  '{start} - {end} · \u{20B1} {amount} / hr': {
+    'fil': '{start} - {end} · \u{20B1} {amount} / oras',
+    'ko': '{start} - {end} · \u{20B1} {amount} / 시간',
+    'ja': '{start} - {end} · \u{20B1} {amount} / 時間',
+    'zh': '{start} - {end} · \u{20B1} {amount} / 小时',
   },
-  'From PHP {amount} / hr': {
-    'fil': 'Mula PHP {amount} / oras',
-    'ko': 'PHP {amount}부터 / 시간',
-    'ja': 'PHP {amount}から / 時間',
-    'zh': 'PHP {amount} 起 / 小时',
+  'From \u{20B1} {amount} / hr': {
+    'fil': 'Mula \u{20B1} {amount} / oras',
+    'ko': '\u{20B1} {amount}부터 / 시간',
+    'ja': '\u{20B1} {amount}から / 時間',
+    'zh': '\u{20B1} {amount} 起 / 小时',
   },
-  'PHP {amount} / event': {
-    'fil': 'PHP {amount} / event',
-    'ko': 'PHP {amount} / 이벤트',
-    'ja': 'PHP {amount} / イベント',
-    'zh': 'PHP {amount} / 活动',
+  '\u{20B1} {amount} / event': {
+    'fil': '\u{20B1} {amount} / event',
+    'ko': '\u{20B1} {amount} / 이벤트',
+    'ja': '\u{20B1} {amount} / イベント',
+    'zh': '\u{20B1} {amount} / 活动',
   },
   'Price not listed': {
     'fil': 'Hindi nakalista ang presyo',
@@ -2577,29 +2577,29 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': '{venue}の予約は{date} {time}に承認されました。',
     'zh': '{venue} 的预订已批准，时间为 {date} {time}。',
   },
-  'Plan: PHP {plan}\nCoach: {coach} · PHP {coachAmount}': {
-    'fil': 'Plano: PHP {plan}\nCoach: {coach} · PHP {coachAmount}',
-    'ko': '플랜: PHP {plan}\n코치: {coach} · PHP {coachAmount}',
-    'ja': 'プラン：PHP {plan}\nコーチ：{coach} · PHP {coachAmount}',
-    'zh': '套餐：PHP {plan}\n教练：{coach} · PHP {coachAmount}',
+  'Plan: \u{20B1} {plan}\nCoach: {coach} · \u{20B1} {coachAmount}': {
+    'fil': 'Plano: \u{20B1} {plan}\nCoach: {coach} · \u{20B1} {coachAmount}',
+    'ko': '플랜: \u{20B1} {plan}\n코치: {coach} · \u{20B1} {coachAmount}',
+    'ja': 'プラン：\u{20B1} {plan}\nコーチ：{coach} · \u{20B1} {coachAmount}',
+    'zh': '套餐：\u{20B1} {plan}\n教练：{coach} · \u{20B1} {coachAmount}',
   },
-  'Plan: PHP {plan} · Coach {coach}: PHP {coachAmount}': {
-    'fil': 'Plano: PHP {plan} · Coach {coach}: PHP {coachAmount}',
-    'ko': '플랜: PHP {plan} · 코치 {coach}: PHP {coachAmount}',
-    'ja': 'プラン：PHP {plan} · コーチ {coach}：PHP {coachAmount}',
-    'zh': '套餐：PHP {plan} · 教练 {coach}：PHP {coachAmount}',
+  'Plan: \u{20B1} {plan} · Coach {coach}: \u{20B1} {coachAmount}': {
+    'fil': 'Plano: \u{20B1} {plan} · Coach {coach}: \u{20B1} {coachAmount}',
+    'ko': '플랜: \u{20B1} {plan} · 코치 {coach}: \u{20B1} {coachAmount}',
+    'ja': 'プラン：\u{20B1} {plan} · コーチ {coach}：\u{20B1} {coachAmount}',
+    'zh': '套餐：\u{20B1} {plan} · 教练 {coach}：\u{20B1} {coachAmount}',
   },
-  'Booking total: PHP {amount}': {
-    'fil': 'Kabuuang booking: PHP {amount}',
-    'ko': '예약 총액: PHP {amount}',
-    'ja': '予約合計：PHP {amount}',
-    'zh': '预订总额：PHP {amount}',
+  'Booking total: \u{20B1} {amount}': {
+    'fil': 'Kabuuang booking: \u{20B1} {amount}',
+    'ko': '예약 총액: \u{20B1} {amount}',
+    'ja': '予約合計：\u{20B1} {amount}',
+    'zh': '预订总额：\u{20B1} {amount}',
   },
-  'Extra player fee: PHP {amount}': {
-    'fil': 'Bayad para sa dagdag na manlalaro: PHP {amount}',
-    'ko': '추가 선수 요금: PHP {amount}',
-    'ja': '追加プレイヤー料金：PHP {amount}',
-    'zh': '额外球员费用：PHP {amount}',
+  'Extra player fee: \u{20B1} {amount}': {
+    'fil': 'Bayad para sa dagdag na manlalaro: \u{20B1} {amount}',
+    'ko': '추가 선수 요금: \u{20B1} {amount}',
+    'ja': '追加プレイヤー料金：\u{20B1} {amount}',
+    'zh': '额外球员费用：\u{20B1} {amount}',
   },
   'Tennis': {'fil': 'Tennis', 'ko': '테니스', 'ja': 'テニス', 'zh': '网球'},
   'Pickleball': {
