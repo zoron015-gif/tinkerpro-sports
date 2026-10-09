@@ -170,7 +170,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     _showBookingStatusBanner =
         bannerBooking == null ||
         !session.bookingStatusBannerDismissed(_bookingStatusBannerKey!);
-    _unreadBookingCount = bookings.where((booking) {
+    final unreadBookings = bookings.where((booking) {
       final status = _bookingStatus(booking);
       return status == 'approved' ||
           status == 'finished' ||
@@ -178,7 +178,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           status == 'completed' ||
           status == 'expired' ||
           status == 'cancelled';
-    }).length;
+    }).toList();
+    _unreadBookingCount = unreadBookings
+        .where((booking) {
+          return !session.bookingStatusBannerDismissed(
+            _bookingStatusKey(booking),
+          );
+        })
+        .length;
+    for (final booking in unreadBookings) {
+      await session.dismissBookingStatusBanner(_bookingStatusKey(booking));
+    }
+    _unreadBookingCount = 0;
     try {
       final conversations = await _api.conversations(
         token,
@@ -678,80 +689,59 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                   const SizedBox(height: 6),
                   _infoPanel('Venue rate', rate),
                 ],
-                if (status.toLowerCase() == 'pending' ||
-                    status.toLowerCase() == 'approved') ...[
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      key: ValueKey('customer-booking-cancel-${booking.id}'),
-                      onPressed: booking.id == null
-                          ? null
-                          : () => _cancelCustomerBooking(booking),
-                      icon: const Icon(Icons.event_busy_outlined),
-                      label: const AppText('Cancel booking', localize: true),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.errorText,
-                        side: BorderSide(color: AppColors.errorText),
-                        padding: AppSpacing.buttonPadding,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showBookingInfo(booking),
-                    icon: const Icon(Icons.visibility_outlined, size: 18),
-                    label: const AppText(
-                      'View booking details',
-                      localize: true,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.ink,
-                      side: BorderSide(color: AppColors.border),
-                      padding: AppSpacing.buttonPadding,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                Row(
+                  children: [
+                    if (status.toLowerCase() == 'pending' ||
+                        status.toLowerCase() == 'approved') ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: ValueKey(
+                            'customer-booking-cancel-${booking.id}',
+                          ),
+                          onPressed: booking.id == null
+                              ? null
+                              : () => _cancelCustomerBooking(booking),
+                          icon: const Icon(Icons.event_busy_outlined, size: 16),
+                          label: const AppText('Cancel', localize: true),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.errorText,
+                            side: BorderSide(color: AppColors.errorText),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                if (status == 'finished' && booking.id != null) ...[
-                  const SizedBox(height: 6),
-                  _ratingAction(booking),
-                ],
-                if (const {
-                  'finished',
-                  'done',
-                  'completed',
-                }.contains(status.toLowerCase())) ...[
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      key: ValueKey('customer-booking-delete-${booking.id}'),
-                      onPressed: () => _deleteCompletedBooking(booking),
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      label: const AppText(
-                        'Delete completed booking',
-                        localize: true,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.errorText,
-                        side: BorderSide(color: AppColors.errorText),
-                        padding: AppSpacing.buttonPadding,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: ValueKey(
+                          'customer-booking-details-${booking.id}',
+                        ),
+                        onPressed: () => _showBookingInfo(booking),
+                        icon: const Icon(Icons.visibility_outlined, size: 16),
+                        label: const AppText('Details', localize: true),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.ink,
+                          side: BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -846,39 +836,51 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         ),
       );
 
-  Widget _ratingAction(Booking booking) {
+  Widget _ratingAction(
+    Booking booking, {
+    bool closeDetailsOnSubmit = false,
+  }) {
     final existingRating = booking.reviewRating;
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
+    final button = OutlinedButton.icon(
         onPressed: existingRating == null
-            ? () => _showRatingDialog(booking)
+            ? () => _showRatingDialog(
+                booking,
+                closeDetailsOnSubmit: closeDetailsOnSubmit,
+              )
             : null,
         icon: Icon(
           existingRating == null
               ? Icons.star_outline_rounded
               : Icons.star_rounded,
+          size: 16,
         ),
         label: AppText(
-          existingRating == null
-              ? 'Rate this booking'
-              : 'You rated this $existingRating/5',
+          existingRating == null ? 'Review' : 'Reviewed',
+          localize: true,
         ),
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.accentForeground,
           side: BorderSide(
             color: AppColors.accentForeground.withValues(alpha: .55),
           ),
-          padding: AppSpacing.buttonPadding,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-      ),
     );
+    return existingRating == null
+        ? button
+        : Tooltip(
+            message: 'You rated this $existingRating/5',
+            child: button,
+          );
   }
 
-  Future<void> _showRatingDialog(Booking booking) async {
+  Future<void> _showRatingDialog(
+    Booking booking, {
+    bool closeDetailsOnSubmit = false,
+  }) async {
     final submitted = await showDialog<bool>(
       context: context,
       builder: (_) => _BookingRatingDialog(booking: booking, api: _api),
@@ -890,6 +892,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       ),
     );
     await _refresh();
+    if (closeDetailsOnSubmit && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _deleteCompletedBooking(Booking booking) async {
@@ -936,6 +941,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       );
       if (!mounted) return;
       await _refresh();
+      if (!mounted) return;
+      Navigator.of(context).pop();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1397,6 +1404,48 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ),
           _bookingField('Players', booking['players']),
           _bookingField('Payment method', booking['paymentMethod']),
+          if (booking.checkedInAt case final checkedInAt?)
+            _bookingField('Venue arrival', 'Checked in · $checkedInAt')
+          else if (status.toLowerCase() == 'approved')
+            _bookingField('Venue arrival', 'Not checked in yet'),
+          if (const {
+            'finished',
+            'done',
+            'completed',
+          }.contains(status.toLowerCase())) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (booking.id != null) ...[
+                  Expanded(
+                    child: _ratingAction(
+                      booking,
+                      closeDetailsOnSubmit: true,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: ValueKey('customer-booking-delete-${booking.id}'),
+                    onPressed: () => _deleteCompletedBooking(booking),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const AppText('Delete', localize: true),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.errorText,
+                      side: BorderSide(color: AppColors.errorText),
+                      padding: AppSpacing.buttonPadding,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1631,6 +1680,14 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
           style: TextStyle(color: AppColors.muted),
           localize: true,
         ),
+        if (_rating == 0) ...[
+          const SizedBox(height: 4),
+          AppText(
+            'Choose a star rating to continue.',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+            localize: true,
+          ),
+        ],
         const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,

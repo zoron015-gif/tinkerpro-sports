@@ -321,7 +321,9 @@ class AuthApi {
       } on FormatException {
         throw AuthApiException(
           response.statusCode == 404
-              ? path.contains('/merchant/businesses/')
+              ? path.endsWith('/check-in-code')
+                    ? 'Venue QR check-in is unavailable on the connected server. Update or restart the backend server, then try again.'
+                    : path.contains('/merchant/businesses/')
                     ? 'The business management API is unavailable. Restart the backend server and try again.'
                     : path.startsWith('/api/merchant/bookings/') &&
                           path.endsWith('/decline')

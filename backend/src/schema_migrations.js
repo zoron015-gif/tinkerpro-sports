@@ -405,6 +405,23 @@ async function ensureFitnessBookingAttendanceSchema() {
   `);
 }
 
+async function ensureBookingCheckInsSchema() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS booking_check_ins (
+      booking_id BIGINT UNSIGNED NOT NULL,
+      customer_id BIGINT UNSIGNED NOT NULL,
+      checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      qr_issued_at DATETIME NOT NULL,
+      PRIMARY KEY (booking_id),
+      KEY idx_booking_check_ins_customer (customer_id, checked_in_at),
+      CONSTRAINT fk_booking_check_ins_booking FOREIGN KEY (booking_id)
+        REFERENCES bookings (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_booking_check_ins_customer FOREIGN KEY (customer_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function ensureCustomerProfileSchema() {
   await pool.execute('ALTER TABLE users MODIFY COLUMN avatar_url LONGTEXT NULL');
   await ensureTableColumn('users', 'address', 'VARCHAR(500) NULL');
@@ -647,6 +664,14 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [4, 'booking-cancellation-refund-tracking'],
+      );
+    }
+    if (!appliedVersions.has(5)) {
+      await ensureBookingCheckInsSchema();
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [5, 'booking-qr-check-ins'],
       );
     }
   } finally {

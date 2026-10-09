@@ -266,7 +266,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 const AppText(
                   'The address is pinned automatically. Tap the map to adjust it to the exact venue entrance.',
                   style: TextStyle(fontSize: 12),
-                 localize: true,),
+                  localize: true,
+                ),
                 if (lookupMessage != null) ...[
                   const SizedBox(height: 6),
                   AppText(
@@ -356,7 +357,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     } on Exception catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: AppText('Could not load news posts: $error', localize: true)),
+          SnackBar(
+            content: AppText(
+              'Could not load news posts: $error',
+              localize: true,
+            ),
+          ),
         );
       }
     } finally {
@@ -757,6 +763,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     var submitted = false;
     var panelOpen = true;
     var setupStep = 0;
+    var bookingDetailsValidationAttempted = false;
+    var scheduleValidationAttempted = false;
+    final sportsSelectionKey = GlobalKey();
+    final eventTypesKey = GlobalKey();
+    final fitnessCategoriesKey = GlobalKey();
+    final openingTimeKey = GlobalKey();
+    final closingTimeKey = GlobalKey();
+    final availableDaysKey = GlobalKey();
 
     bool basicsComplete() =>
         name.text.trim().isNotEmpty &&
@@ -874,6 +888,57 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       _ => 'Schedule & review',
     };
 
+    void scrollToContext(BuildContext? target) {
+      if (target == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (panelOpen && target.mounted) {
+          Scrollable.ensureVisible(
+            target,
+            duration: const Duration(milliseconds: 250),
+            alignment: .15,
+          );
+        }
+      });
+    }
+
+    void scrollToFirstInvalidField() {
+      final formContext = formKey.currentContext;
+      if (formContext == null) return;
+      BuildContext? firstInvalidContext;
+      void visit(Element element) {
+        if (firstInvalidContext != null) return;
+        if (element is StatefulElement) {
+          final state = element.state;
+          if (state is FormFieldState<dynamic> && state.errorText != null) {
+            firstInvalidContext = state.context;
+            return;
+          }
+        }
+        element.visitChildElements(visit);
+      }
+
+      (formContext as Element).visitChildElements(visit);
+      scrollToContext(firstInvalidContext);
+    }
+
+    void scrollToKey(GlobalKey key) => scrollToContext(key.currentContext);
+
+    Widget inlineRequiredError(String message) => Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AppText(
+          message,
+          localize: true,
+          style: TextStyle(
+            color: AppColors.errorText,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+
     String bookingDetailsError() => switch (type) {
       'Sports' => 'Please choose at least one sport, then add a price and slot setup for each.',
       'Fitness & Wellness' => 'Please choose at least one fitness category and add prices for its plans. Finish any coach details you started.',
@@ -962,7 +1027,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             fontWeight: FontWeight.w800,
                             letterSpacing: .5,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                         const SizedBox(height: 6),
                         LinearProgressIndicator(
                           value: (setupStep + 1) / 3,
@@ -997,14 +1063,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     ),
                     content: SizedBox(
                       width: double.infinity,
-                      height: MediaQuery.sizeOf(context).height * .52,
+                      height: MediaQuery.sizeOf(context).height * .58,
                       child: Theme(
                         data: Theme.of(context).copyWith(
                           visualDensity: VisualDensity.compact,
-                          textSelectionTheme: const TextSelectionThemeData(
-                            cursorColor: _addNavy,
-                            selectionColor: Color(0x55365A91),
-                            selectionHandleColor: _addNavy,
+                          textSelectionTheme: TextSelectionThemeData(
+                            cursorColor: AppColors.accent,
+                            selectionColor: AppColors.softOrange,
+                            selectionHandleColor: AppColors.accent,
                           ),
                           textTheme: Theme.of(context).textTheme.copyWith(
                             bodyLarge: TextStyle(color: _addInk, fontSize: 14),
@@ -1041,6 +1107,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           ),
                         ),
                         child: SingleChildScrollView(
+                          key: ValueKey('business-setup-scroll-$setupStep'),
                           child: Form(
                             key: formKey,
                             child: Column(
@@ -1052,9 +1119,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     margin: const EdgeInsets.only(bottom: 8),
                                     padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFFFE8E8),
+                                      color: AppColors.errorSurface,
                                       border: Border.all(
-                                        color: const Color(0xFFE09A9A),
+                                        color: AppColors.errorBorder,
                                       ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
@@ -1062,30 +1129,33 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.error_outline_rounded,
-                                          color: Color(0xFFB42318),
+                                          color: AppColors.errorText,
                                           size: 20,
                                         ),
                                         const SizedBox(width: 6),
                                         Expanded(
                                           child: AppText(
                                             validationMessage!,
-                                            style: const TextStyle(
-                                              color: Color(0xFFB42318),
+                                            style: TextStyle(
+                                              color: AppColors.errorText,
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ),
                                         IconButton(
-                                          tooltip: appLanguageText('Dismiss validation message', 'Dismiss validation message'),
+                                          tooltip: appLanguageText(
+                                            'Dismiss validation message',
+                                            'Dismiss validation message',
+                                          ),
                                           onPressed: () => setDialogState(
                                             () => validationMessage = null,
                                           ),
-                                          icon: const Icon(
+                                          icon: Icon(
                                             Icons.close,
-                                            color: Color(0xFFB42318),
+                                            color: AppColors.errorText,
                                             size: 18,
                                           ),
                                           visualDensity: VisualDensity.compact,
@@ -1100,7 +1170,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     isExpanded: true,
                                     initialValue: type,
                                     decoration: InputDecoration(
-                                      labelText: appLanguageText('Booking type', 'Booking type'),
+                                      labelText: appLanguageText(
+                                        'Booking type',
+                                        'Booking type',
+                                      ),
                                     ),
                                     items: [
                                       for (final item in types)
@@ -1143,7 +1216,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       isExpanded: true,
                                       initialValue: category,
                                       decoration: InputDecoration(
-                                        labelText: appLanguageText('Category / activity', 'Category / activity'),
+                                        labelText: appLanguageText(
+                                          'Category / activity',
+                                          'Category / activity',
+                                        ),
                                       ),
                                       items: [
                                         for (final item in {
@@ -1169,14 +1245,27 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     TextFormField(
                                       controller: categoryOther,
                                       decoration: InputDecoration(
-                                        labelText: appLanguageText('Custom category (required)', 'Custom category (required)'),
-                                        hintText: appLanguageText('Enter the venue category', 'Enter the venue category'),
+                                        labelText: appLanguageText(
+                                          'Custom category (required)',
+                                          'Custom category (required)',
+                                        ),
+                                        hintText: appLanguageText(
+                                          'Enter the venue category',
+                                          'Enter the venue category',
+                                        ),
                                       ),
+                                      validator: (value) =>
+                                          value == null || value.trim().isEmpty
+                                          ? 'Please enter a custom venue category.'
+                                          : null,
                                     ),
                                   TextFormField(
                                     controller: name,
                                     decoration: InputDecoration(
-                                      labelText: appLanguageText('Venue name (required)', 'Venue name (required)'),
+                                      labelText: appLanguageText(
+                                        'Venue name (required)',
+                                        'Venue name (required)',
+                                      ),
                                     ),
                                     onChanged: (_) => setDialogState(() {
                                       locationManuallySelected = false;
@@ -1199,14 +1288,17 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addMuted,
                                           fontSize: 11,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ),
                                     TextFormField(
                                       controller: totalSlots,
                                       keyboardType: TextInputType.number,
                                       decoration: InputDecoration(
-                                        labelText:
-                                            appLanguageText('Total small slots (required)', 'Total small slots (required)'),
+                                        labelText: appLanguageText(
+                                          'Total small slots (required)',
+                                          'Total small slots (required)',
+                                        ),
                                         hintText: 'e.g. 5',
                                       ),
                                       validator: (value) {
@@ -1240,6 +1332,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                     const SizedBox(height: 6),
                                     Align(
+                                      key: sportsSelectionKey,
                                       alignment: Alignment.centerLeft,
                                       child: AppText(
                                         'Choose at least one sport. Each selected sport needs its own rate and slot setup.',
@@ -1247,8 +1340,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addMuted,
                                           fontSize: 11,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ),
+                                    if (bookingDetailsValidationAttempted &&
+                                        sportSlots.isEmpty)
+                                      inlineRequiredError(
+                                        'Choose at least one sport to continue.',
+                                      ),
                                     for (final sportType
                                         in <String>{
                                           ..._categories['Sports']!,
@@ -1313,7 +1412,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     TextFormField(
                                       controller: categoryOther,
                                       decoration: InputDecoration(
-                                        labelText: appLanguageText('Other sport (optional)', 'Other sport (optional)'),
+                                        labelText: appLanguageText(
+                                          'Other sport (optional)',
+                                          'Other sport (optional)',
+                                        ),
                                         hintText: 'e.g. Squash',
                                       ),
                                     ),
@@ -1355,7 +1457,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           });
                                         },
                                         icon: const Icon(Icons.add_rounded),
-                                        label: const AppText('Add other sport', localize: true),
+                                        label: const AppText(
+                                          'Add other sport',
+                                          localize: true,
+                                        ),
                                       ),
                                     ),
                                     if (sportSlots.isNotEmpty)
@@ -1371,7 +1476,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               color: _addInk,
                                               fontWeight: FontWeight.w800,
                                             ),
-                                           localize: true,),
+                                            localize: true,
+                                          ),
                                         ),
                                       ),
                                     for (
@@ -1418,11 +1524,13 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                       const TextInputType.numberWithOptions(
                                                         decimal: true,
                                                       ),
-                                                  decoration:
-                                                      InputDecoration(
-                                                        labelText: appLanguageText('Price per hour (required)', 'Price per hour (required)'),
-                                                        prefixText: '₱ ',
-                                                      ),
+                                                  decoration: InputDecoration(
+                                                    labelText: appLanguageText(
+                                                      'Price per hour (required)',
+                                                      'Price per hour (required)',
+                                                    ),
+                                                    prefixText: '₱ ',
+                                                  ),
                                                   validator: (value) {
                                                     final amount =
                                                         double.tryParse(
@@ -1438,22 +1546,26 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                   isExpanded: true,
                                                   initialValue:
                                                       sport.fullStudio,
-                                                  decoration:
-                                                      InputDecoration(
-                                                        labelText: appLanguageText('Space used by this sport', 'Space used by this sport'),
-                                                      ),
+                                                  decoration: InputDecoration(
+                                                    labelText: appLanguageText(
+                                                      'Space used by this sport',
+                                                      'Space used by this sport',
+                                                    ),
+                                                  ),
                                                   items: const [
                                                     DropdownMenuItem(
                                                       value: true,
                                                       child: AppText(
                                                         'Whole court',
-                                                       localize: true,),
+                                                        localize: true,
+                                                      ),
                                                     ),
                                                     DropdownMenuItem(
                                                       value: false,
                                                       child: AppText(
                                                         'Small slots',
-                                                       localize: true,),
+                                                        localize: true,
+                                                      ),
                                                     ),
                                                   ],
                                                   onChanged: (value) {
@@ -1492,10 +1604,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                         .slotCount
                                                         .clamp(1, capacity)
                                                         .toInt(),
-                                                    decoration:
-                                                        InputDecoration(
-                                                          labelText: appLanguageText('Number of small slots', 'Number of small slots'),
-                                                        ),
+                                                    decoration: InputDecoration(
+                                                      labelText: appLanguageText(
+                                                        'Number of small slots',
+                                                        'Number of small slots',
+                                                      ),
+                                                    ),
                                                     items: [
                                                       for (
                                                         var slot = 1;
@@ -1506,7 +1620,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                           value: slot,
                                                           child: AppText(
                                                             '$slot slot${slot == 1 ? '' : 's'}',
-                                                           localize: true,),
+                                                            localize: true,
+                                                          ),
                                                         ),
                                                     ],
                                                     onChanged: (value) {
@@ -1531,7 +1646,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                                   .number,
                                                           decoration:
                                                               InputDecoration(
-                                                                labelText: appLanguageText('Included players (optional)', 'Included players (optional)'),
+                                                                labelText:
+                                                                    appLanguageText(
+                                                                      'Included players (optional)',
+                                                                      'Included players (optional)',
+                                                                    ),
                                                               ),
                                                           validator: (value) {
                                                             final raw =
@@ -1561,7 +1680,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                           ),
                                                       decoration:
                                                           InputDecoration(
-                                                            labelText: appLanguageText('Fee / extra player (optional)', 'Fee / extra player (optional)'),
+                                                            labelText:
+                                                                appLanguageText(
+                                                                  'Fee / extra player (optional)',
+                                                                  'Fee / extra player (optional)',
+                                                                ),
                                                             prefixText: '₱ ',
                                                           ),
                                                       validator: (value) {
@@ -1627,6 +1750,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       'FITNESS CATEGORIES & PRICES',
                                     ),
                                     Align(
+                                      key: fitnessCategoriesKey,
                                       alignment: Alignment.centerLeft,
                                       child: AppText(
                                         'Choose at least one activity (up to 20), then set its session, monthly, and yearly prices. Yearly offers may include an optional discount.',
@@ -1634,8 +1758,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addMuted,
                                           fontSize: 11,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ),
+                                    if (bookingDetailsValidationAttempted &&
+                                        fitnessCategories.isEmpty)
+                                      inlineRequiredError(
+                                        'Choose at least one fitness category to continue.',
+                                      ),
                                     for (final fitnessCategory
                                         in <String>{
                                           ..._categories['Fitness & Wellness']!,
@@ -1697,7 +1827,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     TextField(
                                       controller: categoryOther,
                                       decoration: InputDecoration(
-                                        labelText: appLanguageText('Other fitness category', 'Other fitness category'),
+                                        labelText: appLanguageText(
+                                          'Other fitness category',
+                                          'Other fitness category',
+                                        ),
                                         hintText: 'e.g. Strength training',
                                       ),
                                     ),
@@ -1734,7 +1867,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                 });
                                               },
                                         icon: const Icon(Icons.add_rounded),
-                                        label: const AppText('Add other category', localize: true),
+                                        label: const AppText(
+                                          'Add other category',
+                                          localize: true,
+                                        ),
                                       ),
                                     ),
                                     if (fitnessCategories.isNotEmpty)
@@ -1750,7 +1886,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               color: _addInk,
                                               fontWeight: FontWeight.w800,
                                             ),
-                                           localize: true,),
+                                            localize: true,
+                                          ),
                                         ),
                                       ),
                                     for (
@@ -1784,7 +1921,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addMuted,
                                           fontSize: 11,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ),
                                     for (
                                       var index = 0;
@@ -1846,7 +1984,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         icon: const Icon(
                                           Icons.person_add_alt_1,
                                         ),
-                                        label: const AppText('Add coach', localize: true),
+                                        label: const AppText(
+                                          'Add coach',
+                                          localize: true,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1854,6 +1995,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     const SizedBox(height: 6),
                                     _sectionLabel('EVENT BOOKING DETAILS'),
                                     Align(
+                                      key: eventTypesKey,
                                       alignment: Alignment.centerLeft,
                                       child: AppText(
                                         'Event types this venue can hold (required)',
@@ -1861,8 +2003,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                           color: _addMuted,
                                           fontSize: 11,
                                         ),
-                                       localize: true,),
+                                        localize: true,
+                                      ),
                                     ),
+                                    if (bookingDetailsValidationAttempted &&
+                                        eventTypes.isEmpty)
+                                      inlineRequiredError(
+                                        'Choose at least one event type to continue.',
+                                      ),
                                     Wrap(
                                       spacing: 6,
                                       runSpacing: 6,
@@ -1917,9 +2065,20 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       TextFormField(
                                         controller: eventTypeOther,
                                         decoration: InputDecoration(
-                                          labelText: appLanguageText('Other event type', 'Other event type'),
-                                          hintText: appLanguageText('Enter another event type', 'Enter another event type'),
+                                          labelText: appLanguageText(
+                                            'Other event type',
+                                            'Other event type',
+                                          ),
+                                          hintText: appLanguageText(
+                                            'Enter another event type',
+                                            'Enter another event type',
+                                          ),
                                         ),
+                                        validator: (value) =>
+                                            value == null ||
+                                                value.trim().isEmpty
+                                            ? 'Enter the other event type.'
+                                            : null,
                                       ),
                                     Row(
                                       children: [
@@ -1928,10 +2087,21 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             controller: eventAttendanceMin,
                                             keyboardType: TextInputType.number,
                                             decoration: InputDecoration(
-                                              labelText:
-                                                  appLanguageText('Minimum guests (required)', 'Minimum guests (required)'),
+                                              labelText: appLanguageText(
+                                                'Minimum guests (required)',
+                                                'Minimum guests (required)',
+                                              ),
                                               hintText: '40',
                                             ),
+                                            validator: (value) {
+                                              final minimum = int.tryParse(
+                                                value?.trim() ?? '',
+                                              );
+                                              return minimum == null ||
+                                                      minimum < 1
+                                                  ? 'Enter a minimum of at least 1 guest.'
+                                                  : null;
+                                            },
                                           ),
                                         ),
                                         const SizedBox(width: 6),
@@ -1940,10 +2110,25 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             controller: eventAttendanceMax,
                                             keyboardType: TextInputType.number,
                                             decoration: InputDecoration(
-                                              labelText:
-                                                  appLanguageText('Maximum guests (required)', 'Maximum guests (required)'),
+                                              labelText: appLanguageText(
+                                                'Maximum guests (required)',
+                                                'Maximum guests (required)',
+                                              ),
                                               hintText: '250',
                                             ),
+                                            validator: (value) {
+                                              final maximum = int.tryParse(
+                                                value?.trim() ?? '',
+                                              );
+                                              final minimum = int.tryParse(
+                                                eventAttendanceMin.text.trim(),
+                                              );
+                                              return maximum == null ||
+                                                      minimum == null ||
+                                                      maximum < minimum
+                                                  ? 'Enter a maximum equal to or above the minimum.'
+                                                  : null;
+                                            },
                                           ),
                                         ),
                                       ],
@@ -1977,38 +2162,57 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                   Row(
                                     children: [
                                       Expanded(
-                                        child: _timePickerField(
-                                          context: context,
-                                          label: 'Opens (required)',
-                                          value: openingTime,
-                                          onChanged: (value) =>
-                                              panelOpen && context.mounted
-                                              ? setDialogState(
-                                                  () => openingTime = value,
-                                                )
-                                              : null,
+                                        child: KeyedSubtree(
+                                          key: openingTimeKey,
+                                          child: _timePickerField(
+                                            context: context,
+                                            label: 'Opens (required)',
+                                            value: openingTime,
+                                            onChanged: (value) =>
+                                                panelOpen && context.mounted
+                                                ? setDialogState(
+                                                    () => openingTime = value,
+                                                  )
+                                                : null,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 6),
                                       Expanded(
-                                        child: _timePickerField(
-                                          context: context,
-                                          label: 'Closes (required)',
-                                          value: closingTime,
-                                          onChanged: (value) =>
-                                              panelOpen && context.mounted
-                                              ? setDialogState(
-                                                  () => closingTime = value,
-                                                )
-                                              : null,
+                                        child: KeyedSubtree(
+                                          key: closingTimeKey,
+                                          child: _timePickerField(
+                                            context: context,
+                                            label: 'Closes (required)',
+                                            value: closingTime,
+                                            onChanged: (value) =>
+                                                panelOpen && context.mounted
+                                                ? setDialogState(
+                                                    () => closingTime = value,
+                                                  )
+                                                : null,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
+                                  if (scheduleValidationAttempted &&
+                                      openingTime == null)
+                                    inlineRequiredError(
+                                      'Choose an opening time.',
+                                    ),
+                                  if (scheduleValidationAttempted &&
+                                      closingTime == null)
+                                    inlineRequiredError(
+                                      'Choose a closing time.',
+                                    ),
                                   TextFormField(
                                     controller: address,
                                     decoration: InputDecoration(
-                                      labelText: appLanguageText('Venue address (required)', 'Venue address (required)'),
+                                      labelText: appLanguageText(
+                                        'Venue address (required)',
+                                        'Venue address (required)',
+                                      ),
                                       isDense: true,
                                       contentPadding: EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -2084,7 +2288,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                 fontSize: 12,
                                               ),
                                             ),
-                                            child: const AppText('Clear pin', localize: true),
+                                            child: const AppText(
+                                              'Clear pin',
+                                              localize: true,
+                                            ),
                                           ),
                                       ],
                                     ),
@@ -2109,9 +2316,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     controller: visitUrl,
                                     keyboardType: TextInputType.url,
                                     decoration: InputDecoration(
-                                      labelText: appLanguageText('Visit link (optional)', 'Visit link (optional)'),
+                                      labelText: appLanguageText(
+                                        'Visit link (optional)',
+                                        'Visit link (optional)',
+                                      ),
                                       hintText: 'https://example.com',
-                                      helperText: appLanguageText('Customers open this link from Visit.', 'Customers open this link from Visit.'),
+                                      helperText: appLanguageText(
+                                        'Customers open this link from Visit.',
+                                        'Customers open this link from Visit.',
+                                      ),
                                     ),
                                     validator: (value) {
                                       final text = value?.trim() ?? '';
@@ -2135,8 +2348,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                             decimal: true,
                                           ),
                                       decoration: InputDecoration(
-                                        labelText:
-                                            appLanguageText('Fee per event booking (required)', 'Fee per event booking (required)'),
+                                        labelText: appLanguageText(
+                                          'Fee per event booking (required)',
+                                          'Fee per event booking (required)',
+                                        ),
                                         prefixText: '₱ ',
                                         hintText: '25000 (one complete event)',
                                       ),
@@ -2167,13 +2382,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                               fontSize: 11,
                                               fontWeight: FontWeight.w700,
                                             ),
-                                           localize: true,),
+                                            localize: true,
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
                                   const SizedBox(height: 6),
                                   Align(
+                                    key: availableDaysKey,
                                     alignment: Alignment.centerLeft,
                                     child: AppText(
                                       'Available days (required · choose at least one)',
@@ -2182,7 +2399,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
-                                     localize: true,),
+                                      localize: true,
+                                    ),
                                   ),
                                   Align(
                                     alignment: Alignment.centerLeft,
@@ -2235,6 +2453,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                       ],
                                     ),
                                   ),
+                                  if (scheduleValidationAttempted &&
+                                      availableDays.isEmpty)
+                                    inlineRequiredError(
+                                      'Choose at least one available day.',
+                                    ),
                                   const SizedBox(height: 6),
                                   _sectionLabel('FACILITY DETAILS'),
                                   DropdownButtonFormField<String>(
@@ -2249,15 +2472,24 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     items: const [
                                       DropdownMenuItem(
                                         value: 'Indoor',
-                                        child: AppText('Indoor', localize: true),
+                                        child: AppText(
+                                          'Indoor',
+                                          localize: true,
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'Outdoor',
-                                        child: AppText('Outdoor', localize: true),
+                                        child: AppText(
+                                          'Outdoor',
+                                          localize: true,
+                                        ),
                                       ),
                                       DropdownMenuItem(
                                         value: 'Covered',
-                                        child: AppText('Covered', localize: true),
+                                        child: AppText(
+                                          'Covered',
+                                          localize: true,
+                                        ),
                                       ),
                                     ],
                                     onChanged: (value) {
@@ -2331,7 +2563,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     TextField(
                                       controller: amenityOther,
                                       decoration: InputDecoration(
-                                        labelText: appLanguageText('Other amenity', 'Other amenity'),
+                                        labelText: appLanguageText(
+                                          'Other amenity',
+                                          'Other amenity',
+                                        ),
                                         hintText: appLanguageText(
                                           'Example: Water station',
                                           'Example: Water station',
@@ -2445,7 +2680,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                                           fontWeight:
                                                               FontWeight.w700,
                                                         ),
-                                                       localize: true,),
+                                                        localize: true,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -2522,8 +2758,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           key: ValueKey('business-setup-next-$setupStep'),
                           style: FilledButton.styleFrom(
                             backgroundColor: _addNavy,
-                            foregroundColor:
-                                AppColors.contrastingForeground(_addNavy),
+                            foregroundColor: AppColors.contrastingForeground(
+                              _addNavy,
+                            ),
                             minimumSize: const Size(112, 40),
                             shape: const StadiumBorder(),
                             textStyle: const TextStyle(
@@ -2536,17 +2773,41 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             if (setupStep == 0) {
                               if (!(formKey.currentState?.validate() ??
                                   false)) {
+                                scrollToFirstInvalidField();
                                 return;
                               }
                               if (!basicsComplete()) {
                                 setDialogState(
                                   () => validationMessage = 'Please enter a venue name and finish the custom category.',
                                 );
+                                scrollToFirstInvalidField();
                                 return;
                               }
-                            } else {
-                              if (!(formKey.currentState?.validate() ??
-                                  false)) {
+                            } else if (setupStep == 1) {
+                              setDialogState(
+                                () => bookingDetailsValidationAttempted = true,
+                              );
+                              final fieldsValid =
+                                  formKey.currentState?.validate() ?? false;
+                              if (type == 'Event' && eventTypes.isEmpty) {
+                                setDialogState(
+                                  () =>
+                                      validationMessage = bookingDetailsError(),
+                                );
+                                scrollToKey(eventTypesKey);
+                                return;
+                              }
+                              if (type == 'Fitness & Wellness' &&
+                                  fitnessCategories.isEmpty) {
+                                setDialogState(
+                                  () =>
+                                      validationMessage = bookingDetailsError(),
+                                );
+                                scrollToKey(fitnessCategoriesKey);
+                                return;
+                              }
+                              if (!fieldsValid) {
+                                scrollToFirstInvalidField();
                                 return;
                               }
                               if (!bookingDetailsComplete()) {
@@ -2554,20 +2815,35 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                   () =>
                                       validationMessage = bookingDetailsError(),
                                 );
+                                if (type == 'Sports') {
+                                  scrollToKey(sportsSelectionKey);
+                                } else if (type == 'Fitness & Wellness') {
+                                  scrollToKey(fitnessCategoriesKey);
+                                } else {
+                                  scrollToKey(eventTypesKey);
+                                }
                                 return;
                               }
                             }
-                            setDialogState(() => setupStep++);
+                            setDialogState(() {
+                              validationMessage = null;
+                              bookingDetailsValidationAttempted = false;
+                              scheduleValidationAttempted = false;
+                              setupStep++;
+                            });
                           },
-                          child: AppText(setupStep == 0 ? 'Continue' : 'Review'),
+                          child: AppText(
+                            setupStep == 0 ? 'Continue' : 'Review',
+                          ),
                         ),
                       if (setupStep == 2)
                         FilledButton(
                           key: const ValueKey('business-setup-publish'),
                           style: FilledButton.styleFrom(
                             backgroundColor: _addNavy,
-                            foregroundColor:
-                                AppColors.contrastingForeground(_addNavy),
+                            foregroundColor: AppColors.contrastingForeground(
+                              _addNavy,
+                            ),
                             minimumSize: const Size(136, 40),
                             shape: const StadiumBorder(),
                             padding: AppSpacing.buttonPadding,
@@ -2577,7 +2853,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             ),
                           ),
                           onPressed: () async {
-                            setDialogState(() => validationMessage = null);
+                            setDialogState(() {
+                              validationMessage = null;
+                              scheduleValidationAttempted = true;
+                            });
                             if (name.text.trim().isEmpty) {
                               setDialogState(() {
                                 validationMessage = 'Please enter a venue name before publishing.';
@@ -2585,13 +2864,34 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               });
                               return;
                             }
-                            if (!(formKey.currentState?.validate() ?? false)) {
+                            final fieldsValid =
+                                formKey.currentState?.validate() ?? false;
+                            if (openingTime == null) {
+                              setDialogState(
+                                () => validationMessage =
+                                    'Please choose an opening time.',
+                              );
+                              scrollToKey(openingTimeKey);
                               return;
                             }
-                            if (openingTime == null || closingTime == null) {
+                            if (closingTime == null) {
                               setDialogState(
-                                () => validationMessage = 'Please choose both an opening time and a closing time.',
+                                () => validationMessage =
+                                    'Please choose a closing time.',
                               );
+                              scrollToKey(closingTimeKey);
+                              return;
+                            }
+                            if (!fieldsValid) {
+                              scrollToFirstInvalidField();
+                              return;
+                            }
+                            if (availableDays.isEmpty) {
+                              setDialogState(
+                                () => validationMessage =
+                                    'Choose at least one available day.',
+                              );
+                              scrollToKey(availableDaysKey);
                               return;
                             }
                             if (type == 'Sports') {
@@ -3188,17 +3488,35 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 labelText: appLanguageText(entry.$1, entry.$1),
                 prefixText: '₱ ',
               ),
+              validator: (value) {
+                final amount = double.tryParse(value?.trim() ?? '');
+                return amount == null ||
+                        !amount.isFinite ||
+                        amount <= 0 ||
+                        amount > 99999999.99
+                    ? 'Enter a price greater than ₱0.'
+                    : null;
+              },
             ),
           ),
         DropdownButtonFormField<String>(
           isExpanded: true,
           initialValue: category.yearlyDiscountType,
           decoration: InputDecoration(
-            labelText: appLanguageText('Yearly offer (optional)', 'Yearly offer (optional)'),
+            labelText: appLanguageText(
+              'Yearly offer (optional)',
+              'Yearly offer (optional)',
+            ),
           ),
           items: const [
-            DropdownMenuItem(value: 'none', child: AppText('No discount', localize: true)),
-            DropdownMenuItem(value: 'freeMonths', child: AppText('Free months', localize: true)),
+            DropdownMenuItem(
+              value: 'none',
+              child: AppText('No discount', localize: true),
+            ),
+            DropdownMenuItem(
+              value: 'freeMonths',
+              child: AppText('Free months', localize: true),
+            ),
             DropdownMenuItem(
               value: 'percentage',
               child: AppText('Percentage off', localize: true),
@@ -3265,7 +3583,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               child: AppText(
                 'Coach profile photo (optional)',
                 style: TextStyle(color: _addMuted, fontSize: 11),
-               localize: true,),
+                localize: true,
+              ),
             ),
             IconButton(
               tooltip: appLanguageText('Remove coach', 'Remove coach'),
@@ -3276,16 +3595,36 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         ),
         TextFormField(
           controller: coach.name,
-          decoration: InputDecoration(labelText: appLanguageText('Coach name (required)', 'Coach name (required)')),
+          decoration: InputDecoration(
+            labelText: appLanguageText(
+              'Coach name (required)',
+              'Coach name (required)',
+            ),
+          ),
+          validator: (value) => value == null || value.trim().isEmpty
+              ? 'Enter the coach name.'
+              : null,
         ),
         const SizedBox(height: 6),
         TextFormField(
           controller: coach.monthlyPrice,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
-            labelText: appLanguageText('Coach monthly price (required)', 'Coach monthly price (required)'),
+            labelText: appLanguageText(
+              'Coach monthly price (required)',
+              'Coach monthly price (required)',
+            ),
             prefixText: '₱ ',
           ),
+          validator: (value) {
+            final amount = double.tryParse(value?.trim() ?? '');
+            return amount == null ||
+                    !amount.isFinite ||
+                    amount <= 0 ||
+                    amount > 99999999.99
+                ? 'Enter a monthly price greater than ₱0.'
+                : null;
+          },
         ),
       ],
     ),
@@ -3385,7 +3724,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           complete ? Icons.check_circle_rounded : Icons.circle_outlined,
           size: 16,
           color: complete
-              ? Colors.green.shade700
+              ? AppColors.success
               : current
               ? _addOrange
               : _addMuted,
@@ -3421,9 +3760,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     margin: const EdgeInsets.only(top: 16),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: complete ? const Color(0xFFEAF7EE) : const Color(0xFFFFF8EF),
+      color: complete ? AppColors.successSurface : AppColors.softStatus,
       border: Border.all(
-        color: complete ? const Color(0xFFB8DEC2) : const Color(0xFFFFD8AF),
+        color: complete ? AppColors.success : AppColors.warning,
       ),
       borderRadius: BorderRadius.circular(12),
     ),
@@ -3435,7 +3774,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             Icon(
               complete ? Icons.task_alt_rounded : Icons.rate_review_outlined,
               size: 19,
-              color: complete ? Colors.green.shade700 : _addOrange,
+              color:               complete ? AppColors.success : AppColors.warning,
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -3523,7 +3862,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             AppText(
               'No businesses in this category',
               style: TextStyle(color: _addMuted),
-             localize: true,)
+              localize: true,
+            )
           else
             MerchantNewsCardsSection(
               businesses: _filteredNewsCardBusinesses,
@@ -3558,7 +3898,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                       color: _addInk,
                       fontWeight: FontWeight.w800,
                     ),
-                   localize: true,),
+                    localize: true,
+                  ),
                 ],
               ),
             )
@@ -3574,8 +3915,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
 
   Widget _addSectionTabs() => SegmentedButton<String>(
     segments: const [
-      ButtonSegment(value: 'Booking cards', label: AppText('Booking cards', localize: true)),
-      ButtonSegment(value: 'News cards', label: AppText('News cards', localize: true)),
+      ButtonSegment(
+        value: 'Booking cards',
+        label: AppText('Booking cards', localize: true),
+      ),
+      ButtonSegment(
+        value: 'News cards',
+        label: AppText('News cards', localize: true),
+      ),
     ],
     selected: {_selectedAddSection},
     onSelectionChanged: (value) {
@@ -3598,6 +3945,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       text: isIncomplete ? '' : '${editing?['body'] ?? ''}',
     );
     var businessId = _id(editing?['businessId']);
+    final formKey = GlobalKey<FormState>();
+    final businessFieldKey = GlobalKey();
+    final newsBodyFieldKey = GlobalKey();
     final selected = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -3615,13 +3965,19 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           ),
           child: SingleChildScrollView(
             child: StatefulBuilder(
-              builder: (context, setState) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              builder: (context, setState) => Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   DropdownButtonFormField<int>(
+                    key: businessFieldKey,
                     initialValue: businessId,
                     decoration: InputDecoration(
-                      labelText: appLanguageText('Booking card', 'Booking card'),
+                      labelText: appLanguageText(
+                        'Booking card',
+                        'Booking card',
+                      ),
                     ),
                     items: [
                       for (final business in widget.businesses)
@@ -3631,19 +3987,33 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         ),
                     ],
                     onChanged: (value) => setState(() => businessId = value),
+                    validator: (value) =>
+                        value == null ? 'Choose a booking card.' : null,
                   ),
                   if (businessId != null)
                     _newsVenuePreview(businessId!, body.text),
-                  TextField(
+                  TextFormField(
+                    key: newsBodyFieldKey,
                     controller: body,
                     maxLines: 3,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      labelText: appLanguageText('Short venue news', 'Short venue news'),
-                      hintText: appLanguageText('Add a short update about this venue', 'Add a short update about this venue'),
+                      labelText: appLanguageText(
+                        'Short venue news',
+                        'Short venue news',
+                      ),
+                      hintText: appLanguageText(
+                        'Add a short update about this venue',
+                        'Add a short update about this venue',
+                      ),
                     ),
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty
+                            ? 'Enter a short venue update.'
+                            : null,
                   ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -3654,7 +4024,22 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             child: const AppText('Cancel', localize: true),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(dialogContext, true);
+                return;
+              }
+              final target = businessId == null
+                  ? businessFieldKey.currentContext
+                  : newsBodyFieldKey.currentContext;
+              if (target != null) {
+                Scrollable.ensureVisible(
+                  target,
+                  duration: const Duration(milliseconds: 250),
+                  alignment: .15,
+                );
+              }
+            },
             child: const AppText('Save', localize: true),
           ),
         ],
@@ -3727,7 +4112,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 fontWeight: FontWeight.w900,
                 letterSpacing: .4,
               ),
-             localize: true,),
+              localize: true,
+            ),
           ),
           const SizedBox(height: 6),
           Container(
@@ -3755,7 +4141,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
-                   localize: true,),
+                    localize: true,
+                  ),
                 ),
                 SizedBox(
                   width: double.infinity,
@@ -3836,7 +4223,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
-                           localize: true,),
+                            localize: true,
+                          ),
                           const Spacer(),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -3854,7 +4242,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                               ),
-                             localize: true,),
+                              localize: true,
+                            ),
                           ),
                         ],
                       ),
@@ -4012,7 +4401,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               for (final type in businessTypes)
                 DropdownMenuItem(
                   value: type,
-                  child: AppText(type == 'Fitness & Wellness' ? 'Fitness' : type),
+                  child: AppText(
+                    type == 'Fitness & Wellness' ? 'Fitness' : type,
+                  ),
                 ),
             ],
             onChanged: (type) {
@@ -4033,7 +4424,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
               ),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: appLanguageText('Search businesses', 'Search businesses'),
+                hintText: appLanguageText(
+                  'Search businesses',
+                  'Search businesses',
+                ),
                 hintStyle: TextStyle(fontSize: 12, color: _addMuted),
                 prefixIcon: const Icon(Icons.search_rounded, size: 19),
                 prefixIconConstraints: const BoxConstraints(
@@ -4043,7 +4437,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 suffixIcon: _businessSearchQuery.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: appLanguageText('Clear search', 'Clear search'),
+                        tooltip: appLanguageText(
+                          'Clear search',
+                          'Clear search',
+                        ),
                         onPressed: () {
                           _businessSearchController.clear();
                           setState(() => _businessSearchQuery = '');
@@ -4214,13 +4611,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
-                 localize: true,),
+                  localize: true,
+                ),
                 const SizedBox(height: 6),
                 if (tags.isEmpty)
                   AppText(
                     'No amenities listed',
                     style: TextStyle(color: _addMuted, fontSize: 12),
-                   localize: true,)
+                    localize: true,
+                  )
                 else
                   Wrap(
                     spacing: 6,
@@ -4345,7 +4744,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
-             localize: true,),
+              localize: true,
+            ),
             if (item != categories.last) const SizedBox(height: 6),
           ],
           if (coaches.isNotEmpty) ...[
@@ -4355,7 +4755,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 'Coach ${coach['name'] ?? ''} · '
                 '${money(coach['monthlyPrice'])} / month',
                 style: TextStyle(color: _addMuted, fontSize: 11),
-               localize: true,),
+                localize: true,
+              ),
           ],
         ],
       ),
@@ -4385,7 +4786,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     } on Exception catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: AppText('Could not update business status: $error', localize: true)),
+          SnackBar(
+            content: AppText(
+              'Could not update business status: $error',
+              localize: true,
+            ),
+          ),
         );
       }
     }
@@ -4399,7 +4805,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         content: AppText(
           'This will permanently delete "$name" and its venue details. '
           'This action cannot be undone.',
-         localize: true,),
+          localize: true,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -4425,12 +4832,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       await _api.deleteMerchantBusiness(token: token, id: id);
       await widget.onBusinessesChanged();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: AppText('"$name" was deleted.', localize: true)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: AppText('"$name" was deleted.', localize: true)),
+      );
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: AppText('Could not delete business: $error', localize: true)),
+        SnackBar(
+          content: AppText('Could not delete business: $error', localize: true),
+        ),
       );
     }
   }

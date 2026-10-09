@@ -219,6 +219,7 @@ void main() {
         'total': 500,
         'downpayment': 250,
         'status': 'approved',
+        'checkedInAt': '2026-10-09T10:30:00',
       },
       {
         'id': 11,
@@ -276,6 +277,17 @@ void main() {
           );
         }
         switch (request.url.path) {
+          case '/api/merchant/businesses/1/check-in-code':
+            return http.Response(
+              jsonEncode({
+                'qrCode': '{"type":"tinkerpro.checkin","venueId":1}',
+                'expiresAt': DateTime.now()
+                    .add(const Duration(minutes: 2))
+                    .millisecondsSinceEpoch,
+                'venueName': 'Sample Court',
+              }),
+              200,
+            );
           case '/api/merchant/profile':
             return http.Response(
               jsonEncode({
@@ -337,6 +349,23 @@ void main() {
       findsNothing,
     );
     expect(find.text('1 pending'), findsOneWidget);
+    final bookingsMetric = find.byKey(
+      const ValueKey('merchant-analytics-metric-bookings'),
+    );
+    expect(
+      find.descendant(
+        of: bookingsMetric,
+        matching: find.text('1 confirmed · 1 pending'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: bookingsMetric,
+        matching: find.byType(LinearProgressIndicator),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('merchant-review-bookings')));
     await tester.pumpAndSettle();
     expect(find.text('Customer Two'), findsOneWidget);
@@ -459,7 +488,10 @@ void main() {
       );
     }
     expect(
-      find.descendant(of: selectedSalesPoint, matching: find.text('\u{20B1} 0.00')),
+      find.descendant(
+        of: selectedSalesPoint,
+        matching: find.text('\u{20B1} 0.00'),
+      ),
       findsOneWidget,
     );
     expect(
@@ -469,32 +501,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.drag(find.byType(ListView).first, const Offset(0, 900));
+    periodFilter.onSelectionChanged!({'Monthly'});
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Monthly'));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<SegmentedButton<String>>(
-            find.byKey(const ValueKey('merchant-analytics-period')),
-          )
-          .selected,
-      {'Monthly'},
-    );
+    expect(find.text('Sales report · Monthly'), findsOneWidget);
 
-    final periodSelector = tester.widget<SegmentedButton<String>>(
-      find.byKey(const ValueKey('merchant-analytics-period')),
-    );
-    periodSelector.onSelectionChanged!({'Annual'});
+    periodFilter.onSelectionChanged!({'Annual'});
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<SegmentedButton<String>>(
-            find.byKey(const ValueKey('merchant-analytics-period')),
-          )
-          .selected,
-      {'Annual'},
-    );
+    expect(find.text('Sales report · Annual'), findsOneWidget);
 
     await tester.drag(find.byType(ListView).first, const Offset(0, 1800));
     await tester.pumpAndSettle();
@@ -718,12 +731,37 @@ void main() {
     );
     await tester.tap(find.text('Customer'));
     await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Checked in · 2026-10-09T10:30:00'),
+      findsOneWidget,
+    );
+    final showVenueQr = find.byKey(const ValueKey('merchant-show-arrival-qr'));
+    await tester.ensureVisible(showVenueQr);
+    await tester.tap(showVenueQr);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('merchant-checkin-venue-1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-check-in-qr-code')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close').last);
+    await tester.pumpAndSettle();
+    tester
+        .state<ScrollableState>(_managementScrollable(tester))
+        .position
+        .jumpTo(0);
+    await tester.pumpAndSettle();
     expect(find.text('Booking type'), findsWidgets);
     expect(find.text('Booking date and time'), findsWidgets);
     expect(find.textContaining('9:30 AM - 11:30 AM'), findsOneWidget);
     expect(find.text('Customer Two'), findsOneWidget);
     expect(find.text('Finish'), findsNothing);
-    await tester.tap(find.text('Booking'));
+    tester
+        .widget<SegmentedButton<int>>(
+          find.byKey(const ValueKey('merchant-management-tabs')),
+        )
+        .onSelectionChanged!({0});
     await tester.pumpAndSettle();
     expect(find.text('Booking requests'), findsOneWidget);
     expect(find.text('Active bookings'), findsOneWidget);
@@ -806,6 +844,8 @@ void main() {
       240,
       scrollable: managementScroll,
     );
+    await Scrollable.ensureVisible(tester.element(bookingView), alignment: 0.5);
+    await tester.pumpAndSettle();
     await tester.tap(bookingView);
     await tester.pumpAndSettle();
     expect(find.text('Booking details'), findsOneWidget);
@@ -813,6 +853,12 @@ void main() {
     expect(find.text('12 Court Road'), findsOneWidget);
     expect(find.text('9:30 AM'), findsOneWidget);
     expect(find.text('Basketball · Slot 2'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Covered basketball court'),
+      180,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Covered basketball court'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Cash downpayment due at venue'),
       180,
@@ -829,7 +875,6 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('Cash on arrival'), findsOneWidget);
-    expect(find.text('Covered basketball court'), findsOneWidget);
     Navigator.of(tester.element(find.text('Cash on arrival'))).pop();
     await tester.pumpAndSettle();
     tester.state<ScrollableState>(managementScroll).position.jumpTo(0);
@@ -1035,6 +1080,11 @@ void main() {
       240,
       scrollable: _managementScrollable(tester),
     );
+    tester
+        .state<ScrollableState>(_managementScrollable(tester))
+        .position
+        .jumpTo(320);
+    await tester.pumpAndSettle();
     await tester.tap(bookingView);
     await tester.pumpAndSettle();
 

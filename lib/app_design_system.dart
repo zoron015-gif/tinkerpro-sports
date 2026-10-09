@@ -109,6 +109,14 @@ abstract final class AppColors {
   static const darkError = Color(0xFFFF7777);
   static Color get errorText =>
       AppPreferences.instance.darkMode ? darkError : error;
+  static const lightErrorSurface = Color(0xFFFFE8E8);
+  static const darkErrorSurface = Color(0xFF3B2326);
+  static Color get errorSurface =>
+      AppPreferences.instance.darkMode ? darkErrorSurface : lightErrorSurface;
+  static const lightErrorBorder = Color(0xFFE09A9A);
+  static const darkErrorBorder = Color(0xFF7E3F46);
+  static Color get errorBorder =>
+      AppPreferences.instance.darkMode ? darkErrorBorder : lightErrorBorder;
   static const lightSuccess = Color(0xFF168B69);
   static const darkSuccess = Color(0xFF65D6A5);
   static Color get success =>

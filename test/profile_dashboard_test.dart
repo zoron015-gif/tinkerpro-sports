@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
+import 'package:myapp/models/booking.dart';
 import 'package:myapp/profile_dashboard.dart';
 
 void main() {
@@ -133,4 +134,53 @@ void main() {
       expect(jsonDecode(requests[1].body), {'status': 'absent'});
     },
   );
+
+  test(
+    'merchant QR generation and customer check-in use their own endpoints',
+    () async {
+      final requests = <http.Request>[];
+      final api = AuthApi(
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode({
+              'qrCode': '{"type":"tinkerpro.checkin"}',
+              'expiresAt': 1_800_000_000_000,
+              'checkIn': {'bookingId': 501},
+            }),
+            request.method == 'POST' ? 201 : 200,
+          );
+        }),
+      );
+
+      await api.merchantVenueCheckInCode(token: 'merchant-token', venueId: 7);
+      await api.recordBookingCheckIn(
+        token: 'customer-token',
+        qrCode: '{"type":"tinkerpro.checkin"}',
+      );
+
+      expect(
+        requests.map((request) => '${request.method} ${request.url.path}'),
+        [
+          'GET /api/merchant/businesses/7/check-in-code',
+          'POST /api/bookings/check-in',
+        ],
+      );
+      expect(jsonDecode(requests.last.body), {
+        'qrCode': '{"type":"tinkerpro.checkin"}',
+      });
+    },
+  );
+
+  test('booking models retain the server-recorded arrival timestamp', () {
+    final booking = Booking.fromJson({
+      'id': 501,
+      'venueId': 7,
+      'venueName': 'Test Court',
+      'checkedInAt': '2026-10-09T10:30:00',
+    });
+
+    expect(booking.checkedInAt, '2026-10-09T10:30:00');
+    expect(booking['checkedInAt'], booking.checkedInAt);
+  });
 }

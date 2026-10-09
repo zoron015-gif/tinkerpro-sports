@@ -59,6 +59,84 @@ function positiveIntegerId(value) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function venueCheckInCode(venueId) {
+  const issuedAt = Math.floor(Date.now() / 60_000) * 60_000;
+  const payload = `v1:${venueId}:${issuedAt}`;
+  const signature = crypto
+    .createHmac('sha256', process.env.JWT_SECRET)
+    .update(payload)
+    .digest('hex');
+  return {
+    type: 'tinkerpro.checkin',
+    version: 1,
+    venueId,
+    issuedAt,
+    signature,
+  };
+}
+
+function verifyVenueCheckInCode(value) {
+  if (typeof value !== 'string' || value.length > 512) return null;
+  let code;
+  try {
+    code = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (
+    !code ||
+    code.type !== 'tinkerpro.checkin' ||
+    code.version !== 1 ||
+    !Number.isSafeInteger(code.venueId) ||
+    code.venueId <= 0 ||
+    !Number.isSafeInteger(code.issuedAt) ||
+    code.issuedAt % 60_000 !== 0 ||
+    typeof code.signature !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(code.signature)
+  ) {
+    return null;
+  }
+  const now = Date.now();
+  if (code.issuedAt > now + 30_000 || now - code.issuedAt > 120_000) {
+    return null;
+  }
+  const expected = crypto
+    .createHmac('sha256', process.env.JWT_SECRET)
+    .update(`v1:${code.venueId}:${code.issuedAt}`)
+    .digest();
+  const supplied = Buffer.from(code.signature, 'hex');
+  if (!crypto.timingSafeEqual(expected, supplied)) return null;
+  return { venueId: code.venueId, issuedAt: code.issuedAt };
+}
+
+function manilaDateTime(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    minutes: Number(values.hour) * 60 + Number(values.minute),
+  };
+}
+
+function bookingCheckInWindowIncludesNow(booking, currentMinutes) {
+  const time = String(booking.startTime ?? '').match(/^([01]\d|2[0-3]):([0-5]\d)/);
+  const durationHours = Number(booking.durationHours);
+  if (!time || !Number.isFinite(durationHours) || durationHours <= 0) {
+    return false;
+  }
+  const startMinutes = Number(time[1]) * 60 + Number(time[2]);
+  return currentMinutes >= startMinutes - 30 &&
+    currentMinutes <= startMinutes + durationHours * 60 + 15;
+}
+
 function normalizeBusinessType(value) {
   if (typeof value !== 'string') return null;
   return {
@@ -3016,6 +3094,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.payment_refund_status AS paymentRefundStatus,
               b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
+              ci.checked_in_at AS checkedInAt,
               b.status, b.created_at AS createdAt,
               r.id AS reviewId, r.rating AS reviewRating
        FROM bookings b
@@ -3023,6 +3102,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
        JOIN users u ON u.id = v.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = v.id
        LEFT JOIN fitness_business_details f ON f.business_id = v.id
+       LEFT JOIN booking_check_ins ci ON ci.booking_id = b.id
        LEFT JOIN venue_reviews r ON r.booking_id = b.id AND r.customer_id = b.customer_id
        WHERE b.customer_id = ?${businessTypeFilter}
        ORDER BY b.booking_date DESC, b.start_time DESC`,
@@ -3280,6 +3360,122 @@ app.delete(
   },
 );
 
+app.get(
+  '/api/merchant/businesses/:venueId/check-in-code',
+  requireAuth,
+  requireRole('merchant'),
+  async (req, res, next) => {
+    try {
+      const venueId = positiveIntegerId(req.params.venueId);
+      if (venueId === null) {
+        return res.status(400).json({ error: 'Invalid venue ID.' });
+      }
+      const [venues] = await pool.execute(
+        `SELECT id, name
+         FROM merchant_businesses
+         WHERE id = ? AND merchant_id = ?
+         LIMIT 1`,
+        [venueId, req.auth.sub],
+      );
+      if (venues.length === 0) {
+        return res.status(404).json({ error: 'Venue not found.' });
+      }
+      const code = venueCheckInCode(venueId);
+      return res.json({
+        qrCode: JSON.stringify(code),
+        expiresAt: code.issuedAt + 120_000,
+        venueName: venues[0].name,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+app.post(
+  '/api/bookings/check-in',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    const code = verifyVenueCheckInCode(req.body?.qrCode);
+    if (!code) {
+      return res.status(400).json({ error: 'This venue check-in QR code is invalid or expired.' });
+    }
+    const current = manilaDateTime();
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      await connection.beginTransaction();
+      const [bookings] = await connection.execute(
+        `SELECT b.id AS bookingId, b.booking_date AS date,
+                b.start_time AS startTime, b.duration_hours AS durationHours,
+                v.name AS venueName
+         FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.customer_id = ? AND b.venue_id = ?
+           AND b.booking_date = ? AND b.status = 'approved'
+         ORDER BY b.start_time
+         FOR UPDATE`,
+        [req.auth.sub, code.venueId, current.date],
+      );
+      const booking = bookings.find((candidate) =>
+        bookingCheckInWindowIncludesNow(candidate, current.minutes),
+      );
+      if (!booking) {
+        await connection.rollback();
+        return res.status(409).json({
+          error: 'No approved booking at this venue is scheduled for check-in right now.',
+        });
+      }
+
+      const [existing] = await connection.execute(
+        `SELECT DATE_FORMAT(checked_in_at, '%Y-%m-%dT%H:%i:%s') AS checkedInAt
+         FROM booking_check_ins
+         WHERE booking_id = ? AND customer_id = ?
+         LIMIT 1
+         FOR UPDATE`,
+        [booking.bookingId, req.auth.sub],
+      );
+      if (existing.length > 0) {
+        await connection.commit();
+        return res.json({
+          checkIn: {
+            ...booking,
+            checkedInAt: existing[0].checkedInAt,
+          },
+          alreadyCheckedIn: true,
+        });
+      }
+
+      await connection.execute(
+        `INSERT INTO booking_check_ins (booking_id, customer_id, qr_issued_at)
+         VALUES (?, ?, FROM_UNIXTIME(? / 1000))`,
+        [booking.bookingId, req.auth.sub, code.issuedAt],
+      );
+      const [checkIns] = await connection.execute(
+        `SELECT DATE_FORMAT(checked_in_at, '%Y-%m-%dT%H:%i:%s') AS checkedInAt
+         FROM booking_check_ins
+         WHERE booking_id = ? AND customer_id = ?
+         LIMIT 1`,
+        [booking.bookingId, req.auth.sub],
+      );
+      await connection.commit();
+      return res.status(201).json({
+        checkIn: {
+          ...booking,
+          checkedInAt: checkIns[0]?.checkedInAt ?? null,
+        },
+        alreadyCheckedIn: false,
+      });
+    } catch (error) {
+      if (connection) await connection.rollback();
+      return next(error);
+    } finally {
+      connection?.release();
+    }
+  },
+);
+
 app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
     await completeDueBookings();
@@ -3307,9 +3503,11 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.payment_refund_status AS paymentRefundStatus,
               b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
+              ci.checked_in_at AS checkedInAt,
               b.status, b.created_at AS createdAt
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        JOIN users u ON u.id = b.customer_id
+       LEFT JOIN booking_check_ins ci ON ci.booking_id = b.id
        WHERE v.merchant_id = ? ORDER BY b.booking_date, b.start_time`,
       [req.auth.sub],
     );

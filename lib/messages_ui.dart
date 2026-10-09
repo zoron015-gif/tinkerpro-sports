@@ -194,7 +194,8 @@ class MessagesBookingTicket extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              color: messageNavy,
+              key: const ValueKey('messages-booking-ticket-header'),
+              color: AppColors.navy,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
               child: Row(
                 children: [
@@ -381,14 +382,17 @@ class MessagesBookingTicket extends StatelessWidget {
                           value: safeString(data['players'], '—'),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: _TicketDetail(
-                          icon: Icons.timer_outlined,
-                          label: 'DURATION',
-                          value: '${safeString(data['durationHours'], '—')} hr',
+                      if (!isFitnessBooking) ...[
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: _TicketDetail(
+                            icon: Icons.timer_outlined,
+                            label: 'DURATION',
+                            value:
+                                '${safeString(data['durationHours'], '—')} hr',
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   if (paymentMethod.isNotEmpty) ...[

@@ -1,8 +1,14 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/app_design_system.dart';
+import 'package:myapp/app_preferences.dart';
+import 'package:myapp/app_theme.dart';
 import 'package:myapp/messages_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   testWidgets('payment ticket shows receipt and pending approval state', (
     tester,
   ) async {
@@ -143,6 +149,8 @@ void main() {
     expect(find.textContaining('Alex Coach'), findsOneWidget);
     expect(find.textContaining('3 months'), findsOneWidget);
     expect(find.text('Plan total: \u{20B1} 10800.00'), findsOneWidget);
+    expect(find.text('DURATION'), findsNothing);
+    expect(find.text('1 hr'), findsNothing);
     expect(find.text('Whole studio'), findsNothing);
   });
 
@@ -172,5 +180,51 @@ void main() {
     expect(find.text('TP-TXN-00000503'), findsOneWidget);
     expect(find.text('\u{20B1} 25000.00'), findsOneWidget);
     expect(find.text('TINKERPRO  ·  COURT PASS'), findsNothing);
+  });
+
+  testWidgets('booking ticket header remains readable in dark mode', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await AppPreferences.instance.update(
+      darkMode: true,
+      palette: AppPalette.orange,
+    );
+    addTearDown(
+      () => AppPreferences.instance.update(
+        darkMode: false,
+        palette: AppPalette.orange,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.configured(
+          darkMode: true,
+          accentColor: AppPalette.orange.color,
+        ),
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 601,
+            'transactionId': 'TP-TXN-00000601',
+            'status': 'pending',
+            'venueName': 'Dark Mode Court',
+            'sportType': 'Basketball',
+            'total': 500,
+          }),
+        ),
+      ),
+    );
+
+    final header = tester.widget<Container>(
+      find.byKey(const ValueKey('messages-booking-ticket-header')),
+    );
+    expect(header.color, AppColors.navy);
+    expect(find.text('TINKERPRO  ·  COURT PASS'), findsOneWidget);
+    final headerTitle = tester.widget<Text>(
+      find.text('TINKERPRO  ·  COURT PASS'),
+    );
+    expect(headerTitle.style?.color, Colors.white);
   });
 }

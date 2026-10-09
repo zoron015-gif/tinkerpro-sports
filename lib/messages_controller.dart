@@ -166,6 +166,11 @@ class MessagesController extends ChangeNotifier {
       messages = loadedMessages;
       _markConversationRead(id);
       notifyListeners();
+      await _service.setConversationState(
+        token: sessionToken,
+        conversationId: id,
+        unread: false,
+      );
     } on Exception {
       if (requestId == messageRequestId) {
         notifyListeners();

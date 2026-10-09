@@ -85,7 +85,8 @@ reviews, using MySQL.
 
 The health endpoint is `GET http://localhost:3000/health`. It checks both the
 API and its MySQL connection. `npm run migrate` ensures the merchant,
-messaging, booking, profile, news, review, and other upgraded schema is present.
+messaging, booking, QR arrival check-in, profile, news, review, and other
+upgraded schema is present.
 Every API response includes an `X-Request-Id` header. When reporting an
 unexpected error, include that support reference so it can be matched to the
 backend error log. Internal server errors return a generic message; sensitive

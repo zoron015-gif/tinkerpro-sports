@@ -627,15 +627,34 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   Widget get _analyticsSummaryCard {
     final liveVenues = _analyticsBusinesses.where(_isLiveOnApp).length;
+    final bookingCount = _periodBookings.length;
+    final confirmedBookings = _periodBookings.where(_isConfirmedBooking).length;
+    final pendingBookings = _periodBookings.where(_isPendingBooking).length;
+    final collectedShare = _periodSales <= 0
+        ? 0.0
+        : (_periodCollected / _periodSales).clamp(0.0, 1.0);
+    final liveVenueShare = _analyticsBusinesses.isEmpty
+        ? 0.0
+        : liveVenues / _analyticsBusinesses.length;
+    final averagePlayers = bookingCount == 0
+        ? 0.0
+        : _periodParticipants / bookingCount;
     final primaryMetric = switch (_analyticsView) {
       'Customer count' => '$_periodParticipants',
-      'Venue performance' => '${_periodBookings.length}',
+      'Venue performance' => '$bookingCount',
       _ => _formatCurrency(_periodSales),
     };
     final primaryLabel = switch (_analyticsView) {
       'Customer count' => 'Players',
       'Venue performance' => 'Bookings in range',
       _ => 'Revenue',
+    };
+    final primaryContext = switch (_analyticsView) {
+      'Customer count' =>
+        '${averagePlayers.toStringAsFixed(1)} players per booking on average',
+      'Venue performance' =>
+        '$confirmedBookings confirmed · $pendingBookings pending',
+      _ => '${(collectedShare * 100).round()}% collected',
     };
     final primaryIcon = switch (_analyticsView) {
       'Customer count' => Icons.people_outline_rounded,
@@ -647,7 +666,27 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         Row(
           children: [
             Expanded(
-              child: _analyticsMetric(primaryLabel, primaryMetric, primaryIcon),
+              child: _analyticsMetric(
+                primaryLabel,
+                primaryMetric,
+                primaryIcon,
+                context: primaryContext,
+                progress: switch (_analyticsView) {
+                  'Customer count' => null,
+                  'Venue performance' =>
+                    bookingCount == 0 ? 0 : confirmedBookings / bookingCount,
+                  _ => collectedShare,
+                },
+                progressLabel: switch (_analyticsView) {
+                  'Venue performance' => 'Confirmed',
+                  _ => 'Collected',
+                },
+                onTap: () => _selectAnalyticsView(
+                  _analyticsView == 'Customer count'
+                      ? 'Customer count'
+                      : 'Sales report',
+                ),
+              ),
             ),
             const SizedBox(width: _analyticsElementGap),
             Expanded(
@@ -659,6 +698,18 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 _analyticsView == 'Customer count'
                     ? Icons.person_outline_rounded
                     : Icons.account_balance_wallet_outlined,
+                context: _analyticsView == 'Customer count'
+                    ? 'Unique customers in this period'
+                    : 'Of ${_formatCurrency(_periodSales)} in confirmed sales',
+                progress: _analyticsView == 'Customer count'
+                    ? null
+                    : collectedShare,
+                progressLabel: 'Collected',
+                onTap: () => _selectAnalyticsView(
+                  _analyticsView == 'Customer count'
+                      ? 'Customer count'
+                      : 'Sales report',
+                ),
               ),
             ),
           ],
@@ -669,8 +720,15 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             Expanded(
               child: _analyticsMetric(
                 'Bookings',
-                '${_periodBookings.length}',
+                '$bookingCount',
                 Icons.event_available_outlined,
+                context:
+                    '$confirmedBookings confirmed · $pendingBookings pending',
+                progress: bookingCount == 0
+                    ? 0
+                    : confirmedBookings / bookingCount,
+                progressLabel: 'Confirmed',
+                onTap: () => _selectAnalyticsView('Venue performance'),
               ),
             ),
             const SizedBox(width: _analyticsElementGap),
@@ -679,6 +737,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 'Live venues',
                 '$liveVenues / ${_analyticsBusinesses.length}',
                 Icons.storefront_outlined,
+                context:
+                    '${(liveVenueShare * 100).round()}% of your venues are live',
+                progress: liveVenueShare,
+                progressLabel: 'Live',
+                onTap: () => _selectAnalyticsView('Venue performance'),
               ),
             ),
           ],
@@ -687,44 +750,91 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     );
   }
 
-  Widget _analyticsMetric(String label, String value, IconData icon) => Card(
-    margin: EdgeInsets.zero,
-    elevation: 0,
-    color: AppColors.surface,
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Icon(icon, color: _merchantOrange, size: 21),
-          const SizedBox(width: _analyticsElementGap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppText(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: _merchantMuted, fontSize: 11),
+  void _selectAnalyticsView(String view) {
+    if (_analyticsView == view) return;
+    _setAnalyticsState(() => _analyticsView = view);
+  }
+
+  Widget _analyticsMetric(
+    String label,
+    String value,
+    IconData icon, {
+    required String context,
+    required VoidCallback onTap,
+    double? progress,
+    String? progressLabel,
+  }) {
+    final key = label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    return Card(
+      key: ValueKey('merchant-analytics-metric-$key'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: AppColors.surface,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: _merchantOrange, size: 21),
+              const SizedBox(width: _analyticsElementGap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppText(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _merchantMuted, fontSize: 11),
+                    ),
+                    const SizedBox(height: _analyticsElementGap),
+                    AppText(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _merchantInk,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    AppText(
+                      context,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _merchantMuted,
+                        fontSize: 10,
+                        height: 1.2,
+                      ),
+                      localize: true,
+                    ),
+                    if (progress != null) ...[
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          minHeight: 4,
+                          backgroundColor: _merchantLine,
+                          color: _merchantOrange,
+                          semanticsLabel: progressLabel,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: _analyticsElementGap),
-                AppText(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _merchantInk,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget get _analyticsPopularServicesCard {
     final serviceCounts = <String, int>{};
@@ -1545,7 +1655,8 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     ),
   );
 
-  String _formatCurrency(double value) => '\u{20B1} ${value.toStringAsFixed(2)}';
+  String _formatCurrency(double value) =>
+      '\u{20B1} ${value.toStringAsFixed(2)}';
 
   String _compactCurrency(double value) {
     if (value >= 1000000) return '₱${(value / 1000000).toStringAsFixed(1)}m';

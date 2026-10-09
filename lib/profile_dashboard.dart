@@ -103,6 +103,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   Future<void> _loadProfile() async {
     try {
       final session = await AppSession.load();
+      if (!mounted) return;
       final token = session.apiToken;
       if (token != null && token.isNotEmpty) {
         final profile = await _api.me(token);
@@ -228,6 +229,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         .map((hobby) => hobby.trim())
         .where((hobby) => hobby.isNotEmpty)
         .toList();
+    void addHobby(String value, StateSetter setDialogState) {
+      final hobby = value.trim();
+      if (hobby.isEmpty || hobbies.contains(hobby)) return;
+      setDialogState(() {
+        hobbies.add(hobby);
+        hobbyController.clear();
+      });
+    }
+
     String? profileImage = _user?['avatarUrl'] as String?;
     final value = await showGeneralDialog<bool>(
       context: context,
@@ -319,12 +329,21 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               localize: true,
                             ),
                             const SizedBox(height: 6),
-                            TextField(
-                              controller: nameController,
-                              textCapitalization: TextCapitalization.words,
-                              decoration: _profileInputDecoration(
-                                label: 'Name',
-                                icon: Icons.person_outline,
+                            Form(
+                              key: const GlobalObjectKey<FormState>(
+                                'customer-profile-name-form',
+                              ),
+                              child: TextFormField(
+                                controller: nameController,
+                                textCapitalization: TextCapitalization.words,
+                                decoration: _profileInputDecoration(
+                                  label: 'Name',
+                                  icon: Icons.person_outline,
+                                ),
+                                validator: (value) =>
+                                    value == null || value.trim().isEmpty
+                                    ? 'Please enter your name.'
+                                    : null,
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -346,7 +365,35 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            if (hobbies.isNotEmpty)
+                            TextField(
+                              key: const ValueKey(
+                                'customer-profile-hobby-input',
+                              ),
+                              controller: hobbyController,
+                              textCapitalization: TextCapitalization.sentences,
+                              onSubmitted: (value) =>
+                                  addHobby(value, setDialogState),
+                              decoration: _profileInputDecoration(
+                                label: 'Add hobby',
+                                icon: Icons.sports_tennis_outlined,
+                                suffixIcon: IconButton(
+                                  key: const ValueKey(
+                                    'customer-profile-add-hobby',
+                                  ),
+                                  tooltip: appLanguageText(
+                                    'Add hobby',
+                                    'Add hobby',
+                                  ),
+                                  onPressed: () => addHobby(
+                                    hobbyController.text,
+                                    setDialogState,
+                                  ),
+                                  icon: const Icon(Icons.add_rounded),
+                                ),
+                              ),
+                            ),
+                            if (hobbies.isNotEmpty) ...[
+                              const SizedBox(height: 6),
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Wrap(
@@ -373,32 +420,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                                       .toList(),
                                 ),
                               ),
-                            if (hobbies.isNotEmpty) const SizedBox(height: 6),
-                            TextField(
-                              controller: hobbyController,
-                              textCapitalization: TextCapitalization.sentences,
-                              onSubmitted: (value) {
-                                final hobby = value.trim();
-                                if (hobby.isEmpty || hobbies.contains(hobby)) {
-                                  return;
-                                }
-
-                                setDialogState(() {
-                                  hobbies.add(hobby);
-                                  hobbyController.clear();
-                                });
-                              },
-                              decoration: _profileInputDecoration(
-                                label: 'Add hobby',
-                                icon: Icons.sports_tennis_outlined,
-                                suffixIcon: const Icon(Icons.add_rounded),
-                              ),
-                            ),
+                            ],
                             const SizedBox(height: 6),
                             Align(
                               alignment: Alignment.centerLeft,
                               child: AppText(
-                                'Press enter after each hobby',
+                                'Tap + or press enter after each hobby',
                                 style: TextStyle(
                                   color: _profileMuted,
                                   fontSize: 11,
@@ -424,8 +451,25 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(dialogContext, true),
+                              onPressed: () {
+                                final form = const GlobalObjectKey<FormState>(
+                                  'customer-profile-name-form',
+                                ).currentState;
+                                if (form?.validate() ?? false) {
+                                  Navigator.pop(dialogContext, true);
+                                  return;
+                                }
+                                final target = const GlobalObjectKey<FormState>(
+                                  'customer-profile-name-form',
+                                ).currentContext;
+                                if (target != null) {
+                                  Scrollable.ensureVisible(
+                                    target,
+                                    duration: const Duration(milliseconds: 250),
+                                    alignment: .15,
+                                  );
+                                }
+                              },
                               child: const AppText(
                                 'Save changes',
                                 localize: true,
@@ -2909,9 +2953,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             style: ButtonStyle(
               backgroundColor: WidgetStatePropertyAll(AppColors.accent),
               foregroundColor: WidgetStatePropertyAll(AppColors.onAccent),
-              padding: const WidgetStatePropertyAll(
-                AppSpacing.buttonPadding,
-              ),
+              padding: const WidgetStatePropertyAll(AppSpacing.buttonPadding),
             ),
             child: AppText(
               '＋ Top Up',
@@ -3093,25 +3135,79 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 
   Future<void> _openQrScanner() async {
     final scannedValue = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (_) => const QrScannerPage(),
-      ),
+      MaterialPageRoute<String>(builder: (_) => const QrScannerPage()),
     );
     if (!mounted || scannedValue == null) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const AppText('QR code scanned', localize: true),
-        content: SelectableText(scannedValue),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const AppText('Close', localize: true),
+    try {
+      final session = await AppSession.load();
+      if (!mounted) return;
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        _message(context, 'Sign in again to record your venue check-in.');
+        return;
+      }
+      final result = await _api.recordBookingCheckIn(
+        token: token,
+        qrCode: scannedValue,
+      );
+      if (!mounted) return;
+      final checkIn = result['checkIn'] is Map
+          ? Map<String, dynamic>.from(result['checkIn'] as Map)
+          : const <String, dynamic>{};
+      await _loadProfile();
+      if (!mounted) return;
+      final alreadyCheckedIn = result['alreadyCheckedIn'] == true;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: AppText(
+            alreadyCheckedIn
+                ? 'Check-in already recorded'
+                : 'Check-in recorded',
+            localize: true,
           ),
-        ],
-      ),
-    );
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                'Booking #${checkIn['bookingId'] ?? '—'} · '
+                '${checkIn['venueName'] ?? 'Venue'}',
+                localize: true,
+              ),
+              const SizedBox(height: 8),
+              AppText(
+                'Scheduled ${checkIn['date'] ?? ''} at '
+                '${checkIn['startTime'] ?? ''}',
+                style: TextStyle(color: _profileMuted),
+              ),
+              if (checkIn['checkedInAt'] != null) ...[
+                const SizedBox(height: 8),
+                AppText(
+                  'Arrival recorded at ${checkIn['checkedInAt']}',
+                  style: TextStyle(color: _profileMuted),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const AppText('Close', localize: true),
+            ),
+          ],
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      _message(
+        context,
+        error is AuthApiException
+            ? error.userMessage
+            : 'Could not record check-in: $error',
+      );
+    }
   }
 
   String _initials(String name) {

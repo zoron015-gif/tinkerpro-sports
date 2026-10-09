@@ -18,6 +18,24 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
   bool _codeVerified = false;
   bool _loading = false;
   bool _obscurePassword = true;
+  String? _emailError;
+  String? _codeError;
+  String? _passwordError;
+  String? _confirmPasswordError;
+  final _emailFieldKey = GlobalKey();
+  final _codeFieldKey = GlobalKey();
+  final _passwordFieldKey = GlobalKey();
+  final _confirmPasswordFieldKey = GlobalKey();
+
+  void _scrollToField(GlobalKey key) {
+    final target = key.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 250),
+      alignment: .15,
+    );
+  }
 
   @override
   void dispose() {
@@ -37,14 +55,22 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
   Future<void> _requestCode() async {
     final email = _emailController.text.trim().toLowerCase();
     if (email.isEmpty) {
-      _message('Please enter the email address linked to your account.');
+      setState(
+        () => _emailError = 'Enter the email address linked to your account.',
+      );
+      _scrollToField(_emailFieldKey);
       return;
     }
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      _message('That email address doesn’t look right. Please check it.');
+      setState(
+        () => _emailError =
+            'That email address doesn’t look right. Please check it.',
+      );
+      _scrollToField(_emailFieldKey);
       return;
     }
     setState(() {
+      _emailError = null;
       _loading = true;
     });
     try {
@@ -70,10 +96,14 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
     final email = _emailController.text.trim().toLowerCase();
     final code = _codeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('That code should be 6 digits. Check your email and try again.');
+      setState(() => _codeError = 'Enter the 6-digit code sent to your email.');
+      _scrollToField(_codeFieldKey);
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _codeError = null;
+      _loading = true;
+    });
     try {
       await widget.service.verifyPasswordResetCode(email: email, code: code);
       if (mounted) {
@@ -92,18 +122,32 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
     final code = _codeController.text.trim();
     final password = _passwordController.text;
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('That code should be 6 digits. Check your email and try again.');
+      setState(() => _codeError = 'Enter the 6-digit code sent to your email.');
+      _scrollToField(_codeFieldKey);
       return;
     }
+    setState(() => _codeError = null);
     if (password.length < 8) {
-      _message('Choose a new password with at least 8 characters.');
+      setState(
+        () => _passwordError =
+            'Choose a new password with at least 8 characters.',
+      );
+      _scrollToField(_passwordFieldKey);
       return;
     }
+    setState(() => _passwordError = null);
     if (password != _confirmController.text) {
-      _message('Those passwords don’t match. Please try again.');
+      setState(
+        () => _confirmPasswordError =
+            'Those passwords don’t match. Please try again.',
+      );
+      _scrollToField(_confirmPasswordFieldKey);
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _confirmPasswordError = null;
+      _loading = true;
+    });
     try {
       final response = await widget.service.resetPassword(
         email: email,
@@ -158,6 +202,9 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
               icon: Icons.mail_outline_rounded,
               keyboardType: TextInputType.emailAddress,
               controller: _emailController,
+              fieldKey: _emailFieldKey,
+              errorText: _emailError,
+              onChanged: (_) => setState(() => _emailError = null),
             ),
             const SizedBox(height: 6),
             if (!_codeRequested)
@@ -174,6 +221,9 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                 keyboardType: TextInputType.number,
                 controller: _codeController,
                 maxLength: 6,
+                fieldKey: _codeFieldKey,
+                errorText: _codeError,
+                onChanged: (_) => setState(() => _codeError = null),
               ),
               if (!_codeVerified) ...[
                 const SizedBox(height: 6),
@@ -190,6 +240,12 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                   icon: Icons.lock_outline_rounded,
                   obscureText: _obscurePassword,
                   controller: _passwordController,
+                  fieldKey: _passwordFieldKey,
+                  errorText: _passwordError,
+                  onChanged: (_) => setState(() {
+                    _passwordError = null;
+                    _confirmPasswordError = null;
+                  }),
                   suffix: IconButton(
                     onPressed: () =>
                         setState(() => _obscurePassword = !_obscurePassword),
@@ -207,6 +263,10 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                   icon: Icons.verified_user_outlined,
                   obscureText: true,
                   controller: _confirmController,
+                  fieldKey: _confirmPasswordFieldKey,
+                  errorText: _confirmPasswordError,
+                  onChanged: (_) =>
+                      setState(() => _confirmPasswordError = null),
                 ),
                 const SizedBox(height: 6),
                 _ResetButton(

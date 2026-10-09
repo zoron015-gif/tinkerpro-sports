@@ -109,6 +109,7 @@ class Booking {
     this.status = 'pending',
     this.createdAt = '',
     this.transactionId = '',
+    this.checkedInAt,
     this.reviewId,
     this.reviewRating,
   });
@@ -140,6 +141,7 @@ class Booking {
   final String status;
   final String createdAt;
   final String transactionId;
+  final String? checkedInAt;
   final int? reviewId;
   final int? reviewRating;
 
@@ -178,6 +180,9 @@ class Booking {
       json['transactionId'],
       fallback: _bookingTransactionId(json['id']),
     ),
+    checkedInAt: json['checkedInAt'] == null
+        ? null
+        : _text(json['checkedInAt']),
     reviewId: _intValue(json['reviewId']),
     reviewRating: _intValue(json['reviewRating']),
   );
@@ -232,6 +237,7 @@ class Booking {
     'status' => status,
     'createdAt' => createdAt,
     'transactionId' => transactionId,
+    'checkedInAt' => checkedInAt,
     'reviewId' => reviewId,
     'reviewRating' => reviewRating,
     _ => null,

@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS fitness_booking_attendance (
     REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS booking_check_ins (
+    booking_id BIGINT UNSIGNED NOT NULL,
+    customer_id BIGINT UNSIGNED NOT NULL,
+    checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    qr_issued_at DATETIME NOT NULL,
+    PRIMARY KEY (booking_id),
+    KEY idx_booking_check_ins_customer (customer_id, checked_in_at),
+    CONSTRAINT fk_booking_check_ins_booking
+        FOREIGN KEY (booking_id) REFERENCES bookings (id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_booking_check_ins_customer
+        FOREIGN KEY (customer_id) REFERENCES users (id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS merchant_news (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   business_id BIGINT UNSIGNED NOT NULL,

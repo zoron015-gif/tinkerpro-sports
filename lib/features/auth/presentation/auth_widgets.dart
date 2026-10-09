@@ -176,6 +176,9 @@ class _AuthField extends StatelessWidget {
     this.suffix,
     this.controller,
     this.maxLength,
+    this.errorText,
+    this.fieldKey,
+    this.onChanged,
   });
 
   final String label;
@@ -186,9 +189,13 @@ class _AuthField extends StatelessWidget {
   final Widget? suffix;
   final TextEditingController? controller;
   final int? maxLength;
+  final String? errorText;
+  final Key? fieldKey;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) => Column(
+    key: fieldKey,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       AppText(
@@ -202,12 +209,16 @@ class _AuthField extends StatelessWidget {
       ),
       const SizedBox(height: 6),
       TextField(
-        key: ValueKey('auth-field-${label.toLowerCase().replaceAll(' ', '-')}'),
+        key: ValueKey(
+          'auth-field-${label.toLowerCase().replaceAll(' ', '-')}',
+        ),
         controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
         maxLength: maxLength,
+        onChanged: onChanged,
         decoration: InputDecoration(
+          errorText: errorText,
           hintText: appLanguageText(hint, hint),
           prefixIcon: Icon(icon, color: _muted, size: 20),
           suffixIcon: suffix,

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'app_bottom_navigation.dart';
 import 'app_session.dart';
@@ -245,7 +246,38 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Future<bool> _saveProfile() async {
-    if (!(_formKey.currentState?.validate() ?? true)) return false;
+    if (!(_formKey.currentState?.validate() ?? true)) {
+      final formContext = _formKey.currentContext;
+      if (formContext != null) {
+        BuildContext? firstInvalidContext;
+        void visit(Element element) {
+          if (firstInvalidContext != null) return;
+          if (element is StatefulElement) {
+            final state = element.state;
+            if (state is FormFieldState<dynamic> && state.errorText != null) {
+              firstInvalidContext = state.context;
+              return;
+            }
+          }
+          element.visitChildElements(visit);
+        }
+
+        (formContext as Element).visitChildElements(visit);
+        final target = firstInvalidContext;
+        if (target != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (target.mounted) {
+              Scrollable.ensureVisible(
+                target,
+                duration: const Duration(milliseconds: 250),
+                alignment: .15,
+              );
+            }
+          });
+        }
+      }
+      return false;
+    }
     setState(() => _saving = true);
     try {
       final session = await AppSession.load();
@@ -787,21 +819,132 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   Widget _customerManagementContent() {
     final bookings = _filteredPayoutBookings;
-    if (bookings.isEmpty) {
-      return _emptyPayoutCard(
-        Icons.people_outline_rounded,
-        'No customer bookings',
-        'Customer booking requests and approved bookings will appear here.',
-      );
-    }
     return Column(
       children: [
+        _customerCheckInQrCard,
+        const SizedBox(height: 6),
+        if (bookings.isEmpty)
+          _emptyPayoutCard(
+            Icons.people_outline_rounded,
+            'No customer bookings',
+            'Customer booking requests and approved bookings will appear here.',
+          ),
         for (final booking in bookings) ...[
           _customerManagementBookingCard(booking),
           const SizedBox(height: 6),
         ],
       ],
     );
+  }
+
+  Widget get _customerCheckInQrCard => Card(
+    elevation: 0,
+    color: AppColors.surface,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code_2_rounded, color: _merchantNavy),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AppText(
+                  'Venue arrival check-in',
+                  style: TextStyle(
+                    color: _merchantInk,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  localize: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          AppText(
+            'Show your venue QR at arrival. Customers scan it to verify an approved booking and record their arrival.',
+            style: TextStyle(color: _merchantMuted, fontSize: 12),
+            localize: true,
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('merchant-show-arrival-qr'),
+              onPressed: _businesses.isEmpty ? null : _showCheckInQr,
+              icon: const Icon(Icons.qr_code_2_rounded),
+              label: const AppText('Show venue QR', localize: true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _merchantNavy,
+                minimumSize: const Size.fromHeight(44),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _showCheckInQr() async {
+    final venueId = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const AppText('Choose venue', localize: true),
+        children: [
+          for (final business in _businesses)
+            SimpleDialogOption(
+              key: ValueKey('merchant-checkin-venue-${business['id']}'),
+              onPressed: () {
+                final id = business['id'];
+                if (id is num) Navigator.of(dialogContext).pop(id.toInt());
+              },
+              child: Row(
+                children: [
+                  const Icon(Icons.storefront_outlined),
+                  const SizedBox(width: 12),
+                  Expanded(child: AppText('${business['name'] ?? 'Venue'}')),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || venueId == null) return;
+    try {
+      final session = await AppSession.load();
+      if (!mounted) return;
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        _showMessage('Sign in again to generate a venue check-in QR.');
+        return;
+      }
+      final venue = _businesses.firstWhere(
+        (business) => int.tryParse('${business['id']}') == venueId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (venue.isEmpty) {
+        _showMessage('That venue is no longer available. Refresh and try again.');
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _MerchantCheckInQrDialog(
+          api: _api,
+          token: token,
+          venueId: venueId,
+          venueName: '${venue['name'] ?? 'Venue'}',
+        ),
+      );
+    } on Exception catch (error) {
+      if (mounted) {
+        _showMessage(
+          error is AuthApiException
+              ? error.userMessage
+              : 'Could not open the venue check-in QR: $error',
+        );
+      }
+    }
   }
 
   Widget _paymentManagementContent() {
@@ -1105,6 +1248,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     bool showDelete = false,
   }) {
     final pending = _isPendingBooking(booking);
+    final checkedInAt = booking['checkedInAt'];
     return Card(
       elevation: 0,
       color: AppColors.surface,
@@ -1146,6 +1290,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'Status',
               BookingStatusParser.label(booking['status']),
             ),
+            if (checkedInAt != null)
+              _payoutManagementInfoRow('Venue arrival', 'Checked in · $checkedInAt')
+            else if (_isApprovedBooking(booking))
+              _payoutManagementInfoRow('Venue arrival', 'Awaiting check-in'),
             const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.end,
@@ -1583,6 +1731,16 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     '${booking['fitnessCoachDurationMonths'] == null ? '' : ' · ${booking['fitnessCoachDurationMonths']} month(s)'}',
                   ),
               ]),
+              if (!paymentOnly)
+                _payoutDetailsSection('Arrival history', [
+                  _payoutDetailRow(
+                    'Check-in status',
+                    booking['checkedInAt'] == null
+                        ? 'No QR check-in recorded'
+                        : 'Customer scanned venue QR',
+                  ),
+                  _payoutDetailRow('Arrival recorded at', booking['checkedInAt']),
+                ]),
               _payoutDetailsSection('Payment details', [
                 _payoutDetailRow(
                   'Payment method',
@@ -3158,5 +3316,154 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               ? 'Please enter $label.'
               : null
         : null,
+  );
+}
+
+class _MerchantCheckInQrDialog extends StatefulWidget {
+  const _MerchantCheckInQrDialog({
+    required this.api,
+    required this.token,
+    required this.venueId,
+    required this.venueName,
+  });
+
+  final AuthApi api;
+  final String token;
+  final int venueId;
+  final String venueName;
+
+  @override
+  State<_MerchantCheckInQrDialog> createState() =>
+      _MerchantCheckInQrDialogState();
+}
+
+class _MerchantCheckInQrDialogState extends State<_MerchantCheckInQrDialog> {
+  String? _qrCode;
+  String? _error;
+  int? _expiresAt;
+  bool _loading = false;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 45),
+      (_) => _loadCode(),
+    );
+    _loadCode();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCode() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.api.merchantVenueCheckInCode(
+        token: widget.token,
+        venueId: widget.venueId,
+      );
+      final qrCode = result['qrCode'];
+      final expiresAt = result['expiresAt'];
+      if (qrCode is! String ||
+          qrCode.isEmpty ||
+          expiresAt is! num) {
+        throw const AuthApiException(
+          'The server returned an invalid check-in QR code.',
+          200,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _qrCode = qrCode;
+        _expiresAt = expiresAt.toInt();
+      });
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error is AuthApiException
+            ? error.userMessage
+            : 'Could not refresh the venue QR code: $error';
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: AppText(widget.venueName, localize: true),
+    content: SizedBox(
+      width: 280,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AppText(
+            'Customers scan this code at arrival. It refreshes automatically.',
+            textAlign: TextAlign.center,
+            localize: true,
+          ),
+          const SizedBox(height: 12),
+          if (_qrCode != null && _error == null)
+            Container(
+              key: const ValueKey('merchant-check-in-qr-code'),
+              padding: const EdgeInsets.all(10),
+              color: Colors.white,
+              child: QrImageView(
+                data: _qrCode!,
+                version: QrVersions.auto,
+                size: 220,
+              ),
+            )
+          else if (_loading)
+            const SizedBox(
+              height: 220,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            SizedBox(
+              height: 220,
+              child: Center(
+                child: AppText(
+                  _error ?? 'Check-in QR unavailable.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          if (_expiresAt != null && _qrCode != null && _error == null) ...[
+            const SizedBox(height: 8),
+            AppText(
+              'Code refreshes every minute · '
+              'expires ${DateTime.fromMillisecondsSinceEpoch(_expiresAt!).toLocal().toString().substring(11, 16)}',
+              style: TextStyle(color: _merchantMuted, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (_loading && _qrCode != null) ...[
+            const SizedBox(height: 6),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
+        ],
+      ),
+    ),
+    actions: [
+      if (_error != null)
+        TextButton(
+          onPressed: _loading ? null : _loadCode,
+          child: const AppText('Retry', localize: true),
+        ),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const AppText('Close', localize: true),
+      ),
+    ],
   );
 }

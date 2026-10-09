@@ -2402,6 +2402,7 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'zh': '{count} 人评分',
   },
   'Review': {'fil': 'Review', 'ko': '리뷰', 'ja': 'レビュー', 'zh': '评价'},
+  'Reviewed': {'fil': 'Nasuri', 'ko': '리뷰 완료', 'ja': 'レビュー済み', 'zh': '已评价'},
   'Reviews': {'fil': 'Mga review', 'ko': '리뷰', 'ja': 'レビュー', 'zh': '评价'},
   'New booking request': {
     'fil': 'Bagong kahilingan sa booking',

@@ -33,6 +33,7 @@ test('applied schema versions are skipped while the migration lock is released',
   assert.ok(calls.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS schema_migrations')));
   assert.ok(calls.some((sql) => sql.includes('SELECT version FROM schema_migrations')));
   assert.equal(calls.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS merchant_businesses')), false);
+  assert.ok(calls.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS booking_check_ins')));
   assert.ok(calls.some((sql) => sql.includes('RELEASE_LOCK')));
   assert.equal(released, true);
 });

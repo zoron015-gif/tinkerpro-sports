@@ -149,16 +149,25 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     }
   }
 
+  String? _composerError;
+
+  void _onComposerChanged(String _) {
+    if (_composerError == null) return;
+    setState(() => _composerError = null);
+  }
+
   Future<void> _send() async {
     final token = _token;
     final id = _selectedConversation;
     final text = _composer.text.trim();
-    if (token == null ||
-        id == null ||
-        (text.isEmpty && _pendingImageData == null) ||
-        _sending) {
+    if (token == null || id == null || _sending) {
       return;
     }
+    if (text.isEmpty && _pendingImageData == null) {
+      setState(() => _composerError = 'Write a message or attach an image.');
+      return;
+    }
+    setState(() => _composerError = null);
     _controller.setSending(true);
     try {
       await _messagesService.sendMessage(
@@ -379,6 +388,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   Future<void> _startConversation() async {
     if (_token == null || _contacts.isEmpty) return;
     final selected = <int>{};
+    var showRecipientError = false;
     final titleController = TextEditingController();
     final created = await showModalBottomSheet<bool>(
       context: context,
@@ -421,6 +431,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                           : '${selected.length} recipient${selected.length == 1 ? '' : 's'} selected',
                       style: TextStyle(color: Colors.grey.shade700),
                     ),
+                    if (showRecipientError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: AppText(
+                          'Select at least one recipient to continue.',
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          localize: true,
+                        ),
+                      ),
                     const SizedBox(height: 6),
                     TextField(
                       controller: _contactSearch,
@@ -494,6 +513,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                             ),
                             onTap: () => setDialogState(() {
                               checked ? selected.remove(id) : selected.add(id);
+                              showRecipientError = false;
                             }),
                           );
                         },
@@ -511,9 +531,13 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: FilledButton(
-                            onPressed: selected.isEmpty
-                                ? null
-                                : () => Navigator.pop(dialogContext, true),
+                            onPressed: () {
+                              if (selected.isEmpty) {
+                                setDialogState(() => showRecipientError = true);
+                                return;
+                              }
+                              Navigator.pop(dialogContext, true);
+                            },
                             child: AppText(
                               selected.length > 1 ? 'Create group' : 'Message',
                             ),
@@ -756,6 +780,8 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                           composer: _composer,
                           pendingImageData: _pendingImageData,
                           sending: _sending,
+                          composerError: _composerError,
+                          onComposerChanged: _onComposerChanged,
                           onDeleteMessage: _deleteMessage,
                           onPickImage: _pickImage,
                           onRemovePendingImage: _removePendingImage,

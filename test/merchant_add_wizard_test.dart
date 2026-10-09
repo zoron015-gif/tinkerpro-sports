@@ -78,15 +78,77 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('STEP 3 OF 3  ·  Schedule & review'), findsOneWidget);
+    final scheduleHeadingTop = tester
+        .getTopLeft(find.text('SCHEDULE AND PRICING'))
+        .dy;
+    expect(scheduleHeadingTop, greaterThan(0));
+    expect(scheduleHeadingTop, lessThan(800));
     expect(find.text('Venue address (required)'), findsOneWidget);
     await tester.ensureVisible(find.text('Finish required details'));
     expect(find.text('Sample court'), findsWidgets);
     expect(find.text('Finish required details'), findsOneWidget);
 
+    await tester.tap(find.byKey(const ValueKey('business-setup-publish')));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose an opening time.'), findsOneWidget);
+    expect(find.text('Choose a closing time.'), findsOneWidget);
+    expect(
+      find.text('Please add the venue’s street address and city.'),
+      findsOneWidget,
+    );
+
     await tester.tap(find.text('Back'));
     await tester.pumpAndSettle();
     expect(find.text('STEP 2 OF 3  ·  Booking details'), findsOneWidget);
     expect(find.text('Basketball'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('missing event types are shown inline and brought into view', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+
+    final pageKey = GlobalKey<MerchantAddPageState>();
+    final api = AuthApi(
+      client: MockClient(
+        (request) async => http.Response(jsonEncode({'posts': []}), 200),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MerchantAddPage(
+            key: pageKey,
+            initialBusinessType: 'Event',
+            api: api,
+            businesses: const [],
+            onBusinessesChanged: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    pageKey.currentState!.openAddBusinessForm();
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, 'Community venue');
+    await tester.enterText(find.byType(TextFormField).last, 'Community Hall');
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Choose at least one event type to continue.'),
+      findsOneWidget,
+    );
+    expect(find.text('Conference'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

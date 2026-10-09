@@ -76,6 +76,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
     }
   }
 
+  String? _emailError;
+  String? _passwordError;
+  String? _confirmPasswordError;
+  final _emailFieldKey = GlobalKey();
+  final _passwordFieldKey = GlobalKey();
+  final _confirmPasswordFieldKey = GlobalKey();
+
   Future<void> _submit() async {
     if (await _authService.hasAuthenticatedApiSession()) {
       if (mounted) Navigator.of(context).pop(true);
@@ -84,26 +91,42 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
 
     final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text;
-    if (email.isEmpty) {
-      _showMessage('Please enter your email address.');
-      return;
-    }
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      _showMessage('That email address doesn’t look right. Please check it.');
-      return;
-    }
-    if (password.isEmpty) {
-      _showMessage('Please enter your password.');
-      return;
-    }
-    if (password.length < 8) {
-      _showMessage('Choose a password with at least 8 characters.');
-      return;
-    }
-
-    if (_mode == _AuthMode.register &&
-        password != _confirmPasswordController.text) {
-      _showMessage('Those passwords don’t match. Please try again.');
+    final emailError = email.isEmpty
+        ? 'Please enter your email address.'
+        : !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)
+        ? 'That email address doesn’t look right. Please check it.'
+        : null;
+    final passwordError = password.isEmpty
+        ? 'Please enter your password.'
+        : password.length < 8
+        ? 'Choose a password with at least 8 characters.'
+        : null;
+    final confirmPasswordError =
+        _mode == _AuthMode.register &&
+            password != _confirmPasswordController.text
+        ? 'Those passwords don’t match. Please try again.'
+        : null;
+    setState(() {
+      _emailError = emailError;
+      _passwordError = passwordError;
+      _confirmPasswordError = confirmPasswordError;
+    });
+    if (emailError != null ||
+        passwordError != null ||
+        confirmPasswordError != null) {
+      final firstErrorKey = emailError != null
+          ? _emailFieldKey
+          : passwordError != null
+          ? _passwordFieldKey
+          : _confirmPasswordFieldKey;
+      final target = firstErrorKey.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 250),
+          alignment: .15,
+        );
+      }
       return;
     }
 
@@ -560,6 +583,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           icon: Icons.mail_outline_rounded,
                           keyboardType: TextInputType.emailAddress,
                           controller: _emailController,
+                          fieldKey: _emailFieldKey,
+                          errorText: _emailError,
+                          onChanged: (_) => setState(() => _emailError = null),
                         ),
                         const SizedBox(height: _authFieldGap),
                         _AuthField(
@@ -575,6 +601,12 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           icon: Icons.lock_outline_rounded,
                           obscureText: _obscurePassword,
                           controller: _passwordController,
+                          fieldKey: _passwordFieldKey,
+                          errorText: _passwordError,
+                          onChanged: (_) => setState(() {
+                            _passwordError = null;
+                            _confirmPasswordError = null;
+                          }),
                           suffix: IconButton(
                             onPressed: () => setState(
                               () => _obscurePassword = !_obscurePassword,
@@ -600,6 +632,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                             icon: Icons.verified_user_outlined,
                             obscureText: true,
                             controller: _confirmPasswordController,
+                            fieldKey: _confirmPasswordFieldKey,
+                            errorText: _confirmPasswordError,
+                            onChanged: (_) =>
+                                setState(() => _confirmPasswordError = null),
                           ),
                         ],
                         SizedBox(

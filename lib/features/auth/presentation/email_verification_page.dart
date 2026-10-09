@@ -24,12 +24,27 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     super.dispose();
   }
 
+  String? _codeError;
+  final _codeFieldKey = GlobalKey();
+
   Future<void> _verify() async {
     final code = _codeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('That code should be 6 digits. Check your email and try again.');
+      setState(
+        () => _codeError =
+            'Enter the 6-digit code sent to your email address.',
+      );
+      final target = _codeFieldKey.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 250),
+          alignment: .15,
+        );
+      }
       return;
     }
+    setState(() => _codeError = null);
     setState(() => _loading = true);
     try {
       final response = await widget.service.verifyEmail(
@@ -112,6 +127,10 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               icon: Icons.mark_email_read_outlined,
               keyboardType: TextInputType.number,
               controller: _codeController,
+              maxLength: 6,
+              fieldKey: _codeFieldKey,
+              errorText: _codeError,
+              onChanged: (_) => setState(() => _codeError = null),
             ),
             const SizedBox(height: 6),
             SizedBox(

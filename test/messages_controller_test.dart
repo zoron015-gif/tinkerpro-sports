@@ -18,6 +18,7 @@ class _FakeMessagesService extends MessagesService {
   int conversationFetches = 0;
   String? requestedBusinessType;
   final List<String?> requestedMessageBusinessTypes = [];
+  final List<int> conversationsMarkedRead = [];
 
   @override
   Future<List<Map<String, dynamic>>> fetchConversations(
@@ -49,6 +50,16 @@ class _FakeMessagesService extends MessagesService {
     final pending = pendingMessages[conversationId];
     if (pending != null) return pending.future;
     return Future.value(messagesByConversation[conversationId] ?? []);
+  }
+
+  @override
+  Future<void> setConversationState({
+    required String token,
+    required int conversationId,
+    bool? archived,
+    bool? unread,
+  }) async {
+    if (unread == false) conversationsMarkedRead.add(conversationId);
   }
 }
 
@@ -175,6 +186,7 @@ void main() {
     expect(controller.conversations.first['manuallyUnread'], isFalse);
     expect(controller.conversations.last['unreadCount'], 1);
     expect(controller.unreadMessageCount, 1);
+    expect(service.conversationsMarkedRead, [5]);
   });
 
   test(

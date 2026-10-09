@@ -40,6 +40,8 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   int _coachDurationMonths = 1;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
   TimeOfDay? _time;
+  String? _timeError;
+  final _firstVisitFieldKey = GlobalKey();
   String _payment = 'online';
   final String _bookingIdempotencyKey = newBookingIdempotencyKey();
   String? _token;
@@ -185,6 +187,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     setState(() {
       _date = selected;
       _time = null;
+      _timeError = null;
     });
     await _loadAvailability();
   }
@@ -194,7 +197,12 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       context: context,
       initialTime: _time ?? const TimeOfDay(hour: 9, minute: 0),
     );
-    if (selected != null) setState(() => _time = selected);
+    if (selected != null) {
+      setState(() {
+        _time = selected;
+        _timeError = null;
+      });
+    }
   }
 
   Future<void> _submit() async {
@@ -219,7 +227,17 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       return;
     }
     if (time == null) {
-      _message('Please choose a time for your first visit.');
+      setState(
+        () => _timeError = 'Choose a time for your first visit to continue.',
+      );
+      final fieldContext = _firstVisitFieldKey.currentContext;
+      if (fieldContext != null) {
+        Scrollable.ensureVisible(
+          fieldContext,
+          duration: const Duration(milliseconds: 250),
+          alignment: .2,
+        );
+      }
       return;
     }
     if (_timeUnavailable) {
@@ -714,6 +732,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
               ),
               const SizedBox(height: 6),
               Row(
+                key: _firstVisitFieldKey,
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
@@ -727,13 +746,27 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _chooseTime,
-                      style: _choiceStyle(),
+                      style: _timeChoiceStyle(),
+                      key: const ValueKey('fitness-booking-first-visit-time'),
                       icon: const Icon(Icons.schedule_rounded),
                       label: AppText(_time?.format(context) ?? 'Choose time'),
                     ),
                   ),
                 ],
               ),
+              if (_timeError != null) ...[
+                const SizedBox(height: 4),
+                AppText(
+                  _timeError!,
+                  key: const ValueKey('fitness-booking-first-visit-error'),
+                  style: TextStyle(
+                    color: AppColors.errorText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  localize: true,
+                ),
+              ],
               const SizedBox(height: 6),
               _availabilityNote(),
               const SizedBox(height: 6),
@@ -1015,6 +1048,15 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     padding: AppSpacing.buttonPadding,
     side: BorderSide(color: AppColors.border, width: 1.5),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+  );
+
+  ButtonStyle _timeChoiceStyle() => _choiceStyle().copyWith(
+    side: WidgetStatePropertyAll(
+      BorderSide(
+        color: _timeError == null ? AppColors.border : AppColors.errorText,
+        width: _timeError == null ? 1.5 : 2,
+      ),
+    ),
   );
 
   InputDecoration _decoration({

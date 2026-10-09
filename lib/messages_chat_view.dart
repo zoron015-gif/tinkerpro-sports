@@ -16,6 +16,8 @@ class MessagesChatView extends StatelessWidget {
     required this.composer,
     required this.pendingImageData,
     required this.sending,
+    this.composerError,
+    this.onComposerChanged,
     required this.onDeleteMessage,
     required this.onPickImage,
     required this.onRemovePendingImage,
@@ -28,6 +30,8 @@ class MessagesChatView extends StatelessWidget {
   final TextEditingController composer;
   final String? pendingImageData;
   final bool sending;
+  final String? composerError;
+  final ValueChanged<String>? onComposerChanged;
   final ValueChanged<Map<String, dynamic>> onDeleteMessage;
   final VoidCallback onPickImage;
   final VoidCallback onRemovePendingImage;
@@ -75,7 +79,10 @@ class MessagesChatView extends StatelessWidget {
                       );
                     }
                     final bubble = Card(
-                      color: mine ? AppColors.softOrange : Colors.white,
+                      key: ValueKey('message-bubble-${message['id']}'),
+                      color: mine
+                          ? AppColors.softOrange
+                          : AppColors.surfaceVariant,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -87,7 +94,11 @@ class MessagesChatView extends StatelessWidget {
                             if (body.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
-                                child: AppText(body),
+                                child: AppText(
+                                  body,
+                                  key: ValueKey('message-body-${message['id']}'),
+                                  style: TextStyle(color: AppColors.ink),
+                                ),
                               ),
                             if (_messageTime(message) case final time?)
                               Padding(
@@ -202,8 +213,10 @@ class MessagesChatView extends StatelessWidget {
                       controller: composer,
                       enabled: !blocked,
                       textInputAction: TextInputAction.send,
+                      onChanged: onComposerChanged,
                       onSubmitted: (_) => onSend(),
                       decoration: InputDecoration(
+                        errorText: composerError,
                         hintText: appLanguageText(
                           'Write a message...',
                           'Write a message...',

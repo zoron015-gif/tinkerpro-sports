@@ -203,11 +203,24 @@ void main() {
     expect(find.text('Event total'), findsOneWidget);
     expect(find.text('Cash downpayment due at venue'), findsOneWidget);
     final submitButton = find.byKey(const ValueKey('event-booking-submit'));
-    await tester.scrollUntilVisible(
-      submitButton,
-      120,
-      scrollable: find.byType(Scrollable).first,
+    await tester.ensureVisible(submitButton);
+    await tester.pumpAndSettle();
+    final guestCountField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.labelText == 'Expected guests',
     );
+    await tester.ensureVisible(guestCountField);
+    await tester.enterText(guestCountField, '');
+    await tester.ensureVisible(submitButton);
+    await tester.tap(submitButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Enter how many guests you’re expecting.'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(guestCountField);
+    await tester.enterText(guestCountField, '100');
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
     expect(find.text('Confirm event booking'), findsOneWidget);
@@ -222,7 +235,7 @@ void main() {
     expect(submittedBooking, isNotNull);
     expect(submittedBooking!['venueId'], 7);
     expect(submittedBooking!['eventType'], 'Wedding');
-    expect(submittedBooking!['players'], 50);
+    expect(submittedBooking!['players'], 100);
     expect(submittedBooking!['paymentMethod'], 'cash_on_arrival');
     expect(submittedBooking!['durationHours'], 4);
     expect(submittedBooking!['startTime'], matches(r'^\d{2}:\d{2}:00$'));

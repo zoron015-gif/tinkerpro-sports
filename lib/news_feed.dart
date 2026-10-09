@@ -2719,6 +2719,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
+                    Expanded(child: secondaryAction),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: FilledButton.icon(
                         key: ValueKey(
@@ -2736,8 +2738,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(child: secondaryAction),
                   ],
                 ),
               ],

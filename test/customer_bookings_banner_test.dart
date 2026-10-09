@@ -59,6 +59,78 @@ void main() {
     );
   });
 
+  testWidgets('viewing bookings clears status notification badges', (
+    tester,
+  ) async {
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {..._approvedBooking, 'id': 31},
+                {..._approvedBooking, 'id': 32, 'status': 'completed'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+
+    final badges = tester.widgetList<Badge>(find.byType(Badge));
+    expect(badges, isNotEmpty);
+    expect(badges.every((badge) => !badge.isLabelVisible), isTrue);
+  });
+
+  testWidgets('customer booking details show the recorded venue arrival', (
+    tester,
+  ) async {
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {..._approvedBooking, 'checkedInAt': '2026-10-01T09:45:00'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved (1)'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    final detailsButton = find.byKey(
+      const ValueKey('customer-booking-details-12'),
+    );
+    await tester.ensureVisible(detailsButton);
+    await tester.tap(detailsButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Checked in · 2026-10-01T09:45:00'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('customer can permanently delete a completed booking', (
     tester,
   ) async {
@@ -98,6 +170,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView).last, const Offset(0, -400));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('customer-booking-details-24')),
+    );
+    await tester.tap(find.byKey(const ValueKey('customer-booking-details-24')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('customer-booking-delete-24')),
+      findsOneWidget,
+    );
     await tester.ensureVisible(
       find.byKey(const ValueKey('customer-booking-delete-24')),
     );
@@ -484,8 +565,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView).last, const Offset(0, -400));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Rate this booking'));
-    await tester.tap(find.text('Rate this booking'));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('customer-booking-details-12')),
+    );
+    await tester.tap(find.byKey(const ValueKey('customer-booking-details-12')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Review'));
+    await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('5 stars'));
     await tester.enterText(find.byType(TextField).last, 'Great court');
@@ -502,7 +588,9 @@ void main() {
     expect(find.text('Your rating was submitted.'), findsOneWidget);
     await tester.tap(find.text('Completed (1)'));
     await tester.pumpAndSettle();
-    expect(find.text('You rated this 5/5'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('customer-booking-details-12')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reviewed'), findsOneWidget);
   });
 }
 

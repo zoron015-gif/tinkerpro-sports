@@ -37,6 +37,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   int _durationHours = 4;
   String? _eventType;
+  String? _eventTypeError;
+  String? _guestCountError;
+  final _eventTypeFieldKey = GlobalKey();
+  final _guestCountFieldKey = GlobalKey();
   String _paymentMethod = 'online';
   final String _bookingIdempotencyKey = newBookingIdempotencyKey();
   bool _submitting = false;
@@ -161,32 +165,53 @@ class _EventBookingPageState extends State<EventBookingPage> {
     if (time != null) setState(() => _startTime = time);
   }
 
+  void _scrollToField(GlobalKey key) {
+    final target = key.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 250),
+      alignment: .15,
+    );
+  }
+
   Future<void> _submit() async {
-    final guests = int.tryParse(_guestCountController.text.trim());
     if (_eventType == null) {
-      _showError('Please choose one of the event types offered by this venue.');
-      return;
-    }
-    if (_guestCountController.text.trim().isEmpty) {
-      _showError('Please enter how many guests you’re expecting.');
-      return;
-    }
-    if (guests == null || guests < 1) {
-      _showError('Please enter a whole number of at least 1 guest.');
-      return;
-    }
-    if (_attendanceMin > 0 && guests < _attendanceMin) {
-      _showError(
-        'This venue requires at least $_attendanceMin guests. Please adjust your count.',
+      setState(
+        () => _eventTypeError =
+            'Choose one of the event types offered by this venue.',
       );
+      _scrollToField(_eventTypeFieldKey);
       return;
     }
-    if (_attendanceMax > 0 && guests > _attendanceMax) {
-      _showError(
-        'This venue can host up to $_attendanceMax guests. Please adjust your count.',
+    setState(() => _eventTypeError = null);
+    final guestText = _guestCountController.text.trim();
+    final guests = int.tryParse(guestText);
+    String? guestError;
+    if (guestText.isEmpty) {
+      guestError = 'Enter how many guests you’re expecting.';
+    } else if (guests == null || guests < 1) {
+      guestError = 'Enter a whole number of at least 1 guest.';
+    } else if (_attendanceMin > 0 && guests < _attendanceMin) {
+      guestError =
+          'This venue requires at least $_attendanceMin guests. Please adjust your count.';
+    } else if (_attendanceMax > 0 && guests > _attendanceMax) {
+      guestError =
+          'This venue can host up to $_attendanceMax guests. Please adjust your count.';
+    }
+    if (guestError != null) {
+      setState(() => _guestCountError = guestError);
+      _scrollToField(_guestCountFieldKey);
+      return;
+    }
+    if (guests == null) {
+      setState(
+        () => _guestCountError = 'Enter a whole number of at least 1 guest.',
       );
+      _scrollToField(_guestCountFieldKey);
       return;
     }
+    setState(() => _guestCountError = null);
     if (_eventFee <= 0) {
       _showError(
         'This venue’s event price isn’t available right now. Please contact the venue.',
@@ -655,13 +680,14 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 const SizedBox(height: 6),
                 _sectionLabel('BOOKING CONFIGURATION'),
                 DropdownButtonFormField<String>(
+                  key: _eventTypeFieldKey,
                   initialValue: _eventType,
                   isExpanded: true,
                   decoration: _inputDecoration(
                     'Select event type',
                     prefixIcon: Icon(_eventTypeIcon(_eventType ?? '')),
                     labelText: appLanguageText('Event type', 'Event type'),
-                  ),
+                  ).copyWith(errorText: _eventTypeError),
                   items: _eventTypes
                       .map(
                         (type) =>
@@ -670,7 +696,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       .toList(),
                   onChanged: _submitting
                       ? null
-                      : (value) => setState(() => _eventType = value),
+                      : (value) => setState(() {
+                          _eventType = value;
+                          _eventTypeError = null;
+                        }),
                 ),
                 const SizedBox(height: 6),
                 _sectionLabel('CHOOSE DATE AND TIME'),
@@ -723,6 +752,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 ),
                 const SizedBox(height: 6),
                 TextField(
+                  key: _guestCountFieldKey,
                   controller: _guestCountController,
                   enabled: !_submitting,
                   keyboardType: TextInputType.number,
@@ -733,8 +763,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       'Expected guests',
                       'Expected guests',
                     ),
-                  ),
-                  onChanged: (_) => setState(() {}),
+                  ).copyWith(errorText: _guestCountError),
+                  onChanged: (_) => setState(() => _guestCountError = null),
                 ),
                 const SizedBox(height: 6),
                 _sectionLabel('PAYMENT METHOD'),

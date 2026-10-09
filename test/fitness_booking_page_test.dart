@@ -195,4 +195,70 @@ void main() {
       expect(find.byIcon(Icons.accessibility_new_rounded), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'missing first-visit time is highlighted in the fitness checkout',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      FlutterSecureStorage.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/bookings/availability') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            404,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FitnessBookingPage(
+              api: api,
+              business: {
+                'id': 7,
+                'name': 'Test Fitness',
+                'fitnessCategories': [
+                  {'category': 'Yoga', 'sessionPrice': 500},
+                ],
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final submitButton = find.widgetWithText(
+        FilledButton,
+        'Pay · \u{20B1} 500.00',
+      );
+      await tester.ensureVisible(submitButton);
+      await tester.tap(submitButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Choose a time for your first visit to continue.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('fitness-booking-first-visit-error')),
+        findsOneWidget,
+      );
+      final timeButton = tester.widget<OutlinedButton>(
+        find.byKey(const ValueKey('fitness-booking-first-visit-time')),
+      );
+      expect(timeButton.style!.side!.resolve({})!.color, AppColors.errorText);
+      expect(
+        find.text('Please choose a time for your first visit.'),
+        findsNothing,
+      );
+    },
+  );
 }

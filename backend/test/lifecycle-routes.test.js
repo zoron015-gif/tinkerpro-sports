@@ -47,6 +47,30 @@ function makeConnection() {
       db.calls.push({ sql, params });
 
       if (
+        sql.includes('FROM bookings b') &&
+        sql.includes('b.customer_id = ? AND b.venue_id = ?') &&
+        sql.includes("b.status = 'approved'")
+      ) {
+        return response(
+          db.checkInBookings.filter(
+            (booking) =>
+              String(booking.customerId) === String(params[0]) &&
+              Number(booking.venueId) === Number(params[1]) &&
+              booking.date === params[2],
+          ),
+        );
+      }
+      if (sql.includes('FROM booking_check_ins')) {
+        const checkIn = db.checkIns.get(Number(params[0]));
+        return response(checkIn ? [checkIn] : []);
+      }
+      if (sql.includes('INSERT INTO booking_check_ins')) {
+        db.checkIns.set(Number(params[0]), {
+          checkedInAt: new Date().toISOString().slice(0, 19),
+        });
+        return [{ affectedRows: 1 }, []];
+      }
+      if (
         sql.includes('FROM bookings') &&
         sql.includes('payment_method AS paymentMethod') &&
         sql.includes("status IN ('pending', 'approved')") &&
@@ -217,6 +241,8 @@ function resetDatabase() {
     availabilityError: null,
     customerBookings: [],
     dueBookings: [],
+    checkInBookings: [],
+    checkIns: new Map(),
     venue: {
       id: 7,
       merchant_id: 88,
@@ -301,10 +327,10 @@ function bearer(role = 'customer', id = role === 'merchant' ? '88' : '42') {
 
 async function request(
   url,
-  { role, idempotencyKey = 'test-idempotency-key-0001', ...options } = {},
+  { role, id, idempotencyKey = 'test-idempotency-key-0001', ...options } = {},
 ) {
   const headers = new Headers(options.headers);
-  headers.set('authorization', `Bearer ${bearer(role)}`);
+  headers.set('authorization', `Bearer ${bearer(role, id)}`);
   if (options.body !== undefined) headers.set('content-type', 'application/json');
   if (
     url === '/api/bookings' &&
@@ -331,6 +357,17 @@ before(async () => {
   const fakePool = {
     execute: async (sql, params = []) => {
       db.calls.push({ sql, params });
+      if (
+        sql.includes('FROM merchant_businesses') &&
+        sql.includes('WHERE id = ? AND merchant_id = ?')
+      ) {
+        return response(
+          Number(params[0]) === db.venue.id &&
+            String(params[1]) === String(db.venue.merchant_id)
+            ? [{ id: db.venue.id, name: db.venue.name }]
+            : [],
+        );
+      }
       if (
         sql.includes('SELECT idempotency_request_hash AS requestHash') &&
         sql.includes('FROM bookings')
@@ -529,6 +566,69 @@ after(async () => {
   } else {
     process.env.PAYMONGO_WEBHOOK_SECRET = originalPaymongoWebhookSecret;
   }
+});
+
+test('venue QR codes create one verified customer booking check-in', async () => {
+  const codeResponse = await request(
+    '/api/merchant/businesses/7/check-in-code',
+    { role: 'merchant' },
+  );
+  assert.equal(codeResponse.status, 200);
+  const codeBody = await codeResponse.json();
+  const qrCode = JSON.parse(codeBody.qrCode);
+  assert.equal(qrCode.type, 'tinkerpro.checkin');
+  assert.equal(qrCode.venueId, 7);
+  assert.ok(codeBody.expiresAt > Date.now());
+
+  const unknownVenueResponse = await request(
+    '/api/merchant/businesses/999/check-in-code',
+    { role: 'merchant' },
+  );
+  assert.equal(unknownVenueResponse.status, 404);
+
+  const bookingTime = bookingStartAfterHours(0);
+  db.checkInBookings = [{
+    bookingId: 501,
+    customerId: 42,
+    venueId: 7,
+    date: bookingTime.bookingDate,
+    startTime: bookingTime.startTime,
+    durationHours: 2,
+    venueName: 'Test Court',
+  }];
+  const firstCheckIn = await request('/api/bookings/check-in', {
+    method: 'POST',
+    body: { qrCode: codeBody.qrCode },
+  });
+  assert.equal(firstCheckIn.status, 201);
+  const firstBody = await firstCheckIn.json();
+  assert.equal(firstBody.checkIn.bookingId, 501);
+  assert.equal(firstBody.checkIn.venueName, 'Test Court');
+  assert.equal(firstBody.alreadyCheckedIn, false);
+  assert.equal(db.checkIns.size, 1);
+
+  const repeatCheckIn = await request('/api/bookings/check-in', {
+    method: 'POST',
+    body: { qrCode: codeBody.qrCode },
+  });
+  assert.equal(repeatCheckIn.status, 200);
+  assert.equal((await repeatCheckIn.json()).alreadyCheckedIn, true);
+  assert.equal(db.checkIns.size, 1);
+
+  const noBooking = await request('/api/bookings/check-in', {
+    method: 'POST',
+    role: 'customer',
+    id: '43',
+    body: { qrCode: codeBody.qrCode },
+  });
+  assert.equal(noBooking.status, 409);
+
+  const alteredCode = JSON.stringify({ ...qrCode, venueId: 8 });
+  const forgedCheckIn = await request('/api/bookings/check-in', {
+    method: 'POST',
+    body: { qrCode: alteredCode },
+  });
+  assert.equal(forgedCheckIn.status, 400);
 });
 
 test('booking rejects malformed input without opening a transaction', async () => {
@@ -885,6 +985,7 @@ test('customer booking responses include fitness class details', async () => {
     sessionDurationMinutes: 45,
     instructorName: 'Alex',
     classSchedule: 'Weekdays',
+    checkedInAt: '2026-10-09T10:30:00',
     eventTypes: null,
     accessibilityNeeds: null,
     parkingNeeds: null,
@@ -904,9 +1005,11 @@ test('customer booking responses include fitness class details', async () => {
   assert.equal(body.bookings[0].sessionDurationMinutes, 45);
   assert.equal(body.bookings[0].instructorName, 'Alex');
   assert.equal(body.bookings[0].classSchedule, 'Weekdays');
+  assert.equal(body.bookings[0].checkedInAt, '2026-10-09T10:30:00');
   const bookingQuery = db.calls.find(({ sql }) =>
     sql.includes('FROM bookings b') &&
-    sql.includes('LEFT JOIN fitness_business_details'),
+    sql.includes('LEFT JOIN fitness_business_details') &&
+    sql.includes('LEFT JOIN booking_check_ins'),
   );
   assert.ok(bookingQuery);
   assert.match(bookingQuery.sql, /LOWER\(v\.business_type\) = \?/);

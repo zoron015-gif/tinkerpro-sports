@@ -53,6 +53,25 @@ extension AuthApiBookingOperations on AuthApi {
     return asMapList(response['bookings']);
   }
 
+  Future<Map<String, dynamic>> merchantVenueCheckInCode({
+    required String token,
+    required int venueId,
+  }) => _request(
+    'GET',
+    '/api/merchant/businesses/$venueId/check-in-code',
+    headers: _authHeaders(token),
+  );
+
+  Future<Map<String, dynamic>> recordBookingCheckIn({
+    required String token,
+    required String qrCode,
+  }) => _request(
+    'POST',
+    '/api/bookings/check-in',
+    body: {'qrCode': qrCode},
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+  );
+
   Future<void> deleteCustomerCompletedBooking({
     required String token,
     required int bookingId,
