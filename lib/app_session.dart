@@ -9,6 +9,7 @@ class AppSession {
   static const _apiTokenKey = 'session_api_token';
   static const _roleKey = 'session_role';
   static const _accountEmailKey = 'session_account_email';
+  static const _rememberedLoginEmailKey = 'remembered_login_email';
   static const _merchantProfileEmailKey = 'merchant_profile_email';
   static const _bookingStatusBannerDismissedPrefix =
       'booking_status_banner_dismissed_';
@@ -28,6 +29,8 @@ class AppSession {
   String? get apiToken => _apiToken;
   String? get role => _preferences.getString(_roleKey);
   String? get accountEmail => _preferences.getString(_accountEmailKey);
+  String? get rememberedLoginEmail =>
+      _preferences.getString(_rememberedLoginEmailKey);
 
   static Future<AppSession> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -57,6 +60,17 @@ class AppSession {
 
   Future<void> setAccountEmail(String email) async {
     await _preferences.setString(_accountEmailKey, email.toLowerCase());
+  }
+
+  Future<void> rememberLoginEmail(String email) async {
+    await _preferences.setString(
+      _rememberedLoginEmailKey,
+      email.trim().toLowerCase(),
+    );
+  }
+
+  Future<void> clearRememberedLoginEmail() async {
+    await _preferences.remove(_rememberedLoginEmailKey);
   }
 
   bool merchantProfileCompletedFor(String email) =>

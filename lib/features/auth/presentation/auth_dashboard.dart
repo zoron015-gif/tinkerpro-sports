@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../auth_api.dart';
 import '../../../app_design_system.dart';
+import '../../../app_session.dart';
 import '../../../app_preferences.dart';
 import '../application/auth_service.dart';
 
@@ -49,11 +50,18 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
   _AccountRole _role = _AccountRole.customer;
   bool _obscurePassword = true;
   bool _loading = false;
+  bool _rememberMe = false;
   final _api = AuthApi();
   late final _authService = AuthService(api: _api);
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberedLogin();
+  }
 
   @override
   void dispose() {
@@ -64,8 +72,35 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: AppText(message), backgroundColor: _navy));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: AppText(message), backgroundColor: _navy));
+  }
+
+  Future<void> _loadRememberedLogin() async {
+    final session = await AppSession.load();
+    if (!mounted) return;
+    final rememberedEmail = session.rememberedLoginEmail;
+    if (rememberedEmail == null || rememberedEmail.isEmpty) return;
+    setState(() {
+      if (_emailController.text.isEmpty) {
+        _emailController.text = rememberedEmail;
+      }
+      _rememberMe = true;
+    });
+  }
+
+  Future<void> _setRememberMe(bool remember) async {
+    setState(() => _rememberMe = remember);
+    if (remember) return;
+    try {
+      final session = await AppSession.load();
+      await session.clearRememberedLoginEmail();
+    } on Exception catch (error) {
+      if (mounted) {
+        _showMessage('Could not remove the remembered email: $error');
+      }
+    }
   }
 
   Future<void> _updateLanguage(String languageCode) async {
@@ -84,8 +119,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
   final _confirmPasswordFieldKey = GlobalKey();
 
   Future<void> _submit() async {
-    if (await _authService.hasAuthenticatedApiSession()) {
-      if (mounted) Navigator.of(context).pop(true);
+    final hasSession = await _authService.hasAuthenticatedApiSession();
+    if (!mounted) return;
+    if (hasSession) {
+      Navigator.of(context).pop(true);
       return;
     }
 
@@ -120,7 +157,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
           ? _passwordFieldKey
           : _confirmPasswordFieldKey;
       final target = firstErrorKey.currentContext;
-      if (target != null) {
+      if (target != null && target.mounted) {
         Scrollable.ensureVisible(
           target,
           duration: const Duration(milliseconds: 250),
@@ -142,6 +179,12 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         );
       } else {
         response = await _authService.login(email: email, password: password);
+        final session = await AppSession.load();
+        if (_rememberMe) {
+          await session.rememberLoginEmail(email);
+        } else {
+          await session.clearRememberedLoginEmail();
+        }
       }
       if (!mounted) return;
       if (isRegistering) {
@@ -257,7 +300,8 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               fontSize: 21,
               fontWeight: FontWeight.w900,
             ),
-           localize: true,),
+            localize: true,
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -280,11 +324,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                     content: AppText(
                       'Discover and book experiences.',
                       style: TextStyle(color: _muted, height: 1.4),
-                     localize: true,),
+                      localize: true,
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.of(noticeContext).pop(),
@@ -314,11 +360,13 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                     content: AppText(
                       'Track sales, customers, and venue performance.',
                       style: TextStyle(color: _muted, height: 1.4),
-                     localize: true,),
+                      localize: true,
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.of(noticeContext).pop(),
@@ -416,7 +464,8 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                         Expanded(
                           child: AppText(
                             '${language.nativeName} (${language.englishName})',
-                           localize: true,),
+                            localize: true,
+                          ),
                         ),
                         if (language.code ==
                             AppPreferences.instance.languageCode)
@@ -503,7 +552,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           child: AppText(
                             appLanguageText(
                               isLogin ? 'Welcome back' : 'Create your account',
-                              isLogin ? 'Maligayang pagbabalik' : 'Gumawa ng account',
+                              isLogin
+                                  ? 'Maligayang pagbabalik'
+                                  : 'Gumawa ng account',
                             ),
                             style: _authHeadingStyle,
                           ),
@@ -562,7 +613,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                               Expanded(
                                 child: _RoleCard(
                                   icon: Icons.storefront_rounded,
-                                  title: appLanguageText('Merchant', 'Merchant'),
+                                  title: appLanguageText(
+                                    'Merchant',
+                                    'Merchant',
+                                  ),
                                   subtitle: appLanguageText(
                                     'List and grow your business',
                                     'Ilista at palaguin ang negosyo',
@@ -578,7 +632,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                           const SizedBox(height: 6),
                         ],
                         _AuthField(
-                          label: appLanguageText('Email address', 'Email address'),
+                          label: appLanguageText(
+                            'Email address',
+                            'Email address',
+                          ),
                           hint: 'you@example.com',
                           icon: Icons.mail_outline_rounded,
                           keyboardType: TextInputType.emailAddress,
@@ -638,32 +695,78 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                 setState(() => _confirmPasswordError = null),
                           ),
                         ],
-                        SizedBox(
-                          key: const ValueKey('auth-reset-slot'),
-                          height: 32,
-                          child: isLogin
-                              ? Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton(
-                                    onPressed: _loading
+                        if (isLogin)
+                          SizedBox(
+                            key: const ValueKey('auth-reset-slot'),
+                            height: 36,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    key: const ValueKey('auth-remember-me'),
+                                    onTap: _loading
                                         ? null
-                                        : () => Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) => PasswordResetPage(
-                                                service: _authService,
-                                              ),
+                                        : () => _setRememberMe(!_rememberMe),
+                                    child: Row(
+                                      children: [
+                                        Checkbox(
+                                          value: _rememberMe,
+                                          onChanged: _loading
+                                              ? null
+                                              : (value) => _setRememberMe(
+                                                  value ?? false,
+                                                ),
+                                          visualDensity: VisualDensity.compact,
+                                          activeColor: _orange,
+                                        ),
+                                        Expanded(
+                                          child: AppText(
+                                            'Remember me',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: _ink,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
                                             ),
+                                            localize: true,
                                           ),
-                                    child: AppText(
-                                      appLanguageText(
-                                        'Forgot password?',
-                                        'Nakalimutan ang password?',
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                )
-                              : const SizedBox.expand(),
-                        ),
+                                ),
+                                TextButton(
+                                  onPressed: _loading
+                                      ? null
+                                      : () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => PasswordResetPage(
+                                              service: _authService,
+                                            ),
+                                          ),
+                                        ),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                  ),
+                                  child: AppText(
+                                    appLanguageText(
+                                      'Forgot password?',
+                                      'Nakalimutan ang password?',
+                                    ),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          const SizedBox(
+                            key: ValueKey('auth-reset-slot'),
+                            height: 32,
+                          ),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
@@ -692,7 +795,9 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
                                 : AppText(
                                     appLanguageText(
                                       isLogin ? 'Sign in' : 'Create account',
-                                      isLogin ? 'Mag-sign in' : 'Gumawa ng account',
+                                      isLogin
+                                          ? 'Mag-sign in'
+                                          : 'Gumawa ng account',
                                     ),
                                   ),
                           ),

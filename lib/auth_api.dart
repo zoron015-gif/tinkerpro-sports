@@ -201,6 +201,19 @@ class AuthApi {
     );
   }
 
+  Future<void> updateMerchantBusinessImages({
+    required String token,
+    required int id,
+    required List<String> imageUrls,
+  }) async {
+    await _request(
+      'PUT',
+      '/api/merchant/businesses/$id/images',
+      body: {'imageUrls': imageUrls},
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+    );
+  }
+
   Future<void> deleteMerchantBusiness({
     required String token,
     required int id,

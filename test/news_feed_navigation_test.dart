@@ -878,7 +878,42 @@ void main() {
   testWidgets('venue feed cards use a denser image and post summary', (
     tester,
   ) async {
-    await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: api())));
+    final venue = {
+      ...venues.first,
+      'imageUrl': 'https://example.com/court.jpg',
+      'imageUrls': [
+        'https://example.com/court.jpg',
+        'https://example.com/court-2.jpg',
+      ],
+    };
+    final multiImageApi = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/news-feed') {
+          return http.Response(
+            jsonEncode({'posts': [venue]}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({
+              'businesses': [
+                {
+                  'id': 42,
+                  'enabled': true,
+                  'imageUrls': venue['imageUrls'],
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: multiImageApi)));
     for (var frame = 0; frame < 8; frame++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -900,6 +935,13 @@ void main() {
           .getSize(find.byKey(const ValueKey('news-feed-image-business-42')))
           .height,
       160,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('news-feed-image-business-42')),
+        matching: find.byType(PageView),
+      ),
+      findsOneWidget,
     );
     for (final image in tester.widgetList<Image>(
       find.descendant(of: card, matching: find.byType(Image)),
@@ -1121,6 +1163,10 @@ void main() {
       'ratePeriods': [
         {'start': '3:53 PM', 'end': '5:53 AM', 'pricePerHour': 200},
       ],
+      'imageUrls': [
+        'https://example.com/court.jpg',
+        'https://example.com/court-2.jpg',
+      ],
       'imageUrl': 'https://example.com/court.jpg',
       'latitude': 10.3157,
       'longitude': 123.8854,
@@ -1189,6 +1235,13 @@ void main() {
 
     final heroImage = tester.getSize(
       find.byKey(const ValueKey('sports-venue-hero-image')),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('sports-venue-hero-image')),
+        matching: find.byType(PageView),
+      ),
+      findsOneWidget,
     );
     final backButton = tester.getTopLeft(
       find.byIcon(Icons.arrow_back_ios_new_rounded),

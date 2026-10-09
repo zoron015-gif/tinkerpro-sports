@@ -1156,6 +1156,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         children: [
           SegmentedButton<String>(
             key: const ValueKey('merchant-venue-comparison-metric'),
+            expandedInsets: EdgeInsets.zero,
             style: _analyticsFilterStyle,
             showSelectedIcon: false,
             segments: const [

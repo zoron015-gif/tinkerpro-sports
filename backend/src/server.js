@@ -1589,6 +1589,53 @@ app.put('/api/merchant/businesses/:id/status', requireAuth, requireRole('merchan
   }
 });
 
+app.put('/api/merchant/businesses/:id/images', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const id = positiveIntegerId(req.params.id);
+  const imageUrls = req.body.imageUrls;
+  if (
+    id === null ||
+    !Array.isArray(imageUrls) ||
+    imageUrls.length === 0 ||
+    imageUrls.length > 20 ||
+    imageUrls.some((image) =>
+      typeof image !== 'string' ||
+      image.trim().length === 0 ||
+      image.length > 10 * 1024 * 1024
+    )
+  ) {
+    return res.status(400).json({ error: 'A valid business id and venue images are required.' });
+  }
+  const normalizedImages = imageUrls.map((image) => image.trim());
+  try {
+    const [result] = await pool.execute(
+      `UPDATE merchant_businesses
+       SET image_url = ?, image_urls = ?
+       WHERE id = ? AND merchant_id = ?`,
+      [
+        normalizedImages[0],
+        JSON.stringify(normalizedImages),
+        id,
+        req.auth.sub,
+      ],
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Business not found.' });
+    }
+    invalidateCustomerBusinesses();
+    await recordUserActivity(
+      pool,
+      req.auth.sub,
+      'business_image_updated',
+      'Business image updated',
+      `Images for business #${id} were updated.`,
+      { details: { businessId: id } },
+    );
+    return res.json({ message: 'Business images updated.' });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.put('/api/merchant/businesses/:id', requireAuth, requireRole('merchant'), async (req, res, next) => {
   const id = positiveIntegerId(req.params.id);
   if (id === null) {
@@ -1627,9 +1674,15 @@ app.put('/api/merchant/businesses/:id', requireAuth, requireRole('merchant'), as
     ? req.body.tags.filter((item) => typeof item === 'string').slice(0, 20)
     : [];
   const imageUrls = Array.isArray(req.body.imageUrls)
-    ? req.body.imageUrls.filter((item) => typeof item === 'string').slice(0, 20)
+    ? req.body.imageUrls
+        .filter((item) => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 20)
     : [];
   const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024) || imageUrls[0] || '';
+  const hasVenueImage = Boolean(imageUrl.trim()) ||
+    imageUrls.some((item) => item.trim().length > 0);
   const valid =
     coordinates.valid &&
     ['Sports', 'Event', 'Fitness & Wellness'].includes(businessType) &&
@@ -1648,6 +1701,7 @@ app.put('/api/merchant/businesses/:id', requireAuth, requireRole('merchant'), as
       (businessType === 'Sports' && includedPlayers > 0)) &&
     (businessType !== 'Sports' || req.body.sportsSlots === undefined ||
       sportsSlots !== null) &&
+    hasVenueImage &&
     fitnessDetails.valid;
   if (!valid) {
     return res.status(400).json({ error: 'Please check the business details.' });
@@ -1755,7 +1809,11 @@ app.post('/api/merchant/businesses', requireAuth, requireRole('merchant'), async
   const details = text(req.body.details, 1000);
   const imageUrl = text(req.body.imageUrl, 10 * 1024 * 1024);
   const imageUrls = Array.isArray(req.body.imageUrls)
-    ? req.body.imageUrls.filter((item) => typeof item === 'string').slice(0, 20)
+    ? req.body.imageUrls
+        .filter((item) => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 20)
     : imageUrl ? [imageUrl] : [];
   const primaryImageUrl = imageUrl || imageUrls[0] || '';
   const allowedBusinessTypes = new Set([
@@ -1772,6 +1830,7 @@ app.post('/api/merchant/businesses', requireAuth, requireRole('merchant'), async
   if (!category) validationErrors.push('category');
   if (!address) validationErrors.push('address');
   if (!facilityType) validationErrors.push('facility type');
+  if (!primaryImageUrl.trim()) validationErrors.push('venue image');
   if (!hours) validationErrors.push('opening and closing hours');
   if (visitUrl && !/^https?:\/\/\S+$/i.test(visitUrl)) validationErrors.push('visit link');
   const amountIsValid = businessType === 'Event'
@@ -3978,6 +4037,12 @@ async function customerNewsFeed(req, res, next) {
        INNER JOIN users u ON u.id = b.merchant_id
        LEFT JOIN event_business_details e ON e.business_id = b.id
        WHERE n.status = 'published'
+         AND n.id = (
+           SELECT MAX(latest.id)
+           FROM merchant_news latest
+           WHERE latest.business_id = n.business_id
+             AND latest.status = 'published'
+         )
          AND b.enabled = 1
          AND u.status = 'active'
          AND NULLIF(TRIM(n.title), '') IS NOT NULL

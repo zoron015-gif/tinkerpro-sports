@@ -116,7 +116,7 @@ class _QrScannerPageState extends State<QrScannerPage>
               controller: _scannerController,
               onDetect: _onDetect,
               placeholderBuilder: (_) => const _CameraStarting(),
-              errorBuilder: (_, __) => const ColoredBox(color: Colors.black),
+              errorBuilder: (_, _) => const ColoredBox(color: Colors.black),
             ),
             if (state.error case final error?)
               _CameraError(error: error, onRetry: _retryCamera)

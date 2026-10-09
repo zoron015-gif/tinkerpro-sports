@@ -3,6 +3,45 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myapp/merchant_news_cards_section.dart';
 
 void main() {
+  testWidgets('draft cards expose delete before they are published', (
+    tester,
+  ) async {
+    Map<String, dynamic>? deleteRequested;
+    Map<String, dynamic>? publishRequested;
+    final draft = {
+      'id': 12,
+      'businessId': 1,
+      'title': 'Draft update',
+      'body': 'Update body',
+      'imageUrl': 'venue.jpg',
+      'status': 'draft',
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MerchantNewsCardsSection(
+            businesses: [
+              {'id': 1, 'name': 'Draft venue'},
+            ],
+            posts: [draft],
+            loading: false,
+            onComplete: (_) {},
+            onEdit: (_) {},
+            onDelete: (post) => deleteRequested = post,
+            onPublish: (post) => publishRequested = post,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Delete draft'), findsOneWidget);
+    expect(find.text('Publish'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Delete draft'));
+    expect(deleteRequested, same(draft));
+    expect(publishRequested, isNull);
+  });
+
   testWidgets('complete drafts can be published and incomplete cards cannot', (
     tester,
   ) async {

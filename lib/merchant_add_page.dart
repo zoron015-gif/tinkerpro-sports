@@ -768,6 +768,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     final sportsSelectionKey = GlobalKey();
     final eventTypesKey = GlobalKey();
     final fitnessCategoriesKey = GlobalKey();
+    final imageInputKey = GlobalKey();
     final openingTimeKey = GlobalKey();
     final closingTimeKey = GlobalKey();
     final availableDaysKey = GlobalKey();
@@ -2590,6 +2591,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                     ),
                                   ),
                                   TextButton.icon(
+                                    key: imageInputKey,
                                     onPressed: () async {
                                       try {
                                         final picked = await ImagePicker()
@@ -2724,7 +2726,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                         .where(availableDays.contains)
                                         .join(', '),
                                     imageCount: images.length,
-                                    complete: scheduleComplete(),
+                                    complete:
+                                        scheduleComplete() && images.isNotEmpty,
                                   ),
                                 ],
                               ],
@@ -2862,6 +2865,13 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                                 validationMessage = 'Please enter a venue name before publishing.';
                                 setupStep = 0;
                               });
+                              return;
+                            }
+                            if (images.isEmpty) {
+                              setDialogState(
+                                () => validationMessage = 'Add at least one venue image before publishing the Booking Card.',
+                              );
+                              scrollToKey(imageInputKey);
                               return;
                             }
                             final fieldsValid =
@@ -3774,7 +3784,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             Icon(
               complete ? Icons.task_alt_rounded : Icons.rate_review_outlined,
               size: 19,
-              color:               complete ? AppColors.success : AppColors.warning,
+              color: complete ? AppColors.success : AppColors.warning,
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -3800,13 +3810,13 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         ),
         _reviewRow(
           'Photos',
-          imageCount == 0 ? 'Optional · none added' : '$imageCount added',
+          imageCount == 0 ? 'Required · none added' : '$imageCount added',
         ),
         const SizedBox(height: 6),
         AppText(
           complete
               ? 'Check the information above, then publish your booking card.'
-              : 'Name, opening hours, at least one available day, and address are required. Photos and amenity notes are optional.',
+              : 'Name, opening hours, at least one available day, address, and at least one venue photo are required. Amenity notes are optional.',
           style: TextStyle(color: _addMuted, fontSize: 11, height: 1.35),
         ),
       ],
@@ -3852,9 +3862,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: [
         const SizedBox(height: 6),
-        _addSectionTabs(),
-        const SizedBox(height: 6),
         _businessFilterAndSearch(),
+        const SizedBox(height: 6),
+        _addSectionTabs(),
         if (_selectedAddSection == 'News cards') ...[
           const SizedBox(height: 6),
           if (widget.businesses.isNotEmpty &&
@@ -3914,6 +3924,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   );
 
   Widget _addSectionTabs() => SegmentedButton<String>(
+    key: const ValueKey('merchant-add-section-tabs'),
     segments: const [
       ButtonSegment(
         value: 'Booking cards',
@@ -3945,9 +3956,16 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       text: isIncomplete ? '' : '${editing?['body'] ?? ''}',
     );
     var businessId = _id(editing?['businessId']);
+    final initialBusiness = widget.businesses.firstWhere(
+      (item) => _businessId(item) == businessId,
+      orElse: () => <String, dynamic>{},
+    );
+    var newsImages = _businessImageUrls(initialBusiness);
     final formKey = GlobalKey<FormState>();
     final businessFieldKey = GlobalKey();
     final newsBodyFieldKey = GlobalKey();
+    String? imageValidationMessage;
+    StateSetter? setDialogState;
     final selected = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -3965,56 +3983,85 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           ),
           child: SingleChildScrollView(
             child: StatefulBuilder(
-              builder: (context, setState) => Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                  DropdownButtonFormField<int>(
-                    key: businessFieldKey,
-                    initialValue: businessId,
-                    decoration: InputDecoration(
-                      labelText: appLanguageText(
-                        'Booking card',
-                        'Booking card',
-                      ),
-                    ),
-                    items: [
-                      for (final business in widget.businesses)
-                        DropdownMenuItem(
-                          value: _businessId(business),
-                          child: AppText('${business['name'] ?? 'Business'}'),
+              builder: (context, setState) {
+                setDialogState = setState;
+                return Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        key: businessFieldKey,
+                        initialValue: businessId,
+                        decoration: InputDecoration(
+                          labelText: appLanguageText(
+                            'Booking card',
+                            'Booking card',
+                          ),
                         ),
-                    ],
-                    onChanged: (value) => setState(() => businessId = value),
-                    validator: (value) =>
-                        value == null ? 'Choose a booking card.' : null,
-                  ),
-                  if (businessId != null)
-                    _newsVenuePreview(businessId!, body.text),
-                  TextFormField(
-                    key: newsBodyFieldKey,
-                    controller: body,
-                    maxLines: 3,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      labelText: appLanguageText(
-                        'Short venue news',
-                        'Short venue news',
+                        items: [
+                          for (final business in widget.businesses)
+                            DropdownMenuItem(
+                              value: _businessId(business),
+                              child: AppText(
+                                '${business['name'] ?? 'Business'}',
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) => setState(() {
+                          businessId = value;
+                          if (editing == null ||
+                              _postBusinessId(editing) != value) {
+                            final selectedBusiness = widget.businesses
+                                .firstWhere(
+                                  (item) => _businessId(item) == value,
+                                  orElse: () => <String, dynamic>{},
+                                );
+                            newsImages = _businessImageUrls(selectedBusiness);
+                            imageValidationMessage = null;
+                          }
+                        }),
+                        validator: (value) =>
+                            value == null ? 'Choose a booking card.' : null,
                       ),
-                      hintText: appLanguageText(
-                        'Add a short update about this venue',
-                        'Add a short update about this venue',
-                      ),
-                    ),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty
+                      if (businessId != null)
+                        _newsVenuePreview(businessId!, body.text, newsImages),
+                      if (imageValidationMessage != null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: AppText(
+                              imageValidationMessage!,
+                              style: const TextStyle(color: Colors.red),
+                              localize: true,
+                            ),
+                          ),
+                        ),
+                      TextFormField(
+                        key: newsBodyFieldKey,
+                        controller: body,
+                        maxLines: 3,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: appLanguageText(
+                            'Short venue news',
+                            'Short venue news',
+                          ),
+                          hintText: appLanguageText(
+                            'Add a short update about this venue',
+                            'Add a short update about this venue',
+                          ),
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
                             ? 'Enter a short venue update.'
                             : null,
+                      ),
+                    ],
                   ),
-                  ],
-                ),
-              ),
+                );
+              },
             ),
           ),
         ),
@@ -4025,6 +4072,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           ),
           FilledButton(
             onPressed: () {
+              if (newsImages.isEmpty) {
+                setDialogState?.call(
+                  () => imageValidationMessage = 'Add a venue image by editing its Booking Card before saving this News Card.',
+                );
+                return;
+              }
               if (formKey.currentState?.validate() ?? false) {
                 Navigator.pop(dialogContext, true);
                 return;
@@ -4045,8 +4098,20 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         ],
       ),
     );
-    if (selected != true || businessId == null || body.text.trim().isEmpty) {
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    final savedBusinessId = businessId;
+    final selectedImages = newsImages;
+    if (selected != true ||
+        savedBusinessId == null ||
+        body.text.trim().isEmpty) {
       body.dispose();
+      return;
+    }
+    if (selectedImages.isEmpty) {
+      body.dispose();
+      _showNewsCardMessage(
+        'Add a venue image by editing its Booking Card before saving this News Card.',
+      );
       return;
     }
     final token = (await AppSession.load()).apiToken;
@@ -4058,13 +4123,12 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       (item) => _businessId(item) == businessId,
       orElse: () => <String, dynamic>{},
     );
-    final image = _businessPrimaryImage(business);
     final venueName = '${business['name'] ?? 'Venue'}';
     final payload = {
       'businessId': businessId,
       'title': editing?['title'] as String? ?? '$venueName update',
       'body': body.text.trim(),
-      'imageUrl': image,
+      'imageUrl': selectedImages.first,
       'status': editing?['status'] ?? 'published',
     };
     try {
@@ -4077,6 +4141,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
           post: payload,
         );
       }
+      await widget.onBusinessesChanged();
       await _loadNewsPosts();
     } on Exception catch (error) {
       if (mounted) {
@@ -4088,12 +4153,15 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     }
   }
 
-  Widget _newsVenuePreview(int businessId, String newsText) {
+  Widget _newsVenuePreview(
+    int businessId,
+    String newsText,
+    List<String> images,
+  ) {
     final business = widget.businesses.firstWhere(
       (item) => _businessId(item) == businessId,
       orElse: () => <String, dynamic>{},
     );
-    final image = _businessPrimaryImage(business);
     final name = '${business['name'] ?? 'Venue'}';
     final type = '${business['businessType'] ?? 'Booking'}';
     final category = '${business['category'] ?? ''}';
@@ -4147,11 +4215,11 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                 SizedBox(
                   width: double.infinity,
                   height: 170,
-                  child:
-                      image == null ||
-                          image.isEmpty ||
-                          _safeImageProvider(image) == null
-                      ? ColoredBox(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (images.isEmpty)
+                        ColoredBox(
                           color: AppColors.softOrange,
                           child: Icon(
                             Icons.storefront_rounded,
@@ -4159,18 +4227,64 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                             color: _addOrange,
                           ),
                         )
-                      : Image(
-                          image: _safeImageProvider(image)!,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => ColoredBox(
-                            color: AppColors.softOrange,
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              size: 42,
-                              color: _addOrange,
+                      else ...[
+                        Builder(
+                          builder: (context) {
+                            final provider = _safeImageProvider(images.first);
+                            return provider == null
+                                ? ColoredBox(
+                                    color: AppColors.softOrange,
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      size: 42,
+                                      color: _addOrange,
+                                    ),
+                                  )
+                                : Image(
+                                    key: ValueKey(
+                                      'news-card-image-preview-$businessId',
+                                    ),
+                                    image: provider,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => ColoredBox(
+                                      color: AppColors.softOrange,
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 42,
+                                        color: _addOrange,
+                                      ),
+                                    ),
+                                  );
+                          },
+                        ),
+                        if (images.length > 1)
+                          Positioned(
+                            right: 8,
+                            top: 8,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: .65),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                child: AppText(
+                                  '${images.length} venue photos',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                      ],
+                    ],
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -4187,6 +4301,14 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+                      if (images.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6),
+                          child: AppText(
+                            'Add venue photos by editing the Booking Card.',
+                            localize: true,
+                          ),
+                        ),
                       const SizedBox(height: 6),
                       AppText(
                         category.isEmpty ? type : '$type · $category',
@@ -4259,11 +4381,44 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   Future<void> _deleteNewsPost(Map<String, dynamic> post) async {
-    final token = (await AppSession.load()).apiToken;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const AppText('Delete News Card?', localize: true),
+        content: const AppText(
+          'This will permanently delete this News Card. This action cannot be undone.',
+          localize: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const AppText('Cancel', localize: true),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const AppText('Delete', localize: true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     final id = _id(post['id']);
-    if (token == null || token.isEmpty || id == null) return;
-    await _api.deleteMerchantNewsPost(token: token, id: id);
-    await _loadNewsPosts();
+    if (id == null) {
+      _showNewsCardMessage('Could not delete this News Card.');
+      return;
+    }
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        _showNewsCardMessage('Could not delete this News Card.');
+        return;
+      }
+      await _api.deleteMerchantNewsPost(token: token, id: id);
+      await _loadNewsPosts();
+    } on Exception catch (error) {
+      _showNewsCardMessage('Could not delete News Card: $error');
+    }
   }
 
   Future<void> _publishNewsPost(Map<String, dynamic> post) async {
@@ -4652,7 +4807,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         ),
                         label: AppText(enabled ? 'Disable' : 'Enable'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: enabled ? _addNavy : Colors.green,
+                          backgroundColor: enabled ? _addNavy : AppColors.success,
+                          foregroundColor: AppColors.contrastingForeground(
+                            enabled ? _addNavy : AppColors.success,
+                          ),
                         ),
                       ),
                     ),
@@ -4668,8 +4826,8 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                     icon: const Icon(Icons.delete_outline, size: 17),
                     label: const AppText('Delete business', localize: true),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFB42318),
-                      side: const BorderSide(color: Color(0xFFE09A9A)),
+                      foregroundColor: AppColors.errorText,
+                      side: BorderSide(color: AppColors.errorBorder),
                     ),
                   ),
                 ),
@@ -4996,20 +5154,47 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   }
 
   String? _businessPrimaryImage(Map<String, dynamic> business) {
-    final value = business['imageUrl'];
-    if (value is! String || value.isEmpty) return null;
+    final images = _businessImageUrls(business);
+    return images.isEmpty ? null : images.first;
+  }
+
+  List<String> _businessImageUrls(Map<String, dynamic> business) {
+    final value = business['imageUrls'] ?? business['image_urls'];
+    if (value is List) {
+      final images = value
+          .whereType<String>()
+          .where((image) => image.isNotEmpty)
+          .toList();
+      if (images.isNotEmpty) return images;
+    }
+    if (value is String && value.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          final images = decoded
+              .whereType<String>()
+              .where((image) => image.isNotEmpty)
+              .toList();
+          if (images.isNotEmpty) return images;
+        }
+      } on FormatException {
+        // Use the legacy primary image field below.
+      }
+    }
+    final legacyImage = business['imageUrl'] ?? business['image_url'];
+    if (legacyImage is! String || legacyImage.isEmpty) return [];
     try {
-      final decoded = jsonDecode(value);
+      final decoded = jsonDecode(legacyImage);
       if (decoded is List) {
-        return decoded.whereType<String>().firstWhere(
-          (image) => image.isNotEmpty,
-          orElse: () => '',
-        );
+        return decoded
+            .whereType<String>()
+            .where((image) => image.isNotEmpty)
+            .toList();
       }
     } on FormatException {
-      return value;
+      return [legacyImage];
     }
-    return value;
+    return [legacyImage];
   }
 
   String _dataUri(List<int> bytes) =>

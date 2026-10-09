@@ -144,6 +144,12 @@ function makeConnection() {
           db.conversationBusinessType === params[2] ? [{ id: 601 }] : [],
         );
       }
+      if (
+        sql.includes('JOIN user_blocks ub') &&
+        sql.includes('sender.conversation_id')
+      ) {
+        return response([]);
+      }
       if (sql.includes('SELECT 1 FROM conversation_members')) {
         return response([{}]);
       }
@@ -231,6 +237,7 @@ function resetDatabase() {
     customerHeartedBusinessRows: [],
     reviewEligibleBookings: [],
     newsFeedRows: [],
+    newsWriteResults: [],
     customerBusinessRows: [],
     existingRegistrationUser: null,
     loginUser: null,
@@ -247,6 +254,7 @@ function resetDatabase() {
       id: 7,
       merchant_id: 88,
       name: 'Test Court',
+      image_url: 'https://example.test/test-court.jpg',
       businessType: 'Sports',
       category: 'Basketball',
       price_per_hour: 120,
@@ -364,7 +372,11 @@ before(async () => {
         return response(
           Number(params[0]) === db.venue.id &&
             String(params[1]) === String(db.venue.merchant_id)
-            ? [{ id: db.venue.id, name: db.venue.name }]
+            ? [{
+              id: db.venue.id,
+              name: db.venue.name,
+              image_url: db.venue.image_url,
+            }]
             : [],
         );
       }
@@ -387,6 +399,15 @@ before(async () => {
       }
       if (sql.includes('INSERT INTO merchant_businesses')) {
         return [{ insertId: 702 }, []];
+      }
+      if (sql.includes('INSERT INTO merchant_news')) {
+        return [db.newsWriteResults.shift() || { insertId: 500, affectedRows: 1 }, []];
+      }
+      if (
+        sql.includes('UPDATE merchant_businesses') &&
+        sql.includes('SET image_url = ?, image_urls = ?')
+      ) {
+        return [{ affectedRows: db.imageUpdateAffected ?? 1 }, []];
       }
       if (
         sql.includes('SELECT b.id, b.customer_id AS customerId') &&
@@ -690,6 +711,45 @@ test('conversation routes reject malformed identifiers without querying', async 
   assert.equal(db.calls.length, 0);
 });
 
+test('deleting a conversation is per-user and new messages restore it for both members', async () => {
+  const deleted = await request('/api/messages/conversations/601', {
+    method: 'DELETE',
+  });
+
+  assert.equal(deleted.status, 200);
+  const deleteUpdate = db.calls.find(({ sql }) =>
+    sql.includes('UPDATE conversation_members SET deleted_at = CURRENT_TIMESTAMP'),
+  );
+  assert.ok(deleteUpdate);
+  assert.match(deleteUpdate.sql, /conversation_id = \? AND user_id = \?/);
+  assert.deepEqual(deleteUpdate.params, [601, '42']);
+
+  db.calls = [];
+  const sent = await request('/api/messages/conversations/601', {
+    method: 'POST',
+    role: 'merchant',
+    id: '88',
+    body: { body: 'Your booking is confirmed.' },
+  });
+
+  assert.equal(sent.status, 201);
+  const restoreUpdate = db.calls.find(({ sql }) =>
+    sql.includes('UPDATE conversation_members') &&
+    sql.includes('SET archived_at = NULL, deleted_at = NULL'),
+  );
+  assert.ok(restoreUpdate);
+  assert.match(restoreUpdate.sql, /WHERE conversation_id = \?/);
+  assert.doesNotMatch(restoreUpdate.sql, /AND user_id = \?/);
+  assert.deepEqual(restoreUpdate.params, [601]);
+  assert.ok(
+    db.calls.some(({ sql, params }) =>
+      sql.includes('INSERT INTO messages') &&
+      params[0] === 601 &&
+      params[1] === '88',
+    ),
+  );
+});
+
 test('opening a direct conversation marks its merged duplicate chats as read', async () => {
   db.messageReadScope = {
     type: 'direct',
@@ -754,6 +814,60 @@ test('merchant business payload validation rejects invalid numeric and list type
   assert.deepEqual(body.validationErrors, ['pricePerHour', 'tags']);
   assert.equal(
     db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_businesses')),
+    false,
+  );
+});
+
+test('new merchant businesses require at least one venue image', async () => {
+  const response = await request('/api/merchant/businesses', {
+    method: 'POST',
+    role: 'merchant',
+    body: {
+      businessType: 'Sports',
+      name: 'Court',
+      category: 'Basketball',
+      address: 'Cebu',
+      facilityType: 'Indoor',
+      hours: '9 AM - 9 PM',
+      pricePerHour: 120,
+      latitude: 10.3,
+      longitude: 123.9,
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /venue image/);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_businesses')),
+    false,
+  );
+});
+
+test('merchant business edits cannot clear all venue images', async () => {
+  const response = await request('/api/merchant/businesses/7', {
+    method: 'PUT',
+    role: 'merchant',
+    body: {
+      businessType: 'Sports',
+      name: 'Test Court',
+      category: 'Basketball',
+      address: 'Cebu',
+      facilityType: 'Indoor',
+      hours: '9 AM - 9 PM',
+      pricePerHour: 120,
+      latitude: 10.3,
+      longitude: 123.9,
+      imageUrls: [],
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Please check the business details.',
+  });
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('UPDATE merchant_businesses') &&
+      sql.includes('SET business_type = ?')),
     false,
   );
 });
@@ -1041,6 +1155,7 @@ test('fitness businesses persist category plans and optional coaches', async () 
       facilityType: 'Studio',
       hours: '8:00 AM - 8:00 PM',
       pricePerHour: 500,
+      imageUrls: ['https://example.test/studio.jpg'],
       latitude: 10.3,
       longitude: 123.9,
       fitnessCategories: [{
@@ -1232,6 +1347,9 @@ test('customer feed includes merchant-configured event types', async () => {
     business_type: 'Event',
     business_category: 'Garden',
     event_types_json: '["Wedding","Birthday"]',
+    image_url: 'https://example.test/venue-one.jpg',
+    business_image_url: 'https://example.test/venue-one.jpg',
+    image_urls: '["https://example.test/venue-one.jpg","https://example.test/venue-two.jpg"]',
   }];
 
   const response = await request('/api/news-feed');
@@ -1239,11 +1357,71 @@ test('customer feed includes merchant-configured event types', async () => {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.posts[0].eventTypes, ['Wedding', 'Birthday']);
+  assert.deepEqual(body.posts[0].imageUrls, [
+    'https://example.test/venue-one.jpg',
+    'https://example.test/venue-two.jpg',
+  ]);
   const feedQuery = db.calls.find(({ sql }) =>
     sql.includes('FROM merchant_news n'),
   );
   assert.ok(feedQuery);
   assert.match(feedQuery.sql, /event_types_json/);
+  assert.match(feedQuery.sql, /latest\.status = 'published'/);
+});
+
+test('creating a News Card repeatedly updates one record per business', async () => {
+  db.newsWriteResults = [
+    { insertId: 500, affectedRows: 1 },
+    { insertId: 500, affectedRows: 2 },
+  ];
+  const payload = {
+    businessId: 7,
+    title: 'Test Court update',
+    body: 'New court hours.',
+    status: 'published',
+  };
+
+  const first = await request('/api/merchant/news-posts', {
+    method: 'POST',
+    role: 'merchant',
+    body: payload,
+  });
+  const second = await request('/api/merchant/news-posts', {
+    method: 'POST',
+    role: 'merchant',
+    body: payload,
+  });
+
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  assert.equal((await first.json()).id, 500);
+  assert.equal((await second.json()).id, 500);
+  const writes = db.calls.filter(({ sql }) => sql.includes('INSERT INTO merchant_news'));
+  assert.equal(writes.length, 2);
+  assert.ok(writes.every(({ sql }) => sql.includes('ON DUPLICATE KEY UPDATE')));
+  assert.ok(writes.every(({ params }) => params[3] === db.venue.image_url));
+});
+
+test('News Card creation requires the Booking Card image', async () => {
+  db.venue.image_url = null;
+  const response = await request('/api/merchant/news-posts', {
+    method: 'POST',
+    role: 'merchant',
+    body: {
+      businessId: 7,
+      title: 'Test Court update',
+      body: 'New court hours.',
+      imageUrl: 'https://example.test/news-only-image.jpg',
+      status: 'published',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Booking Card/);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO merchant_news')),
+    false,
+  );
 });
 
 test('customer businesses include Event venues without published news, including disabled ones', async () => {
@@ -1352,6 +1530,41 @@ test('customer business catalog is cached and invalidated after merchant changes
   assert.equal(refreshed.status, 200);
   assert.equal((await refreshed.json()).businesses[0].name, 'Updated Court');
   assert.equal(catalogQueryCount(), 2);
+
+  const imageUrl = 'data:image/jpeg;base64,dGVzdA==';
+  const imageUpdate = await request('/api/merchant/businesses/92/images', {
+    method: 'PUT',
+    role: 'merchant',
+    body: { imageUrls: [imageUrl, 'https://example.test/other.jpg'] },
+  });
+  assert.equal(imageUpdate.status, 200);
+  const imageUpdateQuery = db.calls.find(({ sql }) =>
+    sql.includes('SET image_url = ?, image_urls = ?'),
+  );
+  assert.deepEqual(imageUpdateQuery.params, [
+    imageUrl,
+    JSON.stringify([imageUrl, 'https://example.test/other.jpg']),
+    92,
+    '88',
+  ]);
+  const refreshedAfterImageUpdate = await request('/api/businesses');
+  assert.equal(refreshedAfterImageUpdate.status, 200);
+  assert.equal(catalogQueryCount(), 3);
+});
+
+test('merchant business image update validates image lists', async () => {
+  db.calls = [];
+  const response = await request('/api/merchant/businesses/92/images', {
+    method: 'PUT',
+    role: 'merchant',
+    body: { imageUrls: [] },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('SET image_url = ?, image_urls = ?')),
+    false,
+  );
 });
 
 test('availability returns bookings and validates its required inputs', async () => {

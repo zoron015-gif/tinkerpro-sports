@@ -122,33 +122,54 @@ function registerMerchantNewsRoutes({
     }
     try {
       const [businesses] = await pool.execute(
-        'SELECT id, image_url FROM merchant_businesses WHERE id = ? AND merchant_id = ? LIMIT 1',
+        'SELECT id, image_url, image_urls FROM merchant_businesses WHERE id = ? AND merchant_id = ? LIMIT 1',
         [businessId, req.auth.sub],
       );
       if (!businesses[0]) return res.status(404).json({ error: 'Business not found.' });
-      const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024) || businesses[0].image_url || null;
+      const imageUrl = businesses[0].image_url || null;
+      if (!imageUrl) {
+        return res.status(400).json({
+          error: 'Add a venue image to the Booking Card before creating a News Card.',
+        });
+      }
       const [result] = await pool.execute(
         `INSERT INTO merchant_news (business_id, title, body, image_url, status)
-         VALUES (?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           id = LAST_INSERT_ID(id),
+           title = VALUES(title),
+           body = VALUES(body),
+           image_url = VALUES(image_url),
+           status = VALUES(status)`,
         [businessId, title, body, imageUrl, status],
       );
       invalidateCustomerBusinesses();
-      await recordUserActivity(
-        pool,
-        req.auth.sub,
-        'news_post_created',
-        'News post created',
-        `News post #${result.insertId} was created for business #${businessId}.`,
-        {
-          venueId: businessId,
-          details: {
-            businessId,
-            newsPostId: result.insertId,
-            status,
+      if (result.affectedRows > 0) {
+        const created = result.affectedRows === 1;
+        await recordUserActivity(
+          pool,
+          req.auth.sub,
+          created ? 'news_post_created' : 'news_post_updated',
+          created ? 'News post created' : 'News post updated',
+          `News post #${result.insertId} was ${created ? 'created' : 'updated'} for business #${businessId}.`,
+          {
+            venueId: businessId,
+            details: {
+              businessId,
+              newsPostId: result.insertId,
+              status,
+            },
           },
-        },
-      );
-      return res.status(201).json({ id: result.insertId, message: 'News post created.' });
+        );
+        return res.status(created ? 201 : 200).json({
+          id: result.insertId,
+          message: created ? 'News post created.' : 'News post updated.',
+        });
+      }
+      return res.json({
+        id: result.insertId,
+        message: 'News post already up to date.',
+      });
     } catch (error) { return next(error); }
   }
 
@@ -168,12 +189,11 @@ function registerMerchantNewsRoutes({
       return res.status(400).json({ error: 'A valid title, body, and status are required.' });
     }
     try {
-      const imageUrl = normalizeText(req.body.imageUrl, 10 * 1024 * 1024);
       const [result] = await pool.execute(
         `UPDATE merchant_news n INNER JOIN merchant_businesses b ON b.id = n.business_id
-         SET n.title = ?, n.body = ?, n.status = ?, n.image_url = COALESCE(NULLIF(?, ''), b.image_url)
+         SET n.title = ?, n.body = ?, n.status = ?, n.image_url = b.image_url
          WHERE n.id = ? AND b.merchant_id = ?`,
-        [title, body, status, imageUrl, id, req.auth.sub],
+        [title, body, status, id, req.auth.sub],
       );
       if (!result.affectedRows) return res.status(404).json({ error: 'News post not found.' });
       invalidateCustomerBusinesses();

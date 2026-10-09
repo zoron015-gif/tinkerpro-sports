@@ -9,9 +9,9 @@ extension AuthApiVenueOperations on AuthApi {
       'GET',
       Uri(
         path: '/api/news-feed',
-        queryParameters: {
-          if (businessType != null) 'businessType': businessType,
-        },
+        queryParameters: businessType == null
+            ? null
+            : {'businessType': businessType},
       ).toString(),
       headers: _authHeaders(token),
     );

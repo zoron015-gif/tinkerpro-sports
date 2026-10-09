@@ -104,3 +104,50 @@ test('ensures older databases add the missing fitness coach duration column befo
   ));
   assert.ok(calls.some(({ sql }) => sql.includes('INSERT INTO schema_migrations (version, name)')));
 });
+
+test('migration 6 keeps one News Card per business and adds a unique business index', async () => {
+  const poolCalls = [];
+  const connectionCalls = [];
+  const connection = {
+    async execute(sql, params) {
+      connectionCalls.push({ sql, params });
+      if (sql.includes('GET_LOCK')) return [[{ acquired: 1 }], []];
+      if (sql.includes('SELECT version FROM schema_migrations')) {
+        return [[
+          { version: 1 },
+          { version: 2 },
+          { version: 3 },
+          { version: 4 },
+          { version: 5 },
+        ], []];
+      }
+      return [[], []];
+    },
+    release() {},
+  };
+  const pool = {
+    async execute(sql) {
+      poolCalls.push(sql);
+      return [[], []];
+    },
+    async getConnection() {
+      return connection;
+    },
+  };
+
+  await runSchemaMigrations(pool);
+
+  const duplicateCleanup = poolCalls.find((sql) =>
+    sql.includes('DELETE duplicate FROM merchant_news duplicate'),
+  );
+  assert.ok(duplicateCleanup);
+  assert.match(duplicateCleanup, /keeper\.status = 'published'/);
+  assert.ok(poolCalls.some((sql) =>
+    sql.includes('ADD UNIQUE INDEX uq_merchant_news_business (business_id)'),
+  ));
+  assert.ok(connectionCalls.some(({ sql, params }) =>
+    sql.includes('INSERT INTO schema_migrations (version, name)') &&
+    params[0] === 6 &&
+    params[1] === 'single-news-card-per-business',
+  ));
+});

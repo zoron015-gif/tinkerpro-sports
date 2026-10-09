@@ -77,6 +77,54 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'この施設について短いお知らせを追加',
     'zh': '添加此场地的简短动态',
   },
+  'Add an image to the News Card before saving.': {
+    'fil': 'Magdagdag ng larawan sa News Card bago i-save.',
+    'ko': '저장하기 전에 뉴스 카드에 이미지를 추가하세요.',
+    'ja': '保存する前にニュースカードに画像を追加してください。',
+    'zh': '保存前请为资讯卡添加图片。',
+  },
+  'Add a venue image by editing its Booking Card before saving this News Card.': {
+    'fil': 'Magdagdag ng larawan sa venue sa pamamagitan ng pag-edit sa Booking Card bago i-save ang News Card.',
+    'ko': '뉴스 카드를 저장하기 전에 예약 카드를 수정해 장소 이미지를 추가하세요.',
+    'ja': 'このニュースカードを保存する前に、予約カードを編集して施設の画像を追加してください。',
+    'zh': '保存此资讯卡前，请编辑预订卡并添加场地图片。',
+  },
+  'Add venue photos by editing the Booking Card.': {
+    'fil': 'Magdagdag ng mga larawan ng venue sa pamamagitan ng pag-edit sa Booking Card.',
+    'ko': '예약 카드를 수정해 장소 사진을 추가하세요.',
+    'ja': '予約カードを編集して施設の写真を追加してください。',
+    'zh': '请编辑预订卡以添加场地照片。',
+  },
+  'Add at least one venue image before publishing the Booking Card.': {
+    'fil': 'Magdagdag ng kahit isang larawan ng venue bago i-publish ang Booking Card.',
+    'ko': '예약 카드를 게시하기 전에 장소 이미지를 하나 이상 추가하세요.',
+    'ja': '予約カードを公開する前に、施設の画像を1枚以上追加してください。',
+    'zh': '发布预订卡前，请至少添加一张场地图片。',
+  },
+  'Add venue image': {
+    'fil': 'Magdagdag ng larawan ng venue',
+    'ko': '장소 이미지 추가',
+    'ja': '施設の画像を追加',
+    'zh': '添加场地图片',
+  },
+  'Add images': {
+    'fil': 'Magdagdag ng mga larawan',
+    'ko': '이미지 추가',
+    'ja': '画像を追加',
+    'zh': '添加图片',
+  },
+  'Add more images': {
+    'fil': 'Magdagdag pa ng mga larawan',
+    'ko': '이미지 더 추가',
+    'ja': '画像をさらに追加',
+    'zh': '添加更多图片',
+  },
+  'You can add up to 20 images per venue.': {
+    'fil': 'Hanggang 20 larawan lang ang maaaring idagdag sa bawat venue.',
+    'ko': '장소당 이미지는 최대 20개까지 추가할 수 있습니다.',
+    'ja': '施設ごとに追加できる画像は最大20枚です。',
+    'zh': '每个场地最多可添加20张图片。',
+  },
   'Address': {'fil': 'Address', 'ko': '주소', 'ja': '住所', 'zh': '地址'},
   'Attach image': {
     'fil': 'Mag-attach ng larawan',
@@ -1022,6 +1070,19 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': '事業者を削除しますか？',
     'zh': '确定删除商家吗？',
   },
+  'Delete News Card?': {
+    'fil': 'Tanggalin ang News Card?',
+    'ko': '뉴스 카드를 삭제하시겠습니까?',
+    'ja': 'ニュースカードを削除しますか？',
+    'zh': '确定删除资讯卡吗？',
+  },
+  'This will permanently delete this News Card. This action cannot be undone.':
+      {
+        'fil': 'Permanenteng tatanggalin nito ang News Card na ito. Hindi na ito maibabalik.',
+        'ko': '이 뉴스 카드는 영구적으로 삭제되며 되돌릴 수 없습니다.',
+        'ja': 'このニュースカードは完全に削除され、元に戻すことはできません。',
+        'zh': '此操作将永久删除此资讯卡，且无法撤销。',
+      },
   'Delete conversation for you?': {
     'fil': 'Tanggalin ang usapan para sa iyo?',
     'ko': '내 대화 목록에서 삭제하시겠습니까?',
@@ -1230,6 +1291,18 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ko': '뉴스 피드 미리보기',
     'ja': 'ニュースフィードのプレビュー',
     'zh': '资讯动态预览',
+  },
+  'Change image': {
+    'fil': 'Palitan ang larawan',
+    'ko': '이미지 변경',
+    'ja': '画像を変更',
+    'zh': '更换图片',
+  },
+  'Remove current image': {
+    'fil': 'Alisin ang kasalukuyang larawan',
+    'ko': '현재 이미지 삭제',
+    'ja': '現在の画像を削除',
+    'zh': '移除当前图片',
   },
   'News cards': {
     'fil': 'Mga news card',
@@ -2091,6 +2164,12 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ko': '스포츠, 이벤트 및 지역 비즈니스 마켓플레이스에 참여하세요.',
     'ja': 'スポーツ、イベント、地域ビジネスのマーケットプレイスに参加しましょう。',
     'zh': '加入体育、活动和本地商家的市场。',
+  },
+  'Remember me': {
+    'fil': 'Tandaan ako',
+    'ko': '로그인 정보 기억하기',
+    'ja': 'ログイン情報を記憶する',
+    'zh': '记住我',
   },
   'Sign in': {'ko': '로그인', 'ja': 'ログイン', 'zh': '登录'},
   'Register': {'ko': '가입하기', 'ja': '登録', 'zh': '注册'},

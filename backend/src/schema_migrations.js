@@ -674,6 +674,37 @@ async function ensureVenueHeartsSchema() {
         [5, 'booking-qr-check-ins'],
       );
     }
+    if (!appliedVersions.has(6)) {
+      await pool.execute(`
+        DELETE duplicate FROM merchant_news duplicate
+        INNER JOIN merchant_news keeper
+          ON keeper.business_id = duplicate.business_id
+         AND (
+           (keeper.status = 'published' AND duplicate.status <> 'published')
+           OR (
+             keeper.status = duplicate.status
+             AND keeper.id > duplicate.id
+           )
+           OR (
+             keeper.status <> 'published'
+             AND duplicate.status <> 'published'
+             AND keeper.id > duplicate.id
+           )
+         )
+      `);
+      try {
+        await pool.execute(
+          'ALTER TABLE merchant_news ADD UNIQUE INDEX uq_merchant_news_business (business_id)',
+        );
+      } catch (error) {
+        if (error.code !== 'ER_DUP_KEYNAME') throw error;
+      }
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [6, 'single-news-card-per-business'],
+      );
+    }
   } finally {
     try {
       if (lockAcquired) {

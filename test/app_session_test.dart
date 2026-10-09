@@ -40,13 +40,42 @@ void main() {
     expect(session.matchNotificationsEnabled, isFalse);
   });
 
-  test('api token is kept in secure storage and surfaced on the session',
-      () async {
+  test(
+    'api token is kept in secure storage and surfaced on the session',
+    () async {
+      final session = await AppSession.load();
+
+      await session.setApiToken('secure-session-token');
+
+      final reloaded = await AppSession.load();
+      expect(reloaded.apiToken, 'secure-session-token');
+    },
+  );
+
+  test(
+    'remember me stores only the login email and keeps it after logout',
+    () async {
+      final session = await AppSession.load();
+      await session.rememberLoginEmail(' Player@Example.com ');
+      await session.setAccountEmail('player@example.com');
+      await session.setApiToken('secure-session-token');
+      await session.markAuthenticated();
+
+      await session.clear();
+
+      final reloaded = await AppSession.load();
+      expect(reloaded.rememberedLoginEmail, 'player@example.com');
+      expect(reloaded.isAuthenticated, isFalse);
+      expect(reloaded.apiToken, isNull);
+    },
+  );
+
+  test('remember me can forget the saved login email', () async {
     final session = await AppSession.load();
+    await session.rememberLoginEmail('player@example.com');
 
-    await session.setApiToken('secure-session-token');
+    await session.clearRememberedLoginEmail();
 
-    final reloaded = await AppSession.load();
-    expect(reloaded.apiToken, 'secure-session-token');
+    expect(session.rememberedLoginEmail, isNull);
   });
 }

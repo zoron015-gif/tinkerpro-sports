@@ -148,14 +148,28 @@ class MerchantNewsCardsSection extends StatelessWidget {
                 onPressed: () => onPublish(post),
                 child: const AppText('Publish', localize: true),
               ),
+            if (!published)
+              IconButton(
+                key: ValueKey('merchant-news-delete-${post['id']}'),
+                tooltip: 'Delete draft',
+                onPressed: () => onDelete(post),
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'edit') onEdit(post);
                 if (value == 'delete') onDelete(post);
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: AppText('Edit', localize: true)),
-                PopupMenuItem(value: 'delete', child: AppText('Delete', localize: true)),
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: AppText('Edit', localize: true),
+                ),
+                if (published)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: AppText('Delete', localize: true),
+                  ),
               ],
             ),
           ],

@@ -22,6 +22,11 @@ part 'merchant_dashboard_analytics.dart';
 part 'merchant_dashboard_analytics_section.dart';
 
 const _merchantNavy = AppColors.navy;
+final _managementTabsStyle = _analyticsFilterStyle.copyWith(
+  textStyle: const WidgetStatePropertyAll(
+    TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+  ),
+);
 Color get _merchantInk => AppColors.ink;
 Color get _merchantOrange => AppColors.accent;
 Color get _merchantPage => AppColors.page;
@@ -110,6 +115,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   int _merchantTab = 0;
   int _payoutTab = 0;
   int _bookingManagementTab = 0;
+  int _customerArrivalTab = 0;
   int _paymentManagementTab = 0;
   String _payoutBookingType = 'All';
   String _payoutSearchQuery = '';
@@ -601,6 +607,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     label: const AppText('Add', localize: true),
                     style: FilledButton.styleFrom(
                       backgroundColor: _merchantOrange,
+                      foregroundColor: AppColors.onAccent,
                       minimumSize: const Size(0, 38),
                       padding: AppSpacing.buttonPadding,
                       visualDensity: VisualDensity.compact,
@@ -678,7 +685,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         const SizedBox(height: 6),
         SegmentedButton<int>(
           key: const ValueKey('merchant-management-tabs'),
-          style: _analyticsFilterStyle,
+          style: _managementTabsStyle,
           showSelectedIcon: false,
           segments: const [
             ButtonSegment(
@@ -777,20 +784,21 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       children: [
         SegmentedButton<int>(
           key: const ValueKey('merchant-booking-management-status-tabs'),
-          style: _analyticsFilterStyle,
+          expandedInsets: EdgeInsets.zero,
+          style: _managementTabsStyle,
           showSelectedIcon: false,
           segments: const [
             ButtonSegment(
               value: 0,
-              label: AppText('Booking requests', localize: true),
+              label: AppText('Requests', localize: true),
             ),
             ButtonSegment(
               value: 1,
-              label: AppText('Active bookings', localize: true),
+              label: AppText('Active', localize: true),
             ),
             ButtonSegment(
               value: 2,
-              label: AppText('Completed bookings', localize: true),
+              label: AppText('Completed', localize: true),
             ),
           ],
           selected: {_bookingManagementTab},
@@ -818,16 +826,73 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Widget _customerManagementContent() {
-    final bookings = _filteredPayoutBookings;
+    final arrivalBookings = _filteredPayoutBookings
+        .where(
+          (booking) =>
+              !BookingStatusParser.isCancelled(booking['status']) &&
+              (_hasCheckedIn(booking) ||
+                  _isApprovedBooking(booking) ||
+                  _isFinishedBooking(booking)),
+        )
+        .toList();
+    final bookings = switch (_customerArrivalTab) {
+      0 => arrivalBookings.where(_hasCheckedIn).toList(),
+      1 => arrivalBookings.where(_isNoShowBooking).toList(),
+      _ => arrivalBookings
+          .where((booking) => !_hasCheckedIn(booking) && !_isNoShowBooking(booking))
+          .toList(),
+    };
+    final emptyMessage = switch (_customerArrivalTab) {
+      0 => (
+        Icons.how_to_reg_outlined,
+        'No customers have arrived',
+        'Customers appear here after scanning the venue check-in QR.',
+      ),
+      1 => (
+        Icons.event_busy_outlined,
+        'No no-shows',
+        'Bookings appear here after their scheduled end when the customer has not checked in.',
+      ),
+      _ => (
+        Icons.hourglass_empty_rounded,
+        'No upcoming arrivals',
+        'Bookings awaiting their scheduled time or customer check-in appear here.',
+      ),
+    };
     return Column(
       children: [
         _customerCheckInQrCard,
         const SizedBox(height: 6),
+        SegmentedButton<int>(
+          key: const ValueKey('merchant-customer-arrival-tabs'),
+          expandedInsets: EdgeInsets.zero,
+          style: _managementTabsStyle,
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: 2,
+              label: AppText('Awaiting arrival', localize: true),
+            ),
+            ButtonSegment(
+              value: 0,
+              label: AppText('Arrived', localize: true),
+            ),
+            ButtonSegment(
+              value: 1,
+              label: AppText('No-show', localize: true),
+            ),
+          ],
+          selected: {_customerArrivalTab},
+          onSelectionChanged: (selection) {
+            setState(() => _customerArrivalTab = selection.first);
+          },
+        ),
+        const SizedBox(height: 8),
         if (bookings.isEmpty)
           _emptyPayoutCard(
-            Icons.people_outline_rounded,
-            'No customer bookings',
-            'Customer booking requests and approved bookings will appear here.',
+            emptyMessage.$1,
+            emptyMessage.$2,
+            emptyMessage.$3,
           ),
         for (final booking in bookings) ...[
           _customerManagementBookingCard(booking),
@@ -877,6 +942,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               label: const AppText('Show venue QR', localize: true),
               style: FilledButton.styleFrom(
                 backgroundColor: _merchantNavy,
+                foregroundColor: AppColors.contrastingForeground(
+                  _merchantNavy,
+                ),
                 minimumSize: const Size.fromHeight(44),
               ),
             ),
@@ -1290,10 +1358,16 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'Status',
               BookingStatusParser.label(booking['status']),
             ),
-            if (checkedInAt != null)
-              _payoutManagementInfoRow('Venue arrival', 'Checked in · $checkedInAt')
+            if (_hasCheckedIn(booking)) ...[
+              _payoutManagementInfoRow('Arrival status', 'Arrived'),
+              _payoutManagementInfoRow('Check-in time', checkedInAt),
+            ] else if (_isNoShowBooking(booking))
+              _payoutManagementInfoRow(
+                'Arrival status',
+                'No-show · scheduled time ended',
+              )
             else if (_isApprovedBooking(booking))
-              _payoutManagementInfoRow('Venue arrival', 'Awaiting check-in'),
+              _payoutManagementInfoRow('Arrival status', 'Awaiting arrival'),
             const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.end,
@@ -1631,6 +1705,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.done;
 
+  bool _hasCheckedIn(Map<String, dynamic> booking) {
+    final checkedInAt = booking['checkedInAt'];
+    return checkedInAt != null && '$checkedInAt'.trim().isNotEmpty;
+  }
+
+  bool _isNoShowBooking(Map<String, dynamic> booking) =>
+      !_hasCheckedIn(booking) && _isFinishedBooking(booking);
+
   Future<void> _showPayoutBookingDetails(
     Map<String, dynamic> booking,
     {bool paymentOnly = false}
@@ -1734,12 +1816,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               if (!paymentOnly)
                 _payoutDetailsSection('Arrival history', [
                   _payoutDetailRow(
-                    'Check-in status',
-                    booking['checkedInAt'] == null
-                        ? 'No QR check-in recorded'
-                        : 'Customer scanned venue QR',
+                    'Arrival outcome',
+                    _hasCheckedIn(booking)
+                        ? 'Arrived · customer scanned venue QR'
+                        : _isNoShowBooking(booking)
+                        ? 'No-show · scheduled booking time ended without check-in'
+                        : 'Awaiting arrival',
                   ),
-                  _payoutDetailRow('Arrival recorded at', booking['checkedInAt']),
+                  if (_hasCheckedIn(booking))
+                    _payoutDetailRow('Check-in time', booking['checkedInAt']),
                 ]),
               _payoutDetailsSection('Payment details', [
                 _payoutDetailRow(
@@ -2422,6 +2507,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                         label: const AppText('Book now', localize: true),
                         style: FilledButton.styleFrom(
                           backgroundColor: _merchantOrange,
+                          foregroundColor: AppColors.onAccent,
                           minimumSize: const Size(0, 36),
                         ),
                       ),
@@ -2725,7 +2811,24 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       final bookings = await _api.merchantBookings(token);
       if (mounted) {
         setState(() {
+          final checkedInBookingIds = _bookings
+              .where(
+                (booking) =>
+                    booking['checkedInAt'] != null &&
+                    '${booking['checkedInAt']}'.trim().isNotEmpty,
+              )
+              .map((booking) => '${booking['id']}')
+              .toSet();
+          final newCheckInRecorded = bookings.any(
+            (booking) =>
+                booking['checkedInAt'] != null &&
+                '${booking['checkedInAt']}'.trim().isNotEmpty &&
+                !checkedInBookingIds.contains('${booking['id']}'),
+          );
           _bookings = bookings;
+          if (newCheckInRecorded && _merchantTab == 3 && _payoutTab == 1) {
+            _customerArrivalTab = 0;
+          }
           if (_analyticsBookingType != 'All' &&
               !bookings.any((booking) {
                 final type =
