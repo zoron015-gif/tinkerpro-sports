@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'app_session.dart';
 import 'app_design_system.dart';
@@ -288,16 +290,35 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             );
           }
           if (snapshot.hasError) {
-            return ListView(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: AppText(
-                    'Could not load bookings: ${snapshot.error}',
-                    localize: true,
-                  ),
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.event_busy_outlined,
+                      size: 48,
+                      color: AppColors.muted,
+                    ),
+                    const SizedBox(height: 12),
+                    AppText(
+                      'Could not load bookings: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      localize: true,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      key: const ValueKey('customer-bookings-retry'),
+                      onPressed: () => setState(() {
+                        _bookings = _loadBookings();
+                      }),
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const AppText('Try again', localize: true),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             );
           }
           final bookings = snapshot.data ?? const <Booking>[];
@@ -1623,14 +1644,54 @@ class _BookingRatingDialog extends StatefulWidget {
 
 class _BookingRatingDialogState extends State<_BookingRatingDialog> {
   final _comment = TextEditingController();
+  final _imagePicker = ImagePicker();
   var _rating = 0;
   var _submitting = false;
   String? _error;
+  Uint8List? _imageBytes;
+  String? _imageData;
 
   @override
   void dispose() {
     _comment.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 82,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        setState(() => _error = 'Choose a review photo smaller than 5 MB.');
+        return;
+      }
+      final mime = image.mimeType ?? 'image/jpeg';
+      if (!mime.startsWith('image/')) {
+        setState(() => _error = 'Choose a valid image file.');
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _imageBytes = bytes;
+        _imageData = 'data:$mime;base64,${base64Encode(bytes)}';
+        _error = null;
+      });
+    } on Exception catch (error) {
+      if (mounted) setState(() => _error = 'Could not select the photo: $error');
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _imageBytes = null;
+      _imageData = null;
+    });
   }
 
   Future<void> _submit() async {
@@ -1653,11 +1714,12 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
           400,
         );
       }
-      await widget.api.submitCustomerReview(
+      await widget.api.venues.submitCustomerReview(
         token: token,
         bookingId: bookingId,
         rating: _rating,
         comment: _comment.text.trim(),
+        imageData: _imageData,
       );
       if (mounted) Navigator.of(context).pop(true);
     } on Exception catch (error) {
@@ -1670,76 +1732,298 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: AppText('Rate ${widget.booking.venue.name}', localize: true),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppText(
-          'How was your completed booking?',
-          style: TextStyle(color: AppColors.muted),
-          localize: true,
-        ),
-        if (_rating == 0) ...[
-          const SizedBox(height: 4),
-          AppText(
-            'Choose a star rating to continue.',
-            style: TextStyle(color: AppColors.muted, fontSize: 12),
-            localize: true,
-          ),
-        ],
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var star = 1; star <= 5; star++)
-              IconButton(
-                tooltip: appLanguageText(
-                  '$star stars',
-                  '$star stars',
-                  languageCode: Localizations.localeOf(context).languageCode,
-                ),
-                onPressed: _submitting
-                    ? null
-                    : () => setState(() => _rating = star),
-                icon: Icon(
-                  star <= _rating
-                      ? Icons.star_rounded
-                      : Icons.star_outline_rounded,
-                  color: Colors.amber,
-                  size: 34,
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = colorScheme.secondary;
+    final ratingLabel = switch (_rating) {
+      1 => 'Needs improvement',
+      2 => 'Could be better',
+      3 => 'Good',
+      4 => 'Great',
+      5 => 'Excellent',
+      _ => null,
+    };
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: SizedBox(
+          height: (screen.height - keyboardHeight) * .86,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.rate_review_outlined,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AppText(
+                            'Share your experience',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                            localize: true,
+                          ),
+                          const SizedBox(height: 4),
+                          AppText(
+                            widget.booking.venue.name,
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: appLanguageText('Close', 'Close'),
+                      onPressed: _submitting
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
-        TextField(
-          controller: _comment,
-          maxLines: 3,
-          decoration: InputDecoration(
-            labelText: appLanguageText(
-              'Comment (optional)',
-              'Comment (optional)',
-            ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    18,
+                    20,
+                      20,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppText(
+                        'How was your completed booking?',
+                        style: TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 15,
+                        ),
+                        localize: true,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          for (var star = 1; star <= 5; star++)
+                            Expanded(
+                              child: IconButton(
+                                tooltip: appLanguageText(
+                                  '$star stars',
+                                  '$star stars',
+                                  languageCode: Localizations.localeOf(
+                                    context,
+                                  ).languageCode,
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 0,
+                                  minHeight: 0,
+                                ),
+                                padding: EdgeInsets.zero,
+                                onPressed: _submitting
+                                    ? null
+                                    : () => setState(() => _rating = star),
+                                icon: Icon(
+                                  key: ValueKey('booking-review-star-$star'),
+                                  star <= _rating
+                                      ? Icons.star_rounded
+                                      : Icons.star_outline_rounded,
+                                  color: accent,
+                                  size: 38,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (_rating == 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Center(
+                            child: AppText(
+                              'Choose a star rating to continue.',
+                              style: TextStyle(color: AppColors.muted),
+                              localize: true,
+                            ),
+                          ),
+                        )
+                      else if (ratingLabel != null)
+                        Center(
+                          child: Container(
+                            key: const ValueKey('booking-review-rating-label'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: .12),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: AppText(
+                              '$ratingLabel · $_rating/5',
+                              style: TextStyle(
+                                color: accent,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _comment,
+                        minLines: 4,
+                        maxLines: 7,
+                        maxLength: 2000,
+                        decoration: InputDecoration(
+                          alignLabelWithHint: true,
+                          labelText: appLanguageText(
+                            'Your review',
+                            'Your review',
+                          ),
+                          hintText: appLanguageText(
+                            'What did you enjoy about your visit?',
+                            'What did you enjoy about your visit?',
+                          ),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (_imageBytes case final imageBytes?) ...[
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: accent.withValues(alpha: .45),
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.memory(
+                              imageBytes,
+                              key: const ValueKey(
+                                'booking-review-image-preview',
+                              ),
+                              width: double.infinity,
+                              height: 190,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _submitting ? null : _removeImage,
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              color: accent,
+                            ),
+                            label: const AppText('Remove photo', localize: true),
+                          ),
+                        ),
+                      ] else ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('booking-review-add-image'),
+                            onPressed: _submitting ? null : _pickImage,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: accent,
+                              side: BorderSide(
+                                color: accent.withValues(alpha: .55),
+                              ),
+                              backgroundColor: accent.withValues(alpha: .06),
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                            ),
+                            icon: Icon(
+                              Icons.add_photo_alternate_outlined,
+                              color: accent,
+                            ),
+                            label: const AppText(
+                              'Add a photo',
+                              localize: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        AppText(
+                          'Optional · JPG, PNG or WebP · Up to 5 MB',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      if (_error != null) ...[
+                        const SizedBox(height: 8),
+                        AppText(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _submitting
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                        child: const AppText('Cancel', localize: true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _rating == 0 || _submitting ? null : _submit,
+                        icon: _submitting
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded, size: 16),
+                        label: AppText(
+                          _submitting ? 'Submitting...' : 'Submit review',
+                          localize: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        if (_error != null) ...[
-          const SizedBox(height: 6),
-          AppText(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: _submitting ? null : () => Navigator.of(context).pop(),
-        child: const AppText('Cancel', localize: true),
       ),
-      FilledButton(
-        onPressed: _rating == 0 || _submitting ? null : _submit,
-        child: const AppText('Submit rating', localize: true),
-      ),
-    ],
-  );
+    );
+  }
 }

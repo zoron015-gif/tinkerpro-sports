@@ -172,6 +172,11 @@ class MessagesBookingTicket extends StatelessWidget {
     final isPaid =
         paymentStatus == 'paid' ||
         safeString(data['type']) == 'booking_payment_ticket';
+    final ticketHighlight = isBookingRequest
+        ? const Color(0xFFB45309)
+        : approved
+        ? const Color(0xFF237A43)
+        : AppColors.navy;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 370),
@@ -180,7 +185,12 @@ class MessagesBookingTicket extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: isBookingRequest || approved
+                ? ticketHighlight.withValues(alpha: .55)
+                : AppColors.border,
+            width: isBookingRequest || approved ? 1.5 : 1,
+          ),
           boxShadow: const [
             BoxShadow(
               color: Color(0x14192B50),
@@ -195,7 +205,7 @@ class MessagesBookingTicket extends StatelessWidget {
           children: [
             Container(
               key: const ValueKey('messages-booking-ticket-header'),
-              color: AppColors.navy,
+              color: ticketHighlight,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
               child: Row(
                 children: [

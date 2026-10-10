@@ -23,6 +23,57 @@ void main() {
     },
   );
 
+  test('message deletion sends its deletion scope to the API', () async {
+    late http.Request receivedRequest;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        receivedRequest = request;
+        return http.Response(jsonEncode({'message': 'Message deleted.'}), 200);
+      }),
+    );
+
+    await api.deleteConversationMessage(
+      token: 'test-session-token',
+      conversationId: 12,
+      messageId: 34,
+      scope: 'me',
+    );
+
+    expect(receivedRequest.method, 'DELETE');
+    expect(
+      receivedRequest.url.path,
+      '/api/messages/conversations/12/messages/34',
+    );
+    expect(jsonDecode(receivedRequest.body), {'scope': 'me'});
+  });
+
+  test('message deletion rejects an unsupported scope before requesting', () async {
+    var requested = false;
+    final api = AuthApi(
+      client: MockClient((_) async {
+        requested = true;
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await expectLater(
+      api.deleteConversationMessage(
+        token: 'test-session-token',
+        conversationId: 12,
+        messageId: 34,
+        scope: 'all',
+      ),
+      throwsA(
+        isA<AuthApiException>().having(
+          (error) => error.statusCode,
+          'statusCode',
+          400,
+        ),
+      ),
+    );
+    expect(requested, isFalse);
+  });
+
   test(
     'missing messaging endpoints explain that the backend needs a restart',
     () async {
@@ -107,9 +158,9 @@ void main() {
         (_) async => http.Response(
           jsonEncode({
             'businesses': [
-              {'id': 10, 'enabled': true},
-              {'id': 11, 'enabled': false},
-              {'id': 12, 'enabled': 0},
+              {'id': 10, 'businessType': 'sports', 'enabled': true},
+              {'id': 11, 'businessType': 'sports', 'enabled': false},
+              {'id': 12, 'businessType': 'sports', 'enabled': 0},
             ],
           }),
           200,
@@ -117,8 +168,8 @@ void main() {
       ),
     );
 
-    final businesses = await api.customerBusinesses();
+    final businesses = await VenueCatalogRepository(api).customerBusinesses();
 
-    expect(businesses.map((business) => business['id']), [10]);
+    expect(businesses.map((business) => business.id), [10]);
   });
 }

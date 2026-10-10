@@ -8,7 +8,7 @@ abstract final class AppColors {
   static const darkInk = Color(0xFFF2F4F8);
   static Color get ink => AppPreferences.instance.darkMode ? darkInk : lightInk;
   static const orange = Color(0xFFFF8200);
-  static Color get accent => AppPreferences.instance.palette.color;
+  static Color get accent => AppPreferences.instance.accentColor;
   static Color get accentForeground => accessibleForeground(
     accent,
     AppPreferences.instance.darkMode ? darkSurfaceHighest : Colors.white,
@@ -69,6 +69,12 @@ abstract final class AppColors {
   static const darkSurfaceHighest = Color(0xFF30323A);
   static Color get surface =>
       AppPreferences.instance.darkMode ? darkSurface : Colors.white;
+  static Color get neumorphicShadow => Colors.black.withValues(
+    alpha: AppPreferences.instance.darkMode ? .28 : .09,
+  );
+  static Color get neumorphicHighlight => Colors.white.withValues(
+    alpha: AppPreferences.instance.darkMode ? .035 : .88,
+  );
   static const lightMuted = Color(0xFF68748A);
   static const darkMuted = Color(0xFFA6ADBB);
   static Color get muted =>

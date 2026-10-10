@@ -25,7 +25,10 @@ void main() {
     expect(theme.cardTheme.color, Colors.white);
     expect(theme.dialogTheme.backgroundColor, Colors.white);
     expect(theme.bottomSheetTheme.backgroundColor, Colors.white);
-    expect(theme.inputDecorationTheme.fillColor, Colors.white);
+    expect(
+      theme.inputDecorationTheme.fillColor,
+      theme.colorScheme.surfaceContainerLow,
+    );
   });
 
   testWidgets('appearance and language choices apply and persist', (
@@ -138,6 +141,69 @@ void main() {
       'textScale': 1.1,
       'languageCode': 'fil',
     });
+  });
+
+  testWidgets('custom theme color can be entered and replaced by a preset', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = AppPreferences.instance;
+    await preferences.load(accountEmail: 'custom-color@example.com');
+
+    await tester.pumpWidget(
+      AnimatedBuilder(
+        animation: preferences,
+        builder: (context, _) => MaterialApp(
+          theme: AppTheme.configured(
+            darkMode: preferences.darkMode,
+            accentColor: preferences.accentColor,
+          ),
+          home: const AppSettingsPage(),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('app-settings-color-custom')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('app-settings-custom-color-hex')),
+      '#37A2D8',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('app-settings-custom-color-apply')),
+    );
+    await tester.pumpAndSettle();
+
+    const customColor = Color(0xFF37A2D8);
+    expect(preferences.customAccentColor, customColor);
+    expect(preferences.accentColor, customColor);
+    expect(
+      tester
+          .widget<MaterialApp>(find.byType(MaterialApp))
+          .theme!
+          .colorScheme
+          .secondary,
+      customColor,
+    );
+
+    final storage = await SharedPreferences.getInstance();
+    final accountKey = base64Url
+        .encode(utf8.encode('custom-color@example.com'))
+        .replaceAll('=', '');
+    final stored = jsonDecode(
+      storage.getString('app_preferences_$accountKey')!,
+    ) as Map<String, dynamic>;
+    expect(stored['customAccentColor'], customColor.toARGB32());
+
+    await preferences.load(accountEmail: 'other-color@example.com');
+    expect(preferences.accentColor, AppPalette.orange.color);
+    await preferences.load(accountEmail: 'custom-color@example.com');
+    expect(preferences.accentColor, customColor);
+
+    await tester.tap(find.byKey(const ValueKey('app-settings-color-violet')));
+    await tester.pumpAndSettle();
+    expect(preferences.customAccentColor, isNull);
+    expect(preferences.accentColor, AppPalette.violet.color);
   });
 
   test('Korean, Japanese, and Chinese languages apply and persist', () async {

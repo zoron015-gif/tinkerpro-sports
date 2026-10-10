@@ -61,11 +61,13 @@ class MessagesService {
     required String token,
     required int conversationId,
     required int messageId,
+    required String scope,
   }) =>
       _api.deleteConversationMessage(
         token: token,
         conversationId: conversationId,
         messageId: messageId,
+        scope: scope,
       );
 
   Future<void> setConversationState({

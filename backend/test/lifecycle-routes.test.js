@@ -234,6 +234,8 @@ function resetDatabase() {
     idempotencyRecords: new Map(),
     accountStatus: 'active',
     venueReviews: [],
+    completedReviewBookings: [],
+    existingCustomerReview: null,
     customerHeartedBusinessRows: [],
     reviewEligibleBookings: [],
     newsFeedRows: [],
@@ -305,6 +307,7 @@ function resetDatabase() {
     conversationBusinessType: 'sports',
     messageReadScope: null,
     duplicateDirectConversationIds: [],
+    messageOwnerId: '42',
     paymentBooking: {
       id: 501,
       totalAmount: 270,
@@ -444,6 +447,18 @@ before(async () => {
       ) {
         return response(db.reviewEligibleBookings);
       }
+      if (
+        sql.includes('SELECT b.id, b.venue_id AS venueId') &&
+        sql.includes("b.status = 'finished'")
+      ) {
+        return response(db.completedReviewBookings);
+      }
+      if (sql.includes('SELECT id FROM venue_reviews WHERE booking_id = ?')) {
+        return response(db.existingCustomerReview ? [db.existingCustomerReview] : []);
+      }
+      if (sql.includes('INSERT INTO venue_reviews')) {
+        return [{ insertId: 39, affectedRows: 1 }, []];
+      }
       if (sql.includes('FROM merchant_news n')) {
         return response(db.newsFeedRows);
       }
@@ -528,6 +543,12 @@ before(async () => {
         return response(
           db.duplicateDirectConversationIds.map((id) => ({ id })),
         );
+      }
+      if (
+        sql.includes('SELECT m.sender_id AS senderId') &&
+        sql.includes('JOIN conversation_members cm')
+      ) {
+        return response([{ senderId: db.messageOwnerId }]);
       }
       if (sql.includes('SELECT 1 FROM conversation_members')) {
         return response([{}]);
@@ -748,6 +769,101 @@ test('deleting a conversation is per-user and new messages restore it for both m
       params[1] === '88',
     ),
   );
+});
+
+test('deleting a message for me only records a viewer-specific deletion', async () => {
+  const response = await request(
+    '/api/messages/conversations/601/messages/900',
+    { method: 'DELETE', body: { scope: 'me' } },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    message: 'Message deleted for you.',
+  });
+  const deleteRecord = db.calls.find(({ sql }) =>
+    sql.includes('INSERT IGNORE INTO message_user_deletions'),
+  );
+  assert.ok(deleteRecord);
+  assert.deepEqual(deleteRecord.params, [900, '42']);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('UPDATE messages')),
+    false,
+  );
+});
+
+test('invalid message deletion scopes are rejected before database access', async () => {
+  const response = await request(
+    '/api/messages/conversations/601/messages/900',
+    { method: 'DELETE', body: { scope: 'all' } },
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Choose a valid message deletion scope.',
+  });
+  assert.equal(db.calls.length, 0);
+});
+
+test('only a message sender can delete it for everyone', async () => {
+  const response = await request(
+    '/api/messages/conversations/601/messages/900',
+    {
+      method: 'DELETE',
+      role: 'merchant',
+      id: '88',
+      body: { scope: 'everyone' },
+    },
+  );
+
+  assert.equal(response.status, 403);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('UPDATE messages')),
+    false,
+  );
+});
+
+test('deleting a message for everyone replaces its content with a tombstone', async () => {
+  const response = await request(
+    '/api/messages/conversations/601/messages/900',
+    { method: 'DELETE', body: { scope: 'everyone' } },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    message: 'Message deleted for everyone.',
+  });
+  const removal = db.calls.find(({ sql }) => sql.includes('UPDATE messages'));
+  assert.ok(removal);
+  assert.match(removal.sql, /body = NULL, attachment_json = NULL/);
+  assert.match(removal.sql, /removed_at = COALESCE/);
+  assert.deepEqual(removal.params, ['42', 900, 601]);
+});
+
+test('message history hides messages deleted only by the current user', async () => {
+  const response = await request('/api/messages/conversations/601');
+
+  assert.equal(response.status, 200);
+  const historyQuery = db.calls.find(({ sql }) =>
+    sql.includes('SELECT m.id, m.sender_id AS senderId'),
+  );
+  assert.ok(historyQuery);
+  assert.match(historyQuery.sql, /message_user_deletions/);
+  assert.match(historyQuery.sql, /mud\.user_id = \?/);
+  assert.deepEqual(historyQuery.params, ['42', 601, '42']);
+});
+
+test('conversation previews respect personal deletes and shared removal notices', async () => {
+  const response = await request('/api/messages/conversations');
+
+  assert.equal(response.status, 200);
+  const conversationQuery = db.calls.find(({ sql }) =>
+    sql.includes('SELECT c.id, c.type, c.title, c.created_at AS createdAt'),
+  );
+  assert.ok(conversationQuery);
+  assert.match(conversationQuery.sql, /mud\.user_id = cm\.user_id/);
+  assert.match(conversationQuery.sql, /removed_by_user\.first_name/);
+  assert.match(conversationQuery.sql, /unread\.removed_at IS NULL/);
 });
 
 test('opening a direct conversation marks its merged duplicate chats as read', async () => {
@@ -1494,6 +1610,30 @@ test('event venue review records its booking and venue details in activity histo
     params.includes('Garden Event Place'),
   );
   assert.ok(activity);
+});
+
+test('completed booking review stores an attached customer photo', async () => {
+  db.completedReviewBookings = [{
+    id: 180,
+    venueId: 92,
+    venueName: 'Garden Event Place',
+  }];
+  const imageData = 'data:image/png;base64,aGVsbG8=';
+
+  const response = await request('/api/customer/reviews', {
+    method: 'POST',
+    body: {
+      bookingId: 180,
+      rating: 5,
+      comment: 'Great visit.',
+      imageData,
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO venue_reviews'));
+  assert.ok(insert.sql.includes('image_data'));
+  assert.deepEqual(insert.params, [92, 180, '42', 5, 'Great visit.', imageData]);
 });
 
 test('customer business catalog is cached and invalidated after merchant changes', async () => {
@@ -3023,6 +3163,7 @@ test('venue reviews include each reviewer profile image URL', async () => {
     firstName: 'Maya',
     lastName: 'Player',
     avatarUrl: 'https://images.example.test/maya.png',
+    imageData: 'data:image/png;base64,aGVsbG8=',
     rating: 5,
     comment: 'Great court.',
   }];
@@ -3031,7 +3172,32 @@ test('venue reviews include each reviewer profile image URL', async () => {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.reviews[0].avatarUrl, 'https://images.example.test/maya.png');
+  assert.equal(body.reviews[0].imageData, 'data:image/png;base64,aGVsbG8=');
   assert.ok(db.calls.some(({ sql }) => sql.includes('u.avatar_url AS avatarUrl')));
+  assert.ok(db.calls.some(({ sql }) => sql.includes('r.image_data AS imageData')));
+});
+
+test('completed booking review rejects invalid or oversized review images', async () => {
+  const invalidType = await request('/api/customer/reviews', {
+    method: 'POST',
+    body: { bookingId: 180, rating: 5, imageData: 'data:text/plain;base64,aGVsbG8=' },
+  });
+  assert.equal(invalidType.status, 400);
+
+  const invalidPayload = await request('/api/customer/reviews', {
+    method: 'POST',
+    body: { bookingId: 180, rating: 5, imageData: 'data:image/png;base64,%%%=' },
+  });
+  assert.equal(invalidPayload.status, 400);
+
+  const oversizedPhoto = `data:image/png;base64,${
+    Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64')
+  }`;
+  const oversized = await request('/api/customer/reviews', {
+    method: 'POST',
+    body: { bookingId: 180, rating: 5, imageData: oversizedPhoto },
+  });
+  assert.equal(oversized.status, 400);
 });
 
 test('JSON output escapes HTML-sensitive characters and prevents MIME sniffing', async () => {

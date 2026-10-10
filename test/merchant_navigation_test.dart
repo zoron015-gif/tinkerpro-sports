@@ -14,6 +14,7 @@ void main() {
             merchantMode: true,
             hideMerchantVenues: true,
             selectedIndex: 0,
+            merchantRequestCount: 3,
             onDestinationSelected: (index) => selectedIndex = index,
           ),
         ),
@@ -23,8 +24,9 @@ void main() {
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     expect(find.text('Messages'), findsOneWidget);
-    expect(find.text('Payouts'), findsOneWidget);
+    expect(find.text('Bookings'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
 
     final navigationTheme = tester.widget<Theme>(
       find
@@ -44,7 +46,7 @@ void main() {
     expect(selectedStyle?.fontWeight, FontWeight.w700);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).height, 72);
 
-    await tester.tap(find.text('Payouts'));
+    await tester.tap(find.text('Bookings'));
     expect(selectedIndex, 3);
   });
 }

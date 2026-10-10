@@ -99,11 +99,19 @@ extension AuthApiMessagingOperations on AuthApi {
     required String token,
     required int conversationId,
     required int messageId,
+    required String scope,
   }) async {
+    if (scope != 'me' && scope != 'everyone') {
+      throw const AuthApiException(
+        'Choose a valid message deletion scope.',
+        400,
+      );
+    }
     await _request(
       'DELETE',
       '/api/messages/conversations/$conversationId/messages/$messageId',
-      headers: _authHeaders(token),
+      body: {'scope': scope},
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
     );
   }
 

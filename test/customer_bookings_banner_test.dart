@@ -59,6 +59,39 @@ void main() {
     );
   });
 
+  testWidgets('failed booking load offers retry', (tester) async {
+    var bookingRequests = 0;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          bookingRequests++;
+          if (bookingRequests == 1) {
+            return http.Response(
+              jsonEncode({'error': 'Temporary service issue'}),
+              503,
+            );
+          }
+          return http.Response(jsonEncode({'bookings': []}), 200);
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not load bookings'), findsOneWidget);
+    expect(find.byKey(const ValueKey('customer-bookings-retry')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('customer-bookings-retry')));
+    await tester.pumpAndSettle();
+
+    expect(bookingRequests, 2);
+    expect(find.text('No pending bookings.'), findsOneWidget);
+  });
+
   testWidgets('viewing bookings clears status notification badges', (
     tester,
   ) async {
@@ -523,6 +556,10 @@ void main() {
   testWidgets('submitting a completed booking rating closes and refreshes', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     var reviewed = false;
     var reviewSubmitted = false;
     Map<String, dynamic>? submittedPayload;
@@ -559,7 +596,17 @@ void main() {
       }),
     );
 
-    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          colorScheme: ColorScheme.light(
+            primary: AppColors.navy,
+            secondary: AppColors.orange,
+          ),
+        ),
+        home: CustomerBookingsPage(api: api),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Completed (1)'));
     await tester.pumpAndSettle();
@@ -573,9 +620,23 @@ void main() {
     await tester.ensureVisible(find.text('Review'));
     await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byTooltip('5 stars'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('booking-review-add-image')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Icon>(find.byKey(const ValueKey('booking-review-star-5')))
+          .color,
+      AppColors.orange,
+    );
     await tester.tap(find.byTooltip('5 stars'));
+    await tester.pumpAndSettle();
+    expect(find.text('Excellent · 5/5'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'Great court');
-    await tester.tap(find.text('Submit rating'));
+    await tester.tap(find.text('Submit review'));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);

@@ -352,7 +352,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
     if (!mounted || token == null || token.isEmpty) return;
     setState(() => _newsLoading = true);
     try {
-      final posts = await _api.merchantNewsPosts(token);
+      final posts = (await _api.venues.merchantNewsPosts(token))
+          .map((post) => post.toViewData())
+          .toList();
       if (mounted) setState(() => _newsPosts = posts);
     } on Exception catch (error) {
       if (mounted) {
@@ -4124,18 +4126,22 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       orElse: () => <String, dynamic>{},
     );
     final venueName = '${business['name'] ?? 'Venue'}';
-    final payload = {
-      'businessId': businessId,
-      'title': editing?['title'] as String? ?? '$venueName update',
-      'body': body.text.trim(),
-      'imageUrl': selectedImages.first,
-      'status': editing?['status'] ?? 'published',
-    };
+    final statusName = editing?['status'] as String? ?? 'published';
+    final payload = MerchantNewsPostDraft(
+      businessId: businessId,
+      title: editing?['title'] as String? ?? '$venueName update',
+      body: body.text.trim(),
+      imageUrl: selectedImages.first,
+      status: NewsPostStatus.values.firstWhere(
+        (status) => status.name == statusName,
+        orElse: () => NewsPostStatus.published,
+      ),
+    );
     try {
       if (editing == null || isIncomplete) {
-        await _api.createMerchantNewsPost(token: token, post: payload);
+        await _api.venues.createMerchantNewsPost(token: token, post: payload);
       } else {
-        await _api.updateMerchantNewsPost(
+        await _api.venues.updateMerchantNewsPost(
           token: token,
           id: _id(editing['id'])!,
           post: payload,
@@ -4414,7 +4420,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
         _showNewsCardMessage('Could not delete this News Card.');
         return;
       }
-      await _api.deleteMerchantNewsPost(token: token, id: id);
+      await _api.venues.deleteMerchantNewsPost(token: token, id: id);
       await _loadNewsPosts();
     } on Exception catch (error) {
       _showNewsCardMessage('Could not delete News Card: $error');
@@ -4429,23 +4435,24 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       return;
     }
     try {
-      await _api.updateMerchantNewsPost(
+      final rawImage =
+          post['imageUrl'] ?? post['image_url'] ?? post['businessImageUrl'];
+      await _api.venues.updateMerchantNewsPost(
         token: token,
         id: id,
-        post: {
-          'businessId': _postBusinessId(post),
-          'title': '${post['title'] ?? ''}',
-          'body': '${post['body'] ?? ''}',
-          'imageUrl':
-              post['imageUrl'] ?? post['image_url'] ?? post['businessImageUrl'],
-          'status': 'published',
-        },
+        post: MerchantNewsPostDraft(
+          businessId: _postBusinessId(post),
+          title: '${post['title'] ?? ''}',
+          body: '${post['body'] ?? ''}',
+          imageUrl: rawImage is String ? rawImage : null,
+          status: NewsPostStatus.published,
+        ),
       );
       await widget.onBusinessesChanged();
-      final updatedPosts = await _api.merchantNewsPosts(token);
-      final updatedPost = updatedPosts.where((item) => _id(item['id']) == id);
+      final updatedPosts = await _api.venues.merchantNewsPosts(token);
+      final updatedPost = updatedPosts.where((item) => item.id == id);
       if (updatedPost.isEmpty ||
-          '${updatedPost.first['status'] ?? ''}'.toLowerCase() != 'published') {
+          updatedPost.first.status != NewsPostStatus.published) {
         throw const AuthApiException(
           'The News Card was saved, but its published status could not be confirmed.',
           500,
@@ -4453,7 +4460,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       }
       if (mounted) {
         setState(() {
-          _newsPosts = updatedPosts;
+          _newsPosts = updatedPosts.map((post) => post.toViewData()).toList();
           _selectedAddSection = 'Booking cards';
         });
       }
@@ -4666,7 +4673,7 @@ class MerchantAddPageState extends State<MerchantAddPage> {
       business['tags'] ?? business['amenities'] ?? business['amenities_json'],
     );
     return Card(
-      elevation: 0,
+      elevation: AppCardStyles.elevation,
       clipBehavior: Clip.antiAlias,
       color: AppColors.surface,
       shape: AppCardStyles.merchantShape,
@@ -4807,7 +4814,9 @@ class MerchantAddPageState extends State<MerchantAddPage> {
                         ),
                         label: AppText(enabled ? 'Disable' : 'Enable'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: enabled ? _addNavy : AppColors.success,
+                          backgroundColor: enabled
+                              ? _addNavy
+                              : AppColors.success,
                           foregroundColor: AppColors.contrastingForeground(
                             enabled ? _addNavy : AppColors.success,
                           ),

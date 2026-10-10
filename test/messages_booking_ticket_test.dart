@@ -76,6 +76,14 @@ void main() {
     expect(find.text('TP-ACCESS-123'), findsOneWidget);
     expect(find.text('TP-TXN-00000501'), findsOneWidget);
     expect(find.text('TICKET CODE'), findsOneWidget);
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('messages-booking-ticket-header')),
+          )
+          .color,
+      const Color(0xFF237A43),
+    );
   });
 
   testWidgets('booking request ticket shows its transaction and unique token', (
@@ -114,6 +122,14 @@ void main() {
     expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
     expect(find.text('\u{20B1} 500.00'), findsOneWidget);
     expect(find.text('Downpayment: \u{20B1} 250.00'), findsOneWidget);
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('messages-booking-ticket-header')),
+          )
+          .color,
+      const Color(0xFFB45309),
+    );
   });
 
   testWidgets('Fitness ticket displays the selected term and coach', (
@@ -220,7 +236,7 @@ void main() {
     final header = tester.widget<Container>(
       find.byKey(const ValueKey('messages-booking-ticket-header')),
     );
-    expect(header.color, AppColors.navy);
+    expect(header.color, const Color(0xFFB45309));
     expect(find.text('TINKERPRO  ·  COURT PASS'), findsOneWidget);
     final headerTitle = tester.widget<Text>(
       find.text('TINKERPRO  ·  COURT PASS'),

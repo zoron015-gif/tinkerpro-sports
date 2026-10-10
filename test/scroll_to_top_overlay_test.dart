@@ -7,9 +7,11 @@ void main() {
     tester,
   ) async {
     final controller = ScrollController();
+    final overlayController = ScrollToTopOverlayController();
     await tester.pumpWidget(
       MaterialApp(
         home: ScrollToTopOverlay(
+          controller: overlayController,
           child: Scaffold(
             body: ListView.builder(
               controller: controller,
@@ -50,6 +52,21 @@ void main() {
     );
     expect(find.bySemanticsLabel('Scroll to top'), findsOneWidget);
 
+    overlayController.reset();
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find
+                .ancestor(of: button, matching: find.byType(AnimatedOpacity))
+                .first,
+          )
+          .opacity,
+      0,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -40));
+    await tester.pumpAndSettle();
     await tester.tap(button);
     await tester.pumpAndSettle();
 

@@ -33,7 +33,7 @@ class ReviewsSheet extends StatefulWidget {
 }
 
 class _ReviewsSheetState extends State<ReviewsSheet> {
-  List<Map<String, dynamic>> _reviews = const [];
+  List<VenueReview> _reviews = const [];
   Object? _error;
   var _loading = true;
   var _rating = 5;
@@ -68,10 +68,13 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
         throw const AuthApiException('Please sign in to view reviews.', 401);
       }
       final results = await Future.wait([
-        widget.api.newsReviews(token: token, businessId: widget.businessId),
+        widget.api.venues.newsReviews(
+          token: token,
+          businessId: widget.businessId,
+        ),
         widget.api.customerBookingModels(token),
       ]);
-      final reviews = results[0] as List<Map<String, dynamic>>;
+      final reviews = results[0] as List<VenueReview>;
       final bookings = results[1] as List<Booking>;
       final venueBookings = bookings.where(
         (booking) => booking.venue.id == widget.businessId,
@@ -112,7 +115,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
     }
     setState(() => _submitting = true);
     try {
-      await widget.api.createNewsReview(
+      await widget.api.venues.createNewsReview(
         token: token,
         businessId: widget.businessId,
         rating: _rating,
@@ -143,14 +146,14 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
   @override
   Widget build(BuildContext context) {
     final ratedUsers = _reviews
-        .map((review) => review['customerId'] ?? review['customer_id'])
+        .map((review) => review.customerId)
         .where((id) => id != null)
         .toSet()
         .length;
     final average = _reviews.isEmpty
         ? 0.0
         : _reviews
-                  .map((review) => double.tryParse('${review['rating']}') ?? 0)
+                  .map((review) => review.rating.toDouble())
                   .fold<double>(0, (total, value) => total + value) /
               _reviews.length;
     return SafeArea(
@@ -273,13 +276,13 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
 
   ({double average, int ratedUsers}) get _ratingSummary {
     final ratings = _reviews
-        .map((review) => double.tryParse('${review['rating']}') ?? 0)
+        .map((review) => review.rating.toDouble())
         .toList();
     final average = ratings.isEmpty
         ? 0.0
         : ratings.reduce((total, rating) => total + rating) / ratings.length;
     final ratedUsers = _reviews
-        .map((review) => review['customerId'] ?? review['customer_id'])
+        .map((review) => review.customerId)
         .where((id) => id != null)
         .toSet()
         .length;
@@ -304,13 +307,13 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
       itemBuilder: (_, index) {
         final review = _reviews[index];
         final name = [
-          '${review['firstName'] ?? ''}'.trim(),
-          '${review['lastName'] ?? ''}'.trim(),
+          review.firstName?.trim() ?? '',
+          review.lastName?.trim() ?? '',
         ].where((value) => value.isNotEmpty).join(' ');
-        final avatarUrl = '${review['avatarUrl'] ?? review['avatar_url'] ?? ''}'
-            .trim();
+        final avatarUrl = review.avatarUrl?.trim() ?? '';
         final avatar = _reviewAvatar(avatarUrl);
-        final rating = int.tryParse('${review['rating']}') ?? 0;
+        final reviewImage = _reviewAvatar(review.imageData?.trim() ?? '');
+        final rating = review.rating;
         final normalizedRating = rating.clamp(0, 5);
         return ListTile(
           contentPadding: EdgeInsets.zero,
@@ -358,7 +361,28 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
               ),
             ],
           ),
-          subtitle: AppText('${review['comment'] ?? ''}'),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (review.comment?.isNotEmpty == true)
+                AppText(review.comment!),
+              if (reviewImage != null) ...[
+                if (review.comment?.isNotEmpty == true)
+                  const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image(
+                    key: ValueKey('review-photo-$index'),
+                    image: reviewImage,
+                    width: double.infinity,
+                    height: 150,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );

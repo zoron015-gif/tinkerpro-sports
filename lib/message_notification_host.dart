@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'app_session.dart';
 import 'auth_api.dart';
 import 'app_preferences.dart';
+import 'messages_ui.dart';
 
 class MessageNotificationHost extends StatefulWidget {
   const MessageNotificationHost({
@@ -87,6 +88,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
           archived: _asBool(conversation['archived']),
           blocked: _asBool(conversation['blockedByMe']),
           title: _conversationTitle(conversation, session.accountEmail),
+          user: _conversationPeer(conversation, session.accountEmail),
         );
       }
 
@@ -109,6 +111,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
               title: current.title,
               preview: current.lastMessage,
               lastMessageAt: current.lastMessageAt,
+              user: current.user,
             ),
           );
         }
@@ -185,14 +188,10 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
                       ),
                       child: Row(
                         children: [
-                           CircleAvatar(
-                            backgroundColor: AppColors.softOrange,
-                            child: Icon(
-                              Icons.chat_bubble_rounded,
-                              color: Color(0xFFFF8200),
-                              size: 20,
-                            ),
-                          ),
+                           MessagesAvatar(
+                             notification.user ?? const {},
+                             radius: 22,
+                           ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Column(
@@ -265,6 +264,7 @@ class _ConversationSnapshot {
     required this.archived,
     required this.blocked,
     required this.title,
+    required this.user,
   });
 
   final String lastMessageAt;
@@ -273,6 +273,7 @@ class _ConversationSnapshot {
   final bool archived;
   final bool blocked;
   final String title;
+  final Map<String, dynamic>? user;
 }
 
 class _IncomingMessage {
@@ -281,12 +282,14 @@ class _IncomingMessage {
     required this.title,
     required this.preview,
     required this.lastMessageAt,
+    required this.user,
   });
 
   final int conversationId;
   final String title;
   final String preview;
   final String lastMessageAt;
+  final Map<String, dynamic>? user;
 }
 
 int? _asInt(Object? value) {
@@ -306,20 +309,38 @@ String _conversationTitle(
   String? accountEmail,
 ) {
   final title = '${conversation['title'] ?? ''}'.trim();
-  if (title.isNotEmpty) return title;
-  final members = conversation['members'];
-  if (members is List) {
-    for (final member in members.whereType<Map>()) {
-      if ('${member['email'] ?? ''}'.toLowerCase() ==
-          accountEmail?.toLowerCase()) {
-        continue;
-      }
-      final name = [
-        member['firstName'],
-        member['lastName'],
-      ].where((part) => '$part'.trim().isNotEmpty).join(' ').trim();
-      if (name.isNotEmpty) return name;
-    }
+  if ('${conversation['type'] ?? ''}' == 'group' && title.isNotEmpty) {
+    return title;
   }
+  final peer = _conversationPeer(conversation, accountEmail);
+  if (peer != null) {
+    final name = [
+      peer['firstName'],
+      peer['lastName'],
+    ].where((part) => '${part ?? ''}'.trim().isNotEmpty).join(' ').trim();
+    if (name.isNotEmpty) return name;
+    final email = '${peer['email'] ?? ''}'.trim();
+    if (email.isNotEmpty) return email;
+  }
+  if (title.isNotEmpty) return title;
   return 'New message';
+}
+
+Map<String, dynamic>? _conversationPeer(
+  Map<String, dynamic> conversation,
+  String? accountEmail,
+) {
+  final members = conversation['members'];
+  if (members is! List) return null;
+  final people = members
+      .whereType<Map>()
+      .map((member) => Map<String, dynamic>.from(member))
+      .where(
+        (member) =>
+            '${member['email'] ?? ''}'.toLowerCase() !=
+            accountEmail?.toLowerCase(),
+      )
+      .toList();
+  if (people.isEmpty) return null;
+  return people.first;
 }

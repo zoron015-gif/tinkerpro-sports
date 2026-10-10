@@ -15,6 +15,7 @@ class AppPreferences extends ChangeNotifier {
 
   bool _darkMode = false;
   AppPalette _palette = AppPalette.orange;
+  Color? _customAccentColor;
   double _textScale = 1;
   String _languageCode = 'en';
   String? _activeAccount;
@@ -24,6 +25,8 @@ class AppPreferences extends ChangeNotifier {
 
   bool get darkMode => _darkMode;
   AppPalette get palette => _palette;
+  Color? get customAccentColor => _customAccentColor;
+  Color get accentColor => _customAccentColor ?? _palette.color;
   double get textScale => _textScale;
   String get languageCode => _languageCode;
 
@@ -57,6 +60,10 @@ class AppPreferences extends ChangeNotifier {
     }
     _darkMode = value['darkMode'] == true;
     _palette = AppPalette.fromKey(value['palette'] as String?);
+    final customAccentColor = value['customAccentColor'];
+    _customAccentColor = customAccentColor is int
+        ? Color(customAccentColor)
+        : null;
     _textScale = switch (value['textScale']) {
       0.9 => .9,
       1.1 => 1.1,
@@ -72,6 +79,7 @@ class AppPreferences extends ChangeNotifier {
   Future<void> update({
     bool? darkMode,
     AppPalette? palette,
+    Color? customAccentColor,
     double? textScale,
     String? languageCode,
   }) async {
@@ -86,18 +94,24 @@ class AppPreferences extends ChangeNotifier {
     final previous = (
       darkMode: _darkMode,
       palette: _palette,
+      customAccentColor: _customAccentColor,
       textScale: _textScale,
       languageCode: _languageCode,
     );
     final account = _activeAccount;
+    final nextCustomAccentColor = customAccentColor ??
+        (palette == null ? _customAccentColor : null);
     final encoded = jsonEncode({
       'darkMode': darkMode ?? _darkMode,
       'palette': (palette ?? _palette).key,
+      if (nextCustomAccentColor != null)
+        'customAccentColor': nextCustomAccentColor.toARGB32(),
       'textScale': textScale ?? _textScale,
       'languageCode': languageCode ?? _languageCode,
     });
     _darkMode = darkMode ?? _darkMode;
     _palette = palette ?? _palette;
+    _customAccentColor = nextCustomAccentColor;
     _textScale = textScale ?? _textScale;
     _languageCode = languageCode ?? _languageCode;
     notifyListeners();
@@ -115,6 +129,7 @@ class AppPreferences extends ChangeNotifier {
       if (_activeAccount == account) {
         _darkMode = previous.darkMode;
         _palette = previous.palette;
+        _customAccentColor = previous.customAccentColor;
         _textScale = previous.textScale;
         _languageCode = previous.languageCode;
         notifyListeners();
@@ -126,6 +141,7 @@ class AppPreferences extends ChangeNotifier {
   void _resetToDefaults() {
     _darkMode = false;
     _palette = AppPalette.orange;
+    _customAccentColor = null;
     _textScale = 1;
     _languageCode = 'en';
   }

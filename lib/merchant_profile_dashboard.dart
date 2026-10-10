@@ -27,6 +27,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
     required this.profileImage,
     required this.venueCount,
     this.bookings = const [],
+    this.businesses = const [],
     required this.onLogout,
     required this.onEditProfile,
     this.api,
@@ -37,6 +38,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
   final ImageProvider<Object>? profileImage;
   final int venueCount;
   final List<Map<String, dynamic>> bookings;
+  final List<Map<String, dynamic>> businesses;
   final Future<void> Function(BuildContext context) onLogout;
   final Future<Map<String, dynamic>?> Function() onEditProfile;
   final AuthApi? api;
@@ -51,6 +53,7 @@ class _MerchantProfileDashboardPageState
     extends State<MerchantProfileDashboardPage> {
   late Map<String, dynamic> _owner;
   late ImageProvider<Object>? _profileImage;
+  String _performancePeriod = 'Today';
 
   @override
   void initState() {
@@ -80,9 +83,36 @@ class _MerchantProfileDashboardPageState
     }).toList();
   }
 
-  double get _todayRevenue => _todayBookings
+  List<Map<String, dynamic>> get _performanceBookings {
+    if (_performancePeriod == 'All time') return widget.bookings;
+    final now = DateTime.now();
+    final days = switch (_performancePeriod) {
+      '7 days' => 7,
+      '30 days' => 30,
+      _ => 1,
+    };
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: days - 1));
+    return widget.bookings.where((booking) {
+      final value = booking['date'] ?? booking['bookingDate'];
+      final date = value is DateTime ? value : DateTime.tryParse('$value');
+      return date != null &&
+          !date.isBefore(start) &&
+          !date.isAfter(DateTime(now.year, now.month, now.day));
+    }).toList();
+  }
+
+  double get _performanceRevenue => _performanceBookings
       .where(_isConfirmedBooking)
       .fold(0, (total, booking) => total + _number(booking['total']));
+
+  double get _estimatedPaidAmount => _performanceBookings.fold(
+    0,
+    (total, booking) => total + _bookingAmountReceived(booking),
+  );
 
   int get _todayPendingBookings =>
       _todayBookings.where(_isPendingBooking).length;
@@ -94,6 +124,17 @@ class _MerchantProfileDashboardPageState
 
   double _number(dynamic value) =>
       value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+  double _bookingAmountReceived(Map<String, dynamic> booking) {
+    final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final paidAmount = booking['paidAmount'];
+    if (paidAmount != null) {
+      final amount = _number(paidAmount);
+      if (amount > 0 || paymentStatus != 'paid') return amount;
+    }
+    if (paymentStatus == 'paid') return _number(booking['total']);
+    return 0;
+  }
 
   int _count(dynamic value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
@@ -177,6 +218,10 @@ class _MerchantProfileDashboardPageState
           _profileCard(name, email, phone),
           const SizedBox(height: 6),
           _performanceCard(),
+          const SizedBox(height: 6),
+          _quickToolsCard(),
+          const SizedBox(height: 6),
+          _businessOverviewCard(),
         ],
       ),
       bottomNavigationBar: AppBottomNavigation(
@@ -426,6 +471,19 @@ class _MerchantProfileDashboardPageState
                   ),
                 ],
               ),
+              if ('${_owner['businessName'] ?? ''}'.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                AppText(
+                  '${_owner['businessName']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _profileInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -434,9 +492,8 @@ class _MerchantProfileDashboardPageState
   );
 
   Widget _performanceCard() {
-    final today = DateTime.now();
     final bookings = _todayBookings;
-    final hasBookings = bookings.isNotEmpty;
+    final filteredBookings = _performanceBookings;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -463,9 +520,11 @@ class _MerchantProfileDashboardPageState
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: AppText(
-                        "Today's performance",
+                        _performancePeriod == 'Today'
+                            ? "Today's performance"
+                            : '$_performancePeriod performance',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -474,20 +533,41 @@ class _MerchantProfileDashboardPageState
                         localize: true,
                       ),
                     ),
-                    const Icon(
-                      Icons.today_rounded,
-                      color: Color(0xFFFFC27A),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    AppText(
-                      '${_monthName(today.month)} ${today.day}',
-                      style: const TextStyle(
-                        color: Color(0xFFD8E1F1),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        key: const ValueKey('merchant-profile-date-filter'),
+                        value: _performancePeriod,
+                        dropdownColor: AppColors.navy,
+                        iconEnabledColor: Colors.white,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Today',
+                            child: Text('Today'),
+                          ),
+                          DropdownMenuItem(
+                            value: '7 days',
+                            child: Text('7 days'),
+                          ),
+                          DropdownMenuItem(
+                            value: '30 days',
+                            child: Text('30 days'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'All time',
+                            child: Text('All time'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _performancePeriod = value);
+                          }
+                        },
                       ),
-                      localize: true,
                     ),
                   ],
                 ),
@@ -504,8 +584,8 @@ class _MerchantProfileDashboardPageState
                 ),
                 const SizedBox(height: 6),
                 AppText(
-                  '₱${_todayRevenue.toStringAsFixed(2)}',
-                  key: const ValueKey('merchant-profile-today-revenue'),
+                  '₱${_performanceRevenue.toStringAsFixed(2)}',
+                  key: const ValueKey('merchant-profile-performance-revenue'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 30,
@@ -516,9 +596,11 @@ class _MerchantProfileDashboardPageState
                 ),
                 const SizedBox(height: 6),
                 AppText(
-                  hasBookings
-                      ? '${bookings.length} booking${bookings.length == 1 ? '' : 's'} scheduled today'
-                      : 'No bookings scheduled today',
+                  _performancePeriod == 'Today'
+                      ? bookings.isEmpty
+                            ? 'No bookings scheduled today'
+                            : '${bookings.length} booking${bookings.length == 1 ? '' : 's'} scheduled today'
+                      : '${filteredBookings.length} booking${filteredBookings.length == 1 ? '' : 's'} in selected period',
                   style: const TextStyle(
                     color: Color(0xFFD8E1F1),
                     fontSize: 12,
@@ -577,70 +659,323 @@ class _MerchantProfileDashboardPageState
               },
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: InkWell(
+              key: const ValueKey('merchant-profile-estimated-paid'),
+              onTap: () => _navigateToManagement(3),
+              borderRadius: BorderRadius.circular(14),
+              child: _metric(
+                Icons.account_balance_wallet_outlined,
+                'Estimated paid amount',
+                '₱${_estimatedPaidAmount.toStringAsFixed(2)}',
+                const Color(0xFF237A43),
+                description: 'From booking payment records; not a withdrawable balance. Tap for payment details.',
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _metric(IconData icon, String label, String value, Color color) =>
-      Container(
-        constraints: const BoxConstraints(minHeight: 82),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.page,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _profileLine),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _metric(
+    IconData icon,
+    String label,
+    String value,
+    Color color, {
+    String? description,
+  }) => Container(
+    constraints: const BoxConstraints(minHeight: 82),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppColors.page,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _profileLine),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 16),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: AppText(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _profileMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 6),
+            Expanded(
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _profileMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            AppText(
-              value,
-              key: ValueKey('merchant-profile-metric-$label'),
-              style: TextStyle(
-                color: _profileInk,
-                fontSize: 19,
-                height: 1,
-                fontWeight: FontWeight.w900,
               ),
             ),
           ],
         ),
-      );
+        const SizedBox(height: 6),
+        AppText(
+          value,
+          key: ValueKey('merchant-profile-metric-$label'),
+          style: TextStyle(
+            color: _profileInk,
+            fontSize: 19,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        if (description != null) ...[
+          const SizedBox(height: 6),
+          AppText(
+            description,
+            style: TextStyle(color: _profileMuted, fontSize: 10),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    ),
+  );
 
-  String _monthName(int month) => const [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ][month - 1];
+  Widget _quickToolsCard() => _sectionCard(
+    title: 'Quick tools',
+    children: [
+      _quickTool(
+        icon: Icons.calendar_month_rounded,
+        title: 'Schedule',
+        subtitle: 'Review booking requests and schedule',
+        color: const Color(0xFF1C69C9),
+        onTap: () => _navigateToManagement(3),
+      ),
+      _quickTool(
+        icon: Icons.sell_outlined,
+        title: 'Pricing / Promo',
+        subtitle: 'Manage venues, pricing, and offers',
+        color: const Color(0xFFE28A16),
+        onTap: () => _navigateToManagement(1),
+      ),
+      _quickTool(
+        icon: Icons.query_stats_rounded,
+        title: 'Stats',
+        subtitle: 'Open full performance analytics',
+        color: const Color(0xFF7655C5),
+        onTap: () => _navigateToManagement(0),
+      ),
+    ],
+  );
+
+  Widget _businessOverviewCard() {
+    final businessName = '${_owner['businessName'] ?? ''}'.trim();
+    final completionChecks = [
+      businessName.isNotEmpty,
+      '${_owner['address'] ?? ''}'.trim().isNotEmpty,
+      widget.businesses.any(_businessHasImage),
+      widget.businesses.isNotEmpty,
+    ];
+    final completed = completionChecks.where((value) => value).length;
+    final ratings = widget.businesses
+        .map((business) => _number(business['averageRating']))
+        .where((rating) => rating > 0)
+        .toList();
+    final rating = ratings.isEmpty
+        ? null
+        : ratings.reduce((first, second) => first + second) / ratings.length;
+    final openVenues = widget.businesses.where((business) {
+      final availability = '${business['availability'] ?? ''}'.toLowerCase();
+      return availability.contains('open') ||
+          availability.contains('available');
+    }).length;
+    final recentBookings = [...widget.bookings]
+      ..sort((first, second) {
+        final firstDate = DateTime.tryParse(
+          '${first['createdAt'] ?? first['date'] ?? ''}',
+        );
+        final secondDate = DateTime.tryParse(
+          '${second['createdAt'] ?? second['date'] ?? ''}',
+        );
+        if (firstDate == null) return 1;
+        if (secondDate == null) return -1;
+        return secondDate.compareTo(firstDate);
+      });
+
+    return _sectionCard(
+      title: 'Business overview',
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: AppText(
+                businessName.isEmpty ? 'Add your business name' : businessName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _profileInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (rating != null) ...[
+              const Icon(
+                Icons.star_rounded,
+                color: Color(0xFFE28A16),
+                size: 18,
+              ),
+              AppText(
+                rating.toStringAsFixed(1),
+                style: TextStyle(
+                  color: _profileInk,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(
+              openVenues > 0 ? Icons.circle : Icons.circle_outlined,
+              size: 10,
+              color: openVenues > 0 ? const Color(0xFF168B69) : _profileMuted,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: AppText(
+                widget.businesses.isEmpty
+                    ? 'No venues added yet'
+                    : '$openVenues of ${widget.businesses.length} venues marked open or available',
+                style: TextStyle(color: _profileMuted, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        AppText(
+          'Profile completion · $completed/${completionChecks.length}',
+          style: TextStyle(
+            color: _profileInk,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        LinearProgressIndicator(
+          value: completed / completionChecks.length,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(6),
+          backgroundColor: AppColors.surfaceVariant,
+          color: const Color(0xFF1C69C9),
+        ),
+        if (recentBookings.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          InkWell(
+            key: const ValueKey('merchant-profile-recent-activity'),
+            onTap: () => _navigateToManagement(3),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.history_rounded,
+                    color: Color(0xFF7655C5),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: AppText(
+                      'Latest booking · ${recentBookings.first['customerName'] ?? 'Customer'} · ${recentBookings.first['status'] ?? 'updated'}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _profileMuted, fontSize: 12),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: _profileMuted),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _sectionCard({
+    required String title,
+    required List<Widget> children,
+  }) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _profileLine),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D192B50),
+          blurRadius: 16,
+          offset: Offset(0, 6),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppText(
+          title,
+          style: TextStyle(
+            color: _profileInk,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ...children,
+      ],
+    ),
+  );
+
+  Widget _quickTool({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) => Material(
+    type: MaterialType.transparency,
+    child: ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: color.withValues(alpha: .12),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: AppText(
+        title,
+        style: TextStyle(color: _profileInk, fontWeight: FontWeight.w800),
+      ),
+      subtitle: AppText(
+        subtitle,
+        style: TextStyle(color: _profileMuted, fontSize: 11),
+      ),
+      trailing: Icon(Icons.chevron_right_rounded, color: _profileMuted),
+      onTap: onTap,
+    ),
+  );
+
+  bool _businessHasImage(Map<String, dynamic> business) {
+    final image = '${business['imageUrl'] ?? business['image_url'] ?? ''}'
+        .trim();
+    final images = business['imageUrls'] ?? business['image_urls'];
+    return image.isNotEmpty ||
+        (images is List &&
+            images.whereType<String>().any((value) => value.trim().isNotEmpty));
+  }
+
+  void _navigateToManagement(int index) {
+    widget.onNavigate?.call(index);
+    Navigator.of(context).pop();
+  }
 
   String _initials(String value) {
     final parts = value.split(' ').where((part) => part.isNotEmpty).toList();

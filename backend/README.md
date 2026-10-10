@@ -124,12 +124,17 @@ Authenticated endpoints require `Authorization: Bearer <token>`.
 - Bookings: `GET /api/bookings/availability`, `POST /api/bookings`,
   `GET /api/bookings`, and `GET /api/merchant/bookings`
 - Messages: `/api/messages/owner`, `/api/messages/contacts`,
-  `/api/messages/conversations`, and `/api/messages/blocks/:userId`
+  `/api/messages/conversations`, and `/api/messages/blocks/:userId`.
+  `DELETE /api/messages/conversations/:conversationId/messages/:messageId`
+  accepts `{"scope":"me"}` to hide a message only for the requesting member, or
+  `{"scope":"everyone"}` (sender only) to clear its content and retain a shared
+  removal notice in chat.
 - News: `GET /api/news/feed` returns published customer news with venue details
   and ratings. `GET/POST /api/merchant/news` and
   `PUT/DELETE /api/merchant/news/:id` manage merchant posts.
 - Reviews: `POST /api/reviews` accepts one review for each customer's completed
-  booking.
+  booking. Customers may attach one JPEG, PNG, or WebP photo up to 5 MB;
+  submitted review photos are shown with venue reviews.
 
 `POST /api/bookings` requires an `Idempotency-Key` header containing 16–100
 letters, digits, or `.`, `_`, `:`, and `-`. The app generates one key for each

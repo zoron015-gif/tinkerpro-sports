@@ -623,13 +623,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             ? Row(
                 children: [
                   AppText(
-                    'Management',
+                    'Bookings & payments',
                     style: AppTypography.pageTitle,
                     localize: true,
                   ),
                   _merchantSectionNotice(
                     key: 'merchant-payouts-info',
-                    title: 'Management',
+                    title: 'Bookings & payments',
                     message: 'Manage booking requests and track your earnings.',
                   ),
                 ],
@@ -2356,7 +2356,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final tags = _businessTags(business);
 
     return Card(
-      elevation: 0,
+      elevation: AppCardStyles.elevation,
       clipBehavior: Clip.antiAlias,
       color: AppColors.surface,
       shape: AppCardStyles.merchantShape,
@@ -2725,9 +2725,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _merchantBottomNavigation() => AppBottomNavigation(
     merchantMode: true,
     selectedIndex: _merchantTab,
+    merchantRequestCount: _bookings.where(_isPendingBooking).length,
     onDestinationSelected: (index) {
       if (index == 2) {
         _openMerchantMessages();
+        return;
+      }
+      if (index == 4) {
+        _openMerchantProfile();
         return;
       }
       setState(() => _merchantTab = index);
@@ -2740,7 +2745,6 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         _payoutRefreshTimer?.cancel();
         _payoutRefreshTimer = null;
       }
-      if (index == 4) _openMerchantProfile();
     },
   );
 
@@ -2752,6 +2756,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           profileImage: _imageProvider(_profileImage),
           venueCount: _visibleBusinesses.length,
           bookings: _bookings,
+          businesses: _visibleBusinesses,
           onEditProfile: _openMerchantEditPanel,
           onLogout: widget.onLogout ?? (_) async {},
           api: _api,

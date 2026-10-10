@@ -1096,10 +1096,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
 
   Future<void> _loadMerchantBusinesses() async {
     try {
-      final rows = await AuthApi().customerBusinesses();
+      final rows = await VenueCatalogRepository(
+        AuthApi(),
+      ).customerBusinesses();
       if (!mounted) return;
       final venues = <SportsVenue>[];
-      for (final business in rows) {
+      for (final venueBusiness in rows) {
+        final business = venueBusiness.toViewData();
         final businessType =
             '${business['businessType'] ?? business['business_type'] ?? ''}'
                 .trim()

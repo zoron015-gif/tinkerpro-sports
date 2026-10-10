@@ -8,6 +8,7 @@ import 'core/api_response.dart';
 import 'models/booking.dart';
 
 part 'features/bookings/data/booking_api.dart';
+part 'features/venues/domain/venue_models.dart';
 part 'features/venues/data/venue_api.dart';
 part 'features/messaging/data/messaging_api.dart';
 part 'features/saved_items/data/saved_items_api.dart';
@@ -64,6 +65,11 @@ class AuthApi {
 
   final http.Client _client;
 
+  VenueApi get venues => VenueApi._(
+    request: _request,
+    authHeaders: _authHeaders,
+  );
+
   Map<String, String> _authHeaders(
     String? token, {
     Map<String, String>? extra,
@@ -98,26 +104,6 @@ class AuthApi {
     required String email,
     required String password,
   }) => _post('/api/auth/login', {'email': email, 'password': password});
-
-  Future<List<Map<String, dynamic>>> customerBusinesses({
-    bool includeDisabledEvents = false,
-  }) async {
-    final response = await _request('GET', '/api/businesses');
-    return asMapList(response['businesses']).where((business) {
-      final isEvent =
-          '${business['businessType'] ?? business['business_type'] ?? ''}'
-              .trim()
-              .toLowerCase() ==
-          'event';
-      if (includeDisabledEvents && isEvent) return true;
-      final enabled = business['enabled'];
-      return enabled != false &&
-          enabled != 0 &&
-          enabled != '0' &&
-          enabled != 'false' &&
-          enabled != 'FALSE';
-    }).toList();
-  }
 
   Future<Map<String, dynamic>> merchantProfile(String token) =>
       _request('GET', '/api/merchant/profile', headers: _authHeaders(token));
@@ -292,7 +278,11 @@ class AuthApi {
                 .timeout(const Duration(seconds: 15))
           : method == 'DELETE'
           ? await _client
-                .delete(uri, headers: headers)
+                .delete(
+                  uri,
+                  headers: headers,
+                  body: body == null ? null : jsonEncode(body),
+                )
                 .timeout(const Duration(seconds: 15))
           : method == 'PUT'
           ? await _client

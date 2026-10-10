@@ -54,27 +54,106 @@ class MessagesChatView extends StatelessWidget {
                     final mine = asInt(message['senderId']) == currentUserId;
                     final attachment = attachmentValue(message);
                     final body = messageBody(message);
+                    final removedAt = message['removedAt'];
                     final attachmentType = safeString(attachment?['type']);
+                    if (removedAt != null) {
+                      final removedBy = safeString(
+                        message['senderName'] ??
+                            message['removedByName'] ??
+                            [
+                              message['senderFirstName'],
+                              message['senderLastName'],
+                            ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' '),
+                        'Someone',
+                      ).trim();
+                      final removedLabel = mine
+                          ? appLanguageText(
+                              'You deleted a message',
+                              'You deleted a message',
+                            )
+                          : removedBy.isEmpty
+                          ? appLanguageText(
+                              'A message was deleted',
+                              'A message was deleted',
+                            )
+                          : appLanguageText(
+                              '{name} deleted a message',
+                              '{name} deleted a message',
+                            ).replaceAll('{name}', removedBy);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 7),
+                        child: Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.sizeOf(context).width * .76,
+                            ),
+                            child: Card(
+                              key: ValueKey('message-bubble-${message['id']}'),
+                              color: mine
+                                  ? AppColors.softOrange
+                                  : AppColors.surfaceVariant,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    AppText(
+                                      removedLabel,
+                                      key: ValueKey(
+                                        'message-removed-${message['id']}',
+                                      ),
+                                      style: TextStyle(
+                                        color: AppColors.muted,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                    if (_messageTime(message)
+                                        case final time?)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          time,
+                                          style: TextStyle(
+                                            color: AppColors.muted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
                     if (attachmentType == 'booking' ||
                         attachmentType == 'booking_payment_ticket' ||
                         attachmentType == 'booking_ticket') {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 7),
-                        child: Column(
-                          children: [
-                            Center(child: MessagesBookingTicket(attachment!)),
-                            if (_messageTime(message) case final time?)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  time,
-                                  style: TextStyle(
-                                    color: AppColors.muted,
-                                    fontSize: 11,
+                      return GestureDetector(
+                        onLongPress: () => onDeleteMessage(message),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          child: Column(
+                            children: [
+                              Center(child: MessagesBookingTicket(attachment!)),
+                              if (_messageTime(message) case final time?)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    time,
+                                    style: TextStyle(
+                                      color: AppColors.muted,
+                                      fontSize: 11,
+                                    ),
                                   ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       );
                     }
@@ -143,12 +222,10 @@ class MessagesChatView extends StatelessWidget {
                       alignment: mine
                           ? Alignment.centerRight
                           : Alignment.centerLeft,
-                      child: mine
-                          ? GestureDetector(
-                              onLongPress: () => onDeleteMessage(message),
-                              child: bubble,
-                            )
-                          : bubble,
+                      child: GestureDetector(
+                        onLongPress: () => onDeleteMessage(message),
+                        child: bubble,
+                      ),
                     );
                   },
                 ),

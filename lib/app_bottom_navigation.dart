@@ -15,6 +15,7 @@ class AppBottomNavigation extends StatelessWidget {
     required this.onDestinationSelected,
     this.unreadMessageCount = 0,
     this.unreadBookingCount = 0,
+    this.merchantRequestCount = 0,
     this.merchantMode = false,
     this.hideMerchantVenues = false,
   });
@@ -23,6 +24,7 @@ class AppBottomNavigation extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final int unreadMessageCount;
   final int unreadBookingCount;
+  final int merchantRequestCount;
   final bool merchantMode;
   final bool hideMerchantVenues;
 
@@ -100,9 +102,15 @@ class AppBottomNavigation extends StatelessWidget {
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-payouts'),
-                    icon: Icon(Icons.payments_outlined),
-                    selectedIcon: Icon(Icons.payments_rounded),
-                    label: label('Manage', 'Pamahalaan'),
+                    icon: _countBadge(
+                      Icons.pending_actions_outlined,
+                      merchantRequestCount,
+                    ),
+                    selectedIcon: _countBadge(
+                      Icons.pending_actions_rounded,
+                      merchantRequestCount,
+                    ),
+                    label: label('Bookings', 'Mga booking'),
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-profile'),

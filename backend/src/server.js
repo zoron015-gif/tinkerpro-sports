@@ -745,13 +745,25 @@ app.get('/api/messages/conversations', requireAuth, async (req, res, next) => {
     }
     const [rows] = await pool.execute(
       `SELECT c.id, c.type, c.title, c.created_at AS createdAt,
-              m.body AS lastMessage, m.created_at AS lastMessageAt,
+              CASE WHEN m.removed_at IS NOT NULL
+                   THEN CONCAT_WS(
+                     ' ', removed_by_user.first_name,
+                     removed_by_user.last_name, 'removed this message'
+                   )
+                   ELSE m.body
+              END AS lastMessage,
+              m.created_at AS lastMessageAt,
               cm.archived_at IS NOT NULL AS archived,
               cm.manually_unread_at IS NOT NULL AS manuallyUnread,
               (cm.manually_unread_at IS NOT NULL OR
                (SELECT COUNT(*) FROM messages unread
                 WHERE unread.conversation_id = c.id
                   AND unread.sender_id <> ?
+                  AND unread.removed_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM message_user_deletions mud
+                    WHERE mud.message_id = unread.id AND mud.user_id = cm.user_id
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM message_reads mr
                     WHERE mr.message_id = unread.id AND mr.user_id = ?
@@ -770,7 +782,12 @@ app.get('/api/messages/conversations', requireAuth, async (req, res, next) => {
        LEFT JOIN messages m ON m.id = (
          SELECT MAX(latest.id) FROM messages latest
          WHERE latest.conversation_id = c.id
+           AND NOT EXISTS (
+             SELECT 1 FROM message_user_deletions mud
+             WHERE mud.message_id = latest.id AND mud.user_id = cm.user_id
+           )
        )
+       LEFT JOIN users removed_by_user ON removed_by_user.id = m.removed_by
        WHERE cm.deleted_at IS NULL
          ${bookingTypeFilter}
        ORDER BY COALESCE(m.created_at, c.created_at) DESC`,
@@ -1020,6 +1037,10 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
     );
     const [rows] = await pool.execute(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.created_at AS createdAt,
+              m.removed_at AS removedAt,
+              CASE WHEN m.removed_at IS NULL THEN NULL
+                   ELSE CONCAT_WS(' ', remover.first_name, remover.last_name)
+              END AS removedByName,
               m.attachment_json AS attachmentJson,
               EXISTS (
                 SELECT 1 FROM message_reads mr
@@ -1027,9 +1048,16 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
               ) AS isSeen,
               u.first_name AS senderFirstName,
               u.last_name AS senderLastName
-       FROM messages m JOIN users u ON u.id = m.sender_id
-       WHERE m.conversation_id = ? ORDER BY m.created_at ASC`,
-      [req.auth.sub, conversationId],
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       LEFT JOIN users remover ON remover.id = m.removed_by
+       WHERE m.conversation_id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM message_user_deletions mud
+           WHERE mud.message_id = m.id AND mud.user_id = ?
+         )
+       ORDER BY m.created_at ASC`,
+      [req.auth.sub, conversationId, req.auth.sub],
     );
     for (const message of rows) {
       if (typeof message.attachmentJson === 'string') {
@@ -1052,23 +1080,49 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
 app.delete('/api/messages/conversations/:conversationId/messages/:messageId', requireAuth, async (req, res, next) => {
   const conversationId = positiveIntegerId(req.params.conversationId);
   const messageId = positiveIntegerId(req.params.messageId);
+  const scope = req.body.scope;
   if (conversationId === null || messageId === null) {
     return res.status(400).json({ error: 'The conversation and message are invalid.' });
   }
+  if (scope !== 'me' && scope !== 'everyone') {
+    return res.status(400).json({ error: 'Choose a valid message deletion scope.' });
+  }
   try {
-    const [result] = await pool.execute(
-      `DELETE FROM messages
-       WHERE id = ? AND conversation_id = ? AND sender_id = ?
-       AND EXISTS (
-         SELECT 1 FROM conversation_members
-         WHERE conversation_id = ? AND user_id = ?
-       )`,
-      [messageId, conversationId, req.auth.sub, conversationId, req.auth.sub],
+    const [messages] = await pool.execute(
+      `SELECT m.sender_id AS senderId
+       FROM messages m
+       JOIN conversation_members cm
+         ON cm.conversation_id = m.conversation_id
+        AND cm.user_id = ? AND cm.deleted_at IS NULL
+       WHERE m.id = ? AND m.conversation_id = ?
+       LIMIT 1`,
+      [req.auth.sub, messageId, conversationId],
     );
-    if (result.affectedRows === 0) {
+    if (messages.length === 0) {
       return res.status(404).json({ error: 'Message not found or cannot be deleted.' });
     }
-    return res.json({ message: 'Message deleted.' });
+    if (scope === 'everyone') {
+      if (String(messages[0].senderId) !== String(req.auth.sub)) {
+        return res.status(403).json({
+          error: 'You can only delete your own message for everyone.',
+        });
+      }
+      await pool.execute(
+        `UPDATE messages
+         SET body = NULL, attachment_json = NULL,
+             removed_at = COALESCE(removed_at, CURRENT_TIMESTAMP),
+             removed_by = COALESCE(removed_by, ?)
+         WHERE id = ? AND conversation_id = ?`,
+        [req.auth.sub, messageId, conversationId],
+      );
+      return res.json({ message: 'Message deleted for everyone.' });
+    }
+    await pool.execute(
+      `INSERT IGNORE INTO message_user_deletions (message_id, user_id)
+       VALUES (?, ?)`,
+      [messageId, req.auth.sub],
+    );
+    return res.json({ message: 'Message deleted for you.' });
   } catch (error) {
     return next(error);
   }
@@ -4154,6 +4208,25 @@ async function submitCustomerReview(req, res, next) {
   const bookingId = positiveIntegerId(req.body.bookingId);
   const rating = Number(req.body.rating);
   const comment = normalizeText(req.body.comment, 2000) || null;
+  const imageData = req.body.imageData ?? null;
+  let imageBytes = null;
+  if (imageData != null) {
+    const match = typeof imageData === 'string'
+      ? /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(imageData)
+      : null;
+    if (match) {
+      imageBytes = Buffer.from(match[2], 'base64');
+    }
+    if (
+      !match ||
+      imageBytes.length > 5 * 1024 * 1024 ||
+      imageBytes.toString('base64') !== match[2]
+    ) {
+      return res.status(400).json({
+        error: 'The review photo must be a valid JPEG, PNG, or WebP image up to 5 MB.',
+      });
+    }
+  }
   if (bookingId === null ||
       !isNumericInput(req.body.rating) ||
       !Number.isInteger(rating) || rating < 1 || rating > 5 ||
@@ -4180,9 +4253,10 @@ async function submitCustomerReview(req, res, next) {
     );
     if (existing[0]) return res.status(409).json({ error: 'You have already reviewed this booking.' });
     const [result] = await pool.execute(
-      `INSERT INTO venue_reviews (business_id, booking_id, customer_id, rating, comment)
-       VALUES (?, ?, ?, ?, ?)`,
-      [bookings[0].venueId, bookingId, req.auth.sub, rating, comment],
+      `INSERT INTO venue_reviews
+         (business_id, booking_id, customer_id, rating, comment, image_data)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [bookings[0].venueId, bookingId, req.auth.sub, rating, comment, imageData],
     );
     invalidateCustomerBusinesses();
     return res.status(201).json({ id: result.insertId, message: 'Review submitted.' });
@@ -4200,7 +4274,8 @@ async function listBusinessReviews(req, res, next) {
   try {
     const [rows] = await pool.execute(
       `SELECT r.id, r.business_id AS businessId, r.booking_id AS bookingId,
-              r.customer_id AS customerId, r.rating, r.comment, r.created_at AS createdAt,
+              r.customer_id AS customerId, r.rating, r.comment,
+              r.image_data AS imageData, r.created_at AS createdAt,
               u.first_name AS firstName, u.last_name AS lastName,
               u.avatar_url AS avatarUrl
        FROM venue_reviews r INNER JOIN users u ON u.id = r.customer_id

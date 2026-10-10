@@ -74,6 +74,121 @@ void main() {
     expect(find.textContaining('PM'), findsNothing);
   });
 
+  testWidgets('long-pressing an incoming message exposes it for removal', (
+    tester,
+  ) async {
+    final composer = TextEditingController();
+    addTearDown(composer.dispose);
+    Map<String, dynamic>? selectedMessage;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessagesChatView(
+            messages: [
+              {'id': 2, 'senderId': 8, 'body': 'Incoming message'},
+            ],
+            currentUserId: 7,
+            blocked: false,
+            composer: composer,
+            pendingImageData: null,
+            sending: false,
+            onDeleteMessage: (message) => selectedMessage = message,
+            onPickImage: () {},
+            onRemovePendingImage: () {},
+            onSend: () async {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.byKey(const ValueKey('message-bubble-2')));
+
+    expect(selectedMessage?['id'], 2);
+  });
+
+  testWidgets('renders a message removed for everyone as a named chat bubble', (
+    tester,
+  ) async {
+    final composer = TextEditingController();
+    addTearDown(composer.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessagesChatView(
+            messages: [
+              {
+                'id': 3,
+                'senderId': 8,
+                'body': null,
+                'removedAt': '2026-10-10T10:00:00',
+                'removedByName': 'Franze User',
+              },
+            ],
+            currentUserId: 7,
+            blocked: false,
+            composer: composer,
+            pendingImageData: null,
+            sending: false,
+            onDeleteMessage: (_) {},
+            onPickImage: () {},
+            onRemovePendingImage: () {},
+            onSend: () async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Franze User deleted a message'), findsOneWidget);
+    expect(find.byKey(const ValueKey('message-bubble-3')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('message-bubble-3'))).dx,
+      lessThan(100),
+    );
+  });
+
+  testWidgets('shows own deleted-for-everyone message on the sender side', (
+    tester,
+  ) async {
+    final composer = TextEditingController();
+    addTearDown(composer.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessagesChatView(
+            messages: [
+              {
+                'id': 4,
+                'senderId': 7,
+                'body': null,
+                'removedAt': '2026-10-10T10:00:00',
+                'removedByName': 'Customer One',
+              },
+            ],
+            currentUserId: 7,
+            blocked: false,
+            composer: composer,
+            pendingImageData: null,
+            sending: false,
+            onDeleteMessage: (_) {},
+            onPickImage: () {},
+            onRemovePendingImage: () {},
+            onSend: () async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('You deleted a message'), findsOneWidget);
+    expect(find.byKey(const ValueKey('message-bubble-4')), findsOneWidget);
+    expect(
+      tester.getTopRight(find.byKey(const ValueKey('message-bubble-4'))).dx,
+      greaterThan(300),
+    );
+  });
+
   testWidgets('incoming message text remains readable in dark mode', (
     tester,
   ) async {

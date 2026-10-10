@@ -34,7 +34,15 @@ client ID; see the backend setup instructions.
 
 The Flutter client keeps its shared HTTP/authentication primitives in
 `lib/auth_api.dart` and groups booking, venue, messaging, and saved-item API
-operations in `lib/features/*/data/`. Authentication UI and session
+operations in `lib/features/*/data/`. Venue/news operations are exposed through
+`AuthApi.venues` and use typed models from
+`lib/features/venues/domain/venue_models.dart`; venue catalog selection and
+disabled-event behavior live in `VenueCatalogRepository`, not the shared HTTP
+client. Venue API calls validate inputs against backend contracts, normalize
+response collections, and expose typed `VenueApiException` failures while
+remaining compatible with `AuthApiException` handling. Legacy map-oriented
+widgets receive explicit view-data adapters from the typed venue models.
+Authentication UI and session
 orchestration live under `lib/features/auth/`, and startup injects the app
 builder rather than importing the app shell back into the bootstrap module.
 The Express API uses shared infrastructure and normalizers under

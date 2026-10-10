@@ -50,10 +50,10 @@ class MyApp extends StatelessWidget {
 
   AppPreferences get _preferences => _dependencies.preferences;
 
-  static final _scrollToTopKey = GlobalKey<ScrollToTopOverlayState>();
+  static final _scrollToTopController = ScrollToTopOverlayController();
   static final ScrollToTopNavigatorObserver _scrollObserver =
       ScrollToTopNavigatorObserver(
-        onNavigationChanged: () => _scrollToTopKey.currentState?.reset(),
+        onNavigationChanged: _scrollToTopController.reset,
       );
 
   @override
@@ -67,7 +67,7 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.configured(
           darkMode: _preferences.darkMode,
-          accentColor: _preferences.palette.color,
+          accentColor: _preferences.accentColor,
         ),
         locale: AppLanguage.fromCode(_preferences.languageCode).locale,
         supportedLocales: AppLanguage.supportedLocales,
@@ -87,7 +87,7 @@ class MyApp extends StatelessWidget {
               ),
             ),
             child: ScrollToTopOverlay(
-              key: MyApp._scrollToTopKey,
+              controller: MyApp._scrollToTopController,
               child: MessageNotificationHost(
                 child: child ?? const SizedBox.shrink(),
                 onOpenConversation: (conversationId) {

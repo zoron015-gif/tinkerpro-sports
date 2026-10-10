@@ -8,6 +8,13 @@ import 'package:myapp/models/booking.dart';
 import 'package:myapp/profile_dashboard.dart';
 
 void main() {
+  test('profile arrival status requires a non-empty check-in timestamp', () {
+    expect(bookingHasArrived({'checkedInAt': '2026-10-09T10:30:00'}), isTrue);
+    expect(bookingHasArrived({'checkedInAt': '   '}), isFalse);
+    expect(bookingHasArrived({'checkedInAt': null}), isFalse);
+    expect(bookingHasArrived({}), isFalse);
+  });
+
   test('Fitness profile booking selection excludes other business types', () {
     final bookings = [
       {'id': 1, 'businessType': 'Sports'},

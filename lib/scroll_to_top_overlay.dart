@@ -36,19 +36,55 @@ class ScrollToTopNavigatorObserver extends NavigatorObserver {
   }
 }
 
-class ScrollToTopOverlay extends StatefulWidget {
-  const ScrollToTopOverlay({super.key, required this.child});
+class ScrollToTopOverlayController {
+  _ScrollToTopOverlayState? _state;
 
-  final Widget child;
-
-  @override
-  State<ScrollToTopOverlay> createState() => ScrollToTopOverlayState();
+  void reset() => _state?.reset();
 }
 
-class ScrollToTopOverlayState extends State<ScrollToTopOverlay> {
+class ScrollToTopOverlay extends StatefulWidget {
+  const ScrollToTopOverlay({
+    super.key,
+    required this.child,
+    this.controller,
+  });
+
+  final Widget child;
+  final ScrollToTopOverlayController? controller;
+
+  @override
+  State<ScrollToTopOverlay> createState() => _ScrollToTopOverlayState();
+}
+
+class _ScrollToTopOverlayState extends State<ScrollToTopOverlay> {
   static const _visibilityThreshold = 240.0;
   ScrollPosition? _scrollPosition;
   bool _isVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller?._state = this;
+  }
+
+  @override
+  void didUpdateWidget(covariant ScrollToTopOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (oldWidget.controller?._state == this) {
+        oldWidget.controller?._state = null;
+      }
+      widget.controller?._state = this;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.controller?._state == this) {
+      widget.controller?._state = null;
+    }
+    super.dispose();
+  }
 
   void reset() {
     if (!mounted) return;

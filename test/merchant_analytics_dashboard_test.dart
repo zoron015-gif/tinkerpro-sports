@@ -896,7 +896,7 @@ void main() {
     );
     expect(tester.getSize(payoutTypeFilter).height, 40);
     expect(find.text('Requests'), findsOneWidget);
-    expect(find.text('Management'), findsOneWidget);
+    expect(find.text('Bookings & payments'), findsOneWidget);
     for (final summaryKey in [
       'merchant-management-summary-requests',
       'merchant-management-summary-active',
@@ -1142,7 +1142,14 @@ void main() {
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
     expect(find.text("Today's performance"), findsOneWidget);
-    expect(find.text('₱500.00'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('merchant-profile-performance-revenue')),
+          )
+          .data,
+      '₱500.00',
+    );
     expect(find.text('1 booking scheduled today'), findsOneWidget);
     expect(find.text('Awaiting approval'), findsOneWidget);
     expect(
@@ -1428,5 +1435,14 @@ void main() {
       find.textContaining('Could not load merchant profile'),
       findsOneWidget,
     );
+
+    await tester.tap(
+      find.byKey(const ValueKey('merchant-dashboard-nav-profile')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Merchant Profile'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Merchant Dashboard'), findsOneWidget);
   });
 }

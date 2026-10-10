@@ -205,39 +205,132 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     final messageId = _asInt(message['id']);
     if (token == null || conversationId == null || messageId == null) return;
 
-    final confirmed = await showDialog<bool>(
+    final isOwnMessage =
+        _currentUserId != null &&
+        _asInt(message['senderId']) == _currentUserId;
+    final scope = await showModalBottomSheet<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const AppText('Delete message?', localize: true),
-        content: const AppText(
-          'This message will be permanently deleted.',
-          localize: true,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: false,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: AppText(
+                      appLanguageText(
+                        'Delete 1 message?',
+                        'Delete 1 message?',
+                      ),
+                      style: TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: appLanguageText('Close', 'Close'),
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              if (isOwnMessage)
+                ListTile(
+                  key: const ValueKey('delete-message-everyone'),
+                  leading: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.red,
+                  ),
+                  title: AppText(
+                    appLanguageText(
+                      'Delete for everyone',
+                      'Delete for everyone',
+                    ),
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'everyone'),
+                ),
+              ListTile(
+                key: const ValueKey('delete-message-me'),
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red,
+                ),
+                title: AppText(
+                  appLanguageText('Delete for me', 'Delete for me'),
+                  style: const TextStyle(color: Colors.red),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'me'),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const AppText('Cancel', localize: true),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const AppText('Delete', localize: true),
-          ),
-        ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (scope == null || !mounted) return;
 
     try {
       await _messagesService.deleteMessage(
         token: token,
         conversationId: conversationId,
         messageId: messageId,
+        scope: scope,
       );
       if (!mounted || _selectedConversation != conversationId) return;
-      setState(() {
-        _messages.removeWhere((item) => _asInt(item['id']) == messageId);
-      });
-      _show('Message deleted.');
+      if (scope == 'everyone') {
+        final senderFirstName = '${message['senderFirstName'] ?? ''}'.trim();
+        final senderLastName = '${message['senderLastName'] ?? ''}'.trim();
+        final removedByName = '$senderFirstName $senderLastName'.trim();
+        _controller.setMessages(
+          _messages
+              .map(
+                (item) => _asInt(item['id']) == messageId
+                    ? {
+                        ...item,
+                        'body': null,
+                        'attachment': null,
+                        'removedAt': DateTime.now().toIso8601String(),
+                        'removedByName': removedByName.isEmpty
+                            ? 'You'
+                            : removedByName,
+                      }
+                    : item,
+              )
+              .toList(),
+        );
+        try {
+          final refreshedMessages = await _messagesService.fetchMessages(
+            token: token,
+            conversationId: conversationId,
+            businessType: widget.businessType,
+          );
+          if (!mounted || _selectedConversation != conversationId) return;
+          _controller.setMessages(refreshedMessages);
+        } on Exception catch (error) {
+          _show(
+            'Message removed for everyone, but chat refresh failed: $error',
+          );
+          return;
+        }
+        _show('Message deleted for everyone.');
+      } else {
+        _controller.setMessages(
+          _messages
+              .where((item) => _asInt(item['id']) != messageId)
+              .toList(),
+        );
+        _show('Message deleted for you.');
+      }
     } on Exception catch (error) {
       _show('Could not delete message: $error');
     }

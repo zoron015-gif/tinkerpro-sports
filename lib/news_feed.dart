@@ -74,7 +74,7 @@ class _NewsImageCarouselState extends State<_NewsImageCarousel> {
         children: [
           PageView.builder(
             controller: _controller,
-            itemCount: multiple ? 100000 : 1,
+            itemCount: multiple ? null : 1,
             onPageChanged: (page) {
               setState(() => _index = page % widget.images.length);
             },
@@ -171,6 +171,7 @@ class NewsFeedPage extends StatefulWidget {
 
 class _NewsFeedPageState extends State<NewsFeedPage> {
   late final AuthApi _api;
+  late final VenueCatalogRepository _venueCatalog;
   final _searchController = TextEditingController();
   late Future<List<Map<String, dynamic>>> _posts;
   final Set<String> _savedKeys = <String>{};
@@ -178,7 +179,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   final Set<String> _heartUpdatesInProgress = <String>{};
   final Map<String, int> _heartCounts = <String, int>{};
   final MapController _courtMapController = MapController();
-  late Future<List<Map<String, dynamic>>> _businesses;
+  late Future<List<VenueBusiness>> _businesses;
   var _courtMapExpanded = false;
   var _feedIntroVisible = true;
   Position? _userPosition;
@@ -201,9 +202,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   void initState() {
     super.initState();
     _api = widget.api ?? AuthApi();
+    _venueCatalog = VenueCatalogRepository(_api);
     _userPosition = widget.initialUserPosition;
     _feedSport = _categoryAllLabel;
-    _businesses = _api.customerBusinesses(
+    _businesses = _venueCatalog.customerBusinesses(
       includeDisabledEvents:
           widget.businessType.trim().toLowerCase() == 'event',
     );
@@ -223,7 +225,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final isEventFeed = widget.businessType.trim().toLowerCase() == 'event';
     final feedPosts = isEventFeed
         ? <Map<String, dynamic>>[]
-        : await _api.newsFeed(token, businessType: widget.businessType);
+        : (await _api.venues.newsFeed(
+            token,
+            businessType: widget.businessType,
+          )).map((post) => post.toViewData()).toList();
     for (final post in feedPosts) {
       final key = _postHeartKey(post);
       if (key.isEmpty) continue;
@@ -239,7 +244,9 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     final businesses = await _businesses;
     if (isEventFeed) {
       try {
-        final heartedBusinessIds = await _api.customerHeartedBusinessIds(token);
+        final heartedBusinessIds = await _api.venues.customerHeartedBusinessIds(
+          token,
+        );
         _heartedVenueKeys
           ..clear()
           ..addAll(heartedBusinessIds.map((id) => '$id'));
@@ -252,9 +259,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
     }
     final enabledBusinessIds = businesses
-        .where((business) => !_isMerchantDisabled(business))
-        .map((business) => int.tryParse('${business['id'] ?? ''}'))
-        .whereType<int>()
+        .where((business) => !_isMerchantDisabled(business.toViewData()))
+        .map((business) => business.id)
         .toSet();
     final posts = feedPosts
         .map((post) {
@@ -282,7 +288,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           .map((post) => int.tryParse('${post['businessId'] ?? ''}'))
           .whereType<int>()
           .toSet();
-      for (final business in businesses) {
+      for (final businessModel in businesses) {
+        final business = businessModel.toViewData();
         if ('${business['businessType'] ?? ''}'.trim().toLowerCase() !=
             'event') {
           continue;
@@ -376,7 +383,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Future<void> _reload() async {
-    _businesses = _api.customerBusinesses(
+    _businesses = _venueCatalog.customerBusinesses(
       includeDisabledEvents:
           widget.businessType.trim().toLowerCase() == 'event',
     );
@@ -548,6 +555,19 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                 : snapshot.data?.isEmpty == true
                                 ? 'No venue news has been posted yet.'
                                 : 'No ${widget.venueNoun} match your search.',
+                            action: snapshot.data?.isNotEmpty == true
+                                ? TextButton.icon(
+                                    key: const ValueKey(
+                                      'news-feed-clear-search-and-filters',
+                                    ),
+                                    onPressed: _clearSearchAndFilters,
+                                    icon: const Icon(Icons.filter_alt_off),
+                                    label: const AppText(
+                                      'Clear search and filters',
+                                      localize: true,
+                                    ),
+                                  )
+                                : null,
                           );
                         }
                         return widget.savedOnly
@@ -1094,7 +1114,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     ),
   );
 
-  Widget _courtLocationsMap() => FutureBuilder<List<Map<String, dynamic>>>(
+  Widget _courtLocationsMap() => FutureBuilder<List<VenueBusiness>>(
     future: _businesses,
     builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1120,7 +1140,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         );
       }
 
-      final courts = (snapshot.data ?? const <Map<String, dynamic>>[])
+      final courts = (snapshot.data ?? const <VenueBusiness>[])
+          .map((business) => business.toViewData())
           .where(
             (business) => _matchesBusinessType(
               business['businessType'] ?? business['business_type'],
@@ -1810,14 +1831,15 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           401,
         );
       }
-      final result = await _api.setBusinessHearted(
+      final result = await _api.venues.setBusinessHearted(
         token: token,
         businessId: businessId,
         hearted: nextHearted,
       );
       if (!mounted) return;
-      final count = (result['heartCount'] as num?)?.toInt();
-      setState(() => _applyHeartState(post, nextHearted, count ?? nextCount));
+      setState(
+        () => _applyHeartState(post, result.heartedByMe, result.heartCount),
+      );
     } on Exception catch (error) {
       if (!mounted) return;
       setState(() => _applyHeartState(post, wasHearted, previousCount));
@@ -1832,7 +1854,11 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Widget _miniVenueCard(Map<String, dynamic> post) {
-    final image = '${post['imageUrl'] ?? ''}';
+    final businessValue = post['business'];
+    final business = businessValue is Map
+        ? Map<String, dynamic>.from(businessValue)
+        : const <String, dynamic>{};
+    final image = _miniVenueImageUrl(post, business);
     final name = '${post['businessName'] ?? 'Venue'}';
     final category = '${post['category'] ?? ''}';
     final rating = _number(post['averageRating']);
@@ -2071,6 +2097,27 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         ),
       ),
     );
+  }
+
+  String _miniVenueImageUrl(
+    Map<String, dynamic> post,
+    Map<String, dynamic> business,
+  ) {
+    final images = _imageListValue([
+      post['imageUrl'],
+      post['image_url'],
+      post['businessImageUrl'],
+      post['business_image_url'],
+      post['imageUrls'],
+      post['image_urls'],
+      business['imageUrl'],
+      business['image_url'],
+      business['imageUrls'],
+      business['image_urls'],
+      post['images'],
+      business['images'],
+    ]);
+    return images.isEmpty ? '' : images.first;
   }
 
   Widget _miniBadge(String text, Color background) => DecoratedBox(
@@ -2330,7 +2377,21 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     }
   }
 
-  Widget _message(String text) => ListView(
+  void _clearSearchAndFilters() {
+    _searchController.clear();
+    setState(() {
+      _feedArea = 'All areas';
+      _feedSport = _categoryAllLabel;
+      _feedCourtType = _facilityAllLabel;
+      _feedAvailability = 'Any';
+      _feedPriceSort = 'Recommended';
+      _feedMaxPrice = 700;
+      _feedAmenities.clear();
+      _userPosition = null;
+    });
+  }
+
+  Widget _message(String text, {Widget? action}) => ListView(
     physics: const AlwaysScrollableScrollPhysics(),
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
     padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
@@ -2349,6 +2410,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           ),
         ),
       ),
+      if (action != null) ...[
+        const SizedBox(height: 12),
+        Center(child: action),
+      ],
     ],
   );
 
@@ -3032,14 +3097,14 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       );
       final locallyDisabled = _isMerchantDisabled(post);
       final availableBusinesses = locallyDisabled || businessId == null
-          ? <Map<String, dynamic>>[]
-          : await _api.customerBusinesses();
+          ? <VenueBusiness>[]
+          : await _venueCatalog.customerBusinesses();
       final matchingBusinesses = availableBusinesses
-          .where((item) => int.tryParse('${item['id'] ?? ''}') == businessId)
+          .where((item) => item.id == businessId)
           .toList();
       final publishedBusiness = matchingBusinesses.isEmpty
           ? null
-          : matchingBusinesses.first;
+          : matchingBusinesses.first.toViewData();
 
       if (publishedBusiness == null) {
         if (mounted) {

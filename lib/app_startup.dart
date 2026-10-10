@@ -70,7 +70,7 @@ class _AppStartupState extends State<AppStartup> {
 
   ThemeData _theme() => AppTheme.configured(
     darkMode: _preferences.darkMode,
-    accentColor: _preferences.palette.color,
+    accentColor: _preferences.accentColor,
   );
 
   @override

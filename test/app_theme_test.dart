@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myapp/app_card_styles.dart';
 import 'package:myapp/app_design_system.dart';
 import 'package:myapp/app_preferences.dart';
 import 'package:myapp/app_theme.dart';
@@ -82,6 +83,38 @@ void main() {
     }
   });
 
+  test('custom theme colors keep interactive text readable', () {
+    for (final darkMode in [false, true]) {
+      for (final color in [
+        const Color(0xFF000000),
+        const Color(0xFFFFFFFF),
+        const Color(0xFFFFF000),
+        const Color(0xFF00A0A0),
+        const Color(0xFF6F2448),
+        const Color(0xFF808080),
+      ]) {
+        final theme = AppTheme.configured(
+          darkMode: darkMode,
+          accentColor: color,
+        );
+        final scheme = theme.colorScheme;
+        final filledForeground = theme.filledButtonTheme.style!.foregroundColor!
+            .resolve({});
+
+        expect(
+          _contrastRatio(filledForeground!, color),
+          greaterThanOrEqualTo(4.5),
+          reason: 'Filled button text should contrast with $color',
+        );
+        expect(
+          _contrastRatio(scheme.onSecondary, scheme.secondary),
+          greaterThanOrEqualTo(4.5),
+          reason: 'Theme controls should contrast with custom color $color',
+        );
+      }
+    }
+  });
+
   test('semantic colors and spacing use the shared design tokens', () {
     expect(AppColors.navy, const Color(0xFF192B50));
     expect(AppColors.ink, const Color(0xFF101B33));
@@ -135,7 +168,7 @@ void main() {
       AppSpacing.buttonPadding,
     );
     expect(theme.cardTheme.color, Colors.white);
-    expect(theme.cardTheme.elevation, 2);
+    expect(theme.cardTheme.elevation, AppCardStyles.elevation);
 
     final configuredTheme = AppTheme.configured(
       darkMode: true,

@@ -235,6 +235,8 @@ async function ensureMessagingSchema() {
       sender_id BIGINT UNSIGNED NOT NULL,
       body TEXT NULL,
       attachment_json LONGTEXT NULL,
+      removed_at DATETIME NULL,
+      removed_by BIGINT UNSIGNED NULL,
       read_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -267,6 +269,19 @@ async function ensureMessagingSchema() {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
   await pool.execute('ALTER TABLE messages MODIFY COLUMN body TEXT NULL');
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS message_user_deletions (
+      message_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (message_id, user_id),
+      KEY idx_message_user_deletions_user (user_id, deleted_at),
+      CONSTRAINT fk_message_user_deletions_message FOREIGN KEY (message_id)
+        REFERENCES messages (id) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT fk_message_user_deletions_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
 }
 
 async function ensureBookingsSchema() {
@@ -454,6 +469,7 @@ async function ensureNewsAndReviewsSchema() {
       customer_id BIGINT UNSIGNED NOT NULL,
       rating TINYINT UNSIGNED NOT NULL,
       comment VARCHAR(2000) NULL,
+      image_data LONGTEXT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -703,6 +719,36 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [6, 'single-news-card-per-business'],
+      );
+    }
+    if (!appliedVersions.has(7)) {
+      await ensureTableColumn('messages', 'removed_at', 'DATETIME NULL');
+      await ensureTableColumn('messages', 'removed_by', 'BIGINT UNSIGNED NULL');
+      await pool.execute(`
+        CREATE TABLE IF NOT EXISTS message_user_deletions (
+          message_id BIGINT UNSIGNED NOT NULL,
+          user_id BIGINT UNSIGNED NOT NULL,
+          deleted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (message_id, user_id),
+          KEY idx_message_user_deletions_user (user_id, deleted_at),
+          CONSTRAINT fk_message_user_deletions_message FOREIGN KEY (message_id)
+            REFERENCES messages (id) ON UPDATE CASCADE ON DELETE CASCADE,
+          CONSTRAINT fk_message_user_deletions_user FOREIGN KEY (user_id)
+            REFERENCES users (id) ON UPDATE CASCADE ON DELETE CASCADE
+        ) ENGINE=InnoDB
+      `);
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [7, 'message-delete-scopes'],
+      );
+    }
+    if (!appliedVersions.has(8)) {
+      await ensureTableColumn('venue_reviews', 'image_data', 'LONGTEXT NULL');
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [8, 'venue-review-customer-photo'],
       );
     }
   } finally {

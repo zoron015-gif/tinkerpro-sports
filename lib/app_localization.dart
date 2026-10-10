@@ -83,12 +83,13 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': '保存する前にニュースカードに画像を追加してください。',
     'zh': '保存前请为资讯卡添加图片。',
   },
-  'Add a venue image by editing its Booking Card before saving this News Card.': {
-    'fil': 'Magdagdag ng larawan sa venue sa pamamagitan ng pag-edit sa Booking Card bago i-save ang News Card.',
-    'ko': '뉴스 카드를 저장하기 전에 예약 카드를 수정해 장소 이미지를 추가하세요.',
-    'ja': 'このニュースカードを保存する前に、予約カードを編集して施設の画像を追加してください。',
-    'zh': '保存此资讯卡前，请编辑预订卡并添加场地图片。',
-  },
+  'Add a venue image by editing its Booking Card before saving this News Card.':
+      {
+        'fil': 'Magdagdag ng larawan sa venue sa pamamagitan ng pag-edit sa Booking Card bago i-save ang News Card.',
+        'ko': '뉴스 카드를 저장하기 전에 예약 카드를 수정해 장소 이미지를 추가하세요.',
+        'ja': 'このニュースカードを保存する前に、予約カードを編集して施設の画像を追加してください。',
+        'zh': '保存此资讯卡前，请编辑预订卡并添加场地图片。',
+      },
   'Add venue photos by editing the Booking Card.': {
     'fil': 'Magdagdag ng mga larawan ng venue sa pamamagitan ng pag-edit sa Booking Card.',
     'ko': '예약 카드를 수정해 장소 사진을 추가하세요.',
@@ -553,7 +554,12 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'すべて表示',
     'zh': '查看全部',
   },
-  'Try again': {'fil': 'Subukan muli', 'ko': '다시 시도', 'ja': '再試行', 'zh': '重试'},
+  'Try again': {
+    'fil': 'Subukan muli',
+    'ko': '다시 시도',
+    'ja': 'もう一度試す',
+    'zh': '重试',
+  },
   'Reset': {'fil': 'I-reset', 'ko': '초기화', 'ja': 'リセット', 'zh': '重置'},
   'Save changes': {
     'fil': 'I-save ang mga pagbabago',
@@ -1094,6 +1100,36 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ko': '나에게서 삭제',
     'ja': '自分から削除',
     'zh': '为我删除',
+  },
+  'Delete for everyone': {
+    'fil': 'Tanggalin para sa lahat',
+    'ko': '모든 사람에게서 삭제',
+    'ja': '全員から削除',
+    'zh': '为所有人删除',
+  },
+  'Delete 1 message?': {
+    'fil': 'Tanggalin ang 1 mensahe?',
+    'ko': '메시지 1개를 삭제할까요?',
+    'ja': 'メッセージを1件削除しますか？',
+    'zh': '删除 1 条消息吗？',
+  },
+  'You deleted a message': {
+    'fil': 'Nag-delete ka ng mensahe',
+    'ko': '메시지를 삭제했습니다',
+    'ja': 'メッセージを削除しました',
+    'zh': '你删除了一条消息',
+  },
+  'A message was deleted': {
+    'fil': 'May tinanggal na mensahe',
+    'ko': '메시지가 삭제되었습니다',
+    'ja': 'メッセージが削除されました',
+    'zh': '一条消息已删除',
+  },
+  '{name} deleted a message': {
+    'fil': '{name} ay nag-delete ng mensahe',
+    'ko': '{name}님이 메시지를 삭제했습니다',
+    'ja': '{name}さんがメッセージを削除しました',
+    'zh': '{name} 删除了一条消息',
   },
   'Delete message?': {
     'fil': 'Tanggalin ang mensahe?',
@@ -2134,10 +2170,50 @@ const _additionalLanguageText = <String, Map<String, String>>{
   },
   'Theme color': {'ko': '테마 색상', 'ja': 'テーマカラー', 'zh': '主题颜色'},
   'Choose an accent color for app controls.': {
+    'fil': 'Pumili ng kulay ng mga kontrol ng app.',
     'ko': '앱 컨트롤에 사용할 강조 색상을 선택하세요.',
     'ja': 'アプリの操作部分に使うアクセントカラーを選択します。',
     'zh': '选择应用控件的强调色。',
   },
+  'Bookings & payments': {
+    'fil': 'Mga booking at bayad',
+    'ko': '예약 및 결제',
+    'ja': '予約と支払い',
+    'zh': '预订与付款',
+  },
+  'Clear search and filters': {
+    'fil': 'I-clear ang paghahanap at mga filter',
+    'ko': '검색 및 필터 지우기',
+    'ja': '検索とフィルターをクリア',
+    'zh': '清除搜索和筛选条件',
+  },
+  'Custom theme color': {
+    'fil': 'Sariling kulay ng tema',
+    'ko': '사용자 지정 테마 색상',
+    'ja': 'カスタムテーマカラー',
+    'zh': '自定义主题颜色',
+  },
+  'Hex color': {
+    'fil': 'Hex na kulay',
+    'ko': '16진수 색상',
+    'ja': '16進数カラー',
+    'zh': '十六进制颜色',
+  },
+  'Enter a valid 6-digit hex color.': {
+    'fil': 'Maglagay ng wastong 6 na digit na hex na kulay.',
+    'ko': '올바른 6자리 16진수 색상을 입력하세요.',
+    'ja': '有効な6桁の16進数カラーを入力してください。',
+    'zh': '请输入有效的 6 位十六进制颜色。',
+  },
+  'Use color': {
+    'fil': 'Gamitin ang kulay',
+    'ko': '색상 사용',
+    'ja': 'この色を使用',
+    'zh': '使用此颜色',
+  },
+  'Hue': {'fil': 'Hue', 'ko': '색조', 'ja': '色相', 'zh': '色相'},
+  'Saturation': {'fil': 'Saturation', 'ko': '채도', 'ja': '彩度', 'zh': '饱和度'},
+  'Brightness': {'fil': 'Liwanag', 'ko': '밝기', 'ja': '明るさ', 'zh': '亮度'},
   'Text size': {'ko': '텍스트 크기', 'ja': '文字サイズ', 'zh': '文字大小'},
   'Adjust text throughout the app.': {
     'ko': '앱 전체의 텍스트 크기를 조정합니다.',

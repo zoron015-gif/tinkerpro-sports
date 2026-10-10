@@ -23,6 +23,7 @@ import 'qr_scanner_page.dart';
 import 'core/booking_status.dart';
 import 'core/business_type.dart';
 
+import 'app_card_styles.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
 import 'app_settings_page.dart';
@@ -50,6 +51,9 @@ List<Map<String, dynamic>> bookingsForBusinessType(
         : type == requestedType;
   }).toList();
 }
+
+bool bookingHasArrived(Map<String, dynamic> booking) =>
+    '${booking['checkedInAt'] ?? ''}'.trim().isNotEmpty;
 
 class ProfileDashboardPage extends StatefulWidget {
   const ProfileDashboardPage({
@@ -239,6 +243,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     }
 
     String? profileImage = _user?['avatarUrl'] as String?;
+    String? nameValidationError;
     final value = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
@@ -329,22 +334,21 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                               localize: true,
                             ),
                             const SizedBox(height: 6),
-                            Form(
-                              key: const GlobalObjectKey<FormState>(
-                                'customer-profile-name-form',
-                              ),
-                              child: TextFormField(
-                                controller: nameController,
-                                textCapitalization: TextCapitalization.words,
-                                decoration: _profileInputDecoration(
-                                  label: 'Name',
-                                  icon: Icons.person_outline,
-                                ),
-                                validator: (value) =>
-                                    value == null || value.trim().isEmpty
-                                    ? 'Please enter your name.'
-                                    : null,
-                              ),
+                            TextField(
+                              controller: nameController,
+                              textCapitalization: TextCapitalization.words,
+                              onChanged: (value) {
+                                if (value.trim().isNotEmpty &&
+                                    nameValidationError != null) {
+                                  setDialogState(
+                                    () => nameValidationError = null,
+                                  );
+                                }
+                              },
+                              decoration: _profileInputDecoration(
+                                label: 'Name',
+                                icon: Icons.person_outline,
+                              ).copyWith(errorText: nameValidationError),
                             ),
                             const SizedBox(height: 6),
                             TextField(
@@ -452,23 +456,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                           Expanded(
                             child: FilledButton(
                               onPressed: () {
-                                final form = const GlobalObjectKey<FormState>(
-                                  'customer-profile-name-form',
-                                ).currentState;
-                                if (form?.validate() ?? false) {
-                                  Navigator.pop(dialogContext, true);
+                                if (nameController.text.trim().isEmpty) {
+                                  setDialogState(
+                                    () => nameValidationError =
+                                        'Please enter your name.',
+                                  );
                                   return;
                                 }
-                                final target = const GlobalObjectKey<FormState>(
-                                  'customer-profile-name-form',
-                                ).currentContext;
-                                if (target != null) {
-                                  Scrollable.ensureVisible(
-                                    target,
-                                    duration: const Duration(milliseconds: 250),
-                                    alignment: .15,
-                                  );
-                                }
+                                Navigator.pop(dialogContext, true);
                               },
                               child: const AppText(
                                 'Save changes',
@@ -787,7 +782,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             children: [
               _profileHeader(
                 name: name,
@@ -797,7 +792,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 hobby: '${_user?['hobby'] ?? ''}',
                 address: '${_user?['address'] ?? ''}',
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 14),
               _statsCard(
                 matches: _completed.length,
                 venues: _completed
@@ -807,9 +802,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 fitness: _isFitnessProfile,
                 event: _isEventProfile,
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 14),
               _profileHistorySection(context),
-              const SizedBox(height: 6),
+              const SizedBox(height: 14),
             ],
           ),
         ),
@@ -905,65 +900,99 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required String? avatarUrl,
     required String hobby,
     required String address,
-  }) {
-    return _whiteCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+  }) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      gradient: AppGradients.navyBrand,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: Colors.white.withValues(alpha: .18), width: 1),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: .22),
+          blurRadius: 20,
+          offset: const Offset(8, 9),
+        ),
+        BoxShadow(
+          color: Colors.white.withValues(alpha: .58),
+          blurRadius: 15,
+          offset: const Offset(-5, -5),
+        ),
+        BoxShadow(
+          color: AppColors.accent.withValues(alpha: .14),
+          blurRadius: 22,
+          spreadRadius: -8,
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
+        Row(
           children: [
-            Row(
-              children: [
-                TappableProfileAvatar(
-                  radius: 31,
-                  backgroundColor: AppColors.softOrangeAlt,
-                  image: _avatarImage(avatarUrl),
-                  fallback: AppText(
-                    initials,
-                    style: TextStyle(
-                      color: _profileOrange,
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white54, width: 1.5),
+              ),
+              child: TappableProfileAvatar(
+                radius: 32,
+                backgroundColor: Colors.white24,
+                image: _avatarImage(avatarUrl),
+                fallback: AppText(
+                  initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppText(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppText(
-                        name,
-                        style: TextStyle(
-                          color: _profileInk,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      AppText(
-                        email,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: _profileMuted, fontSize: 11),
-                      ),
-                      const SizedBox(height: 6),
-                      _profileHeaderDetail(
-                        Icons.location_on_outlined,
-                        address.isEmpty ? 'Add your address' : address,
-                      ),
-                      const SizedBox(height: 6),
-                      _profileHeaderDetail(
-                        Icons.sports_tennis_outlined,
-                        hobby.isEmpty ? 'Add your hobbies' : hobby,
-                      ),
-                    ],
+                  const SizedBox(height: 3),
+                  AppText(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFD5E2F7),
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        _profileHeroDetail(
+          Icons.location_on_outlined,
+          address.isEmpty ? 'Add your address' : address,
+        ),
+        const SizedBox(height: 8),
+        _profileHeroDetail(
+          Icons.sports_tennis_outlined,
+          hobby.isEmpty ? 'Add your hobbies' : hobby,
+        ),
       ],
-    );
-  }
+    ),
+  );
 
   Widget _statsCard({
     required int matches,
@@ -971,22 +1000,40 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required bool fitness,
     required bool event,
   }) => _whiteCard(
-    padding: const EdgeInsets.symmetric(vertical: 14),
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
     children: [
+      Row(
+        children: [
+          Expanded(
+            child: AppText(
+              appLanguageText('Your activity', 'Your activity'),
+              style: TextStyle(
+                color: _profileInk,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Icon(Icons.insights_rounded, color: _profileOrange, size: 18),
+        ],
+      ),
+      const SizedBox(height: 12),
       Row(
         children: [
           _Stat(
             value: '$matches',
             label: fitness
-                ? 'Bookings'
+                ? 'Completed bookings'
                 : event
-                ? 'Events'
-                : 'Matches',
+                ? 'Completed events'
+                : 'Completed matches',
+            icon: Icons.check_circle_outline_rounded,
           ),
           _statDivider(),
           _Stat(
             value: '$venues',
             label: _isEventProfile ? 'Event venues visited' : 'Venues visited',
+            icon: Icons.place_outlined,
           ),
         ],
       ),
@@ -1021,10 +1068,40 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                appLanguageText(
+                  'Your bookings & history',
+                  'Your bookings & history',
+                ),
+                style: TextStyle(
+                  color: _profileInk,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              AppText(
+                appLanguageText(
+                  'Keep track of what is coming up and where you have been.',
+                  'Keep track of what is coming up and where you have been.',
+                ),
+                style: TextStyle(color: _profileMuted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
         Container(
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: AppColors.surface,
-            border: Border(bottom: BorderSide(color: _profileLine)),
+            border: Border.all(color: _profileLine.withValues(alpha: .8)),
+            borderRadius: BorderRadius.circular(17),
+            boxShadow: AppCardStyles.raisedShadows,
           ),
           child: Row(
             children: [
@@ -1034,26 +1111,60 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     key: ValueKey('profile-history-tab-${tab.key}'),
                     onTap: () =>
                         setState(() => _selectedHistoryTab = tab.title),
+                    borderRadius: BorderRadius.circular(12),
                     child: Tooltip(
                       message: tab.title,
-                      child: Container(
-                        height: 48,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        height: 66,
                         decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
+                          color: _selectedHistoryTab == tab.title
+                              ? AppColors.surface
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: _selectedHistoryTab == tab.title
+                              ? Border.all(
+                                  color: AppColors.accent.withValues(
+                                    alpha: .16,
+                                  ),
+                                )
+                              : null,
+                          boxShadow: _selectedHistoryTab == tab.title
+                              ? AppCardStyles.insetShadows
+                              : null,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 3,
+                          vertical: 7,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _profileHistoryTabIcon(
+                              key: tab.key,
+                              icon: tab.icon,
                               color: _selectedHistoryTab == tab.title
                                   ? _profileOrange
-                                  : Colors.transparent,
-                              width: 2,
+                                  : _profileMuted,
                             ),
-                          ),
-                        ),
-                        child: _profileHistoryTabIcon(
-                          key: tab.key,
-                          icon: tab.icon,
-                          color: _selectedHistoryTab == tab.title
-                              ? _profileOrange
-                              : _profileMuted,
+                            const SizedBox(height: 3),
+                            AppText(
+                              tab.key == 'upcoming-booking'
+                                  ? 'Upcoming'
+                                  : tab.key == 'venues-visited'
+                                  ? 'Visited'
+                                  : 'History',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _selectedHistoryTab == tab.title
+                                    ? _profileOrange
+                                    : _profileMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1062,16 +1173,25 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             ],
           ),
         ),
-        const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: AppText(
-            _selectedHistoryTab,
-            style: TextStyle(
-              color: _profileInk,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: AppText(
+                  _selectedHistoryTab,
+                  style: TextStyle(
+                    color: _profileInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (!_isFitnessProfile &&
+                  _selectedHistoryTab == _upcomingTitle &&
+                  _upcoming.any(bookingHasArrived))
+                _arrivedBadge(),
+            ],
           ),
         ),
         const SizedBox(height: 6),
@@ -1308,16 +1428,20 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     ),
   );
 
-  Widget _profileHeaderDetail(IconData icon, String text) => Row(
+  Widget _profileHeroDetail(IconData icon, String text) => Row(
     children: [
-      Icon(icon, color: _profileMuted, size: 13),
-      const SizedBox(width: 6),
+      Icon(icon, color: const Color(0xFFD5E2F7), size: 15),
+      const SizedBox(width: 8),
       Expanded(
         child: AppText(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: _profileMuted, fontSize: 10),
+          style: const TextStyle(
+            color: Color(0xFFD5E2F7),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     ],
@@ -1371,6 +1495,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 ),
               ),
             ),
+            if (!_isFitnessProfile && bookingHasArrived(booking)) ...[
+              _arrivedBadge(),
+              const SizedBox(width: 6),
+            ],
             TextButton(
               onPressed: () => _showAllUpcomingBookings(context),
               child: const AppText('View all', localize: true),
@@ -1949,7 +2077,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               ),
             ),
           ),
-          const Icon(Icons.verified_rounded, color: Colors.green, size: 18),
+          if (!_isFitnessProfile && bookingHasArrived(booking))
+            _arrivedBadge()
+          else
+            const Icon(Icons.verified_rounded, color: Colors.green, size: 18),
         ],
       ),
       const SizedBox(height: 6),
@@ -2129,6 +2260,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     ({String name, List<Map<String, dynamic>> bookings}) venue, {
     String? details,
     String? badge,
+    Widget? statusBadge,
     VoidCallback? onTap,
   }) {
     final latestBooking = venue.bookings.first;
@@ -2242,6 +2374,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   ],
                 ),
               ),
+              if (statusBadge != null) ...[
+                statusBadge,
+                if (badge != null) const SizedBox(width: 6),
+              ],
               if (badge != null)
                 _smallPill(badge)
               else if (venue.bookings.length > 1) ...[
@@ -2652,6 +2788,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         '${booking['players'] ?? 0} $_peopleLabel'
         '${_isEventProfile && '${booking['eventType'] ?? ''}'.trim().isNotEmpty ? ' · ${booking['eventType']}' : ''}',
     badge: '#${index + 1}',
+    statusBadge: !_isFitnessProfile && bookingHasArrived(booking)
+        ? _arrivedBadge()
+        : null,
     onTap: () => _showCompletedMatchDetails(context, booking, index),
   );
 
@@ -3087,8 +3226,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     padding: padding,
     decoration: BoxDecoration(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: _profileLine),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: _profileLine.withValues(alpha: .8)),
+      boxShadow: AppCardStyles.raisedShadows,
     ),
     child: Column(children: children),
   );
@@ -3100,6 +3240,32 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       borderRadius: BorderRadius.circular(12),
     ),
     child: AppText(text, style: TextStyle(color: _profileInk, fontSize: 9)),
+  );
+
+  Widget _arrivedBadge() => Container(
+    key: const ValueKey('profile-arrived-badge'),
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: AppColors.successSurface,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.success.withValues(alpha: .45)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.check_circle_rounded, color: AppColors.success, size: 13),
+        SizedBox(width: 4),
+        AppText(
+          'Arrived',
+          style: TextStyle(
+            color: AppColors.success,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+          localize: true,
+        ),
+      ],
+    ),
   );
 
   Future<void> _logout(BuildContext context) async {
@@ -3261,21 +3427,47 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.label});
+  const _Stat({required this.value, required this.label, required this.icon});
 
   final String value;
   final String label;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) => Expanded(
     child: Column(
       children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.softOrangeAlt,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(icon, color: _profileOrange, size: 18),
+        ),
+        const SizedBox(height: 7),
         AppText(
           value,
-          style: TextStyle(color: _profileInk, fontWeight: FontWeight.w900),
+          style: TextStyle(
+            color: _profileInk,
+            fontSize: 21,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
         ),
         const SizedBox(height: 6),
-        AppText(label, style: TextStyle(color: _profileMuted, fontSize: 9)),
+        AppText(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _profileMuted,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     ),
   );

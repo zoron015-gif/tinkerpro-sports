@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'app_card_styles.dart';
 import 'app_design_system.dart';
 
 abstract final class AppTheme {
@@ -30,13 +31,9 @@ abstract final class AppTheme {
     cardTheme: CardThemeData(
       color: AppColors.surface,
       surfaceTintColor: Colors.transparent,
-      elevation: 2,
-      shadowColor: const Color(0x1A192B50),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(
-          Radius.circular(AppRadii.marketplaceCard),
-        ),
-      ),
+      elevation: AppCardStyles.elevation,
+      shadowColor: AppColors.neumorphicShadow,
+      shape: AppCardStyles.marketplaceShape,
     ),
     chipTheme: ChipThemeData(
       backgroundColor: AppColors.chipSurface,
@@ -58,7 +55,7 @@ abstract final class AppTheme {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.surface,
+      fillColor: AppColors.softSurface,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.large,
         vertical: 14,
@@ -264,13 +261,9 @@ abstract final class AppTheme {
       cardTheme: base.cardTheme.copyWith(
         color: surface,
         surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black.withValues(alpha: darkMode ? .28 : .08),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.marketplaceCard),
-          side: BorderSide(
-            color: darkMode ? AppColors.darkBorder : Colors.transparent,
-          ),
-        ),
+        elevation: AppCardStyles.elevation,
+        shadowColor: AppColors.neumorphicShadow,
+        shape: AppCardStyles.marketplaceShape,
       ),
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant,
@@ -334,6 +327,8 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: accentColor,
           foregroundColor: onAccent,
+          elevation: 2,
+          shadowColor: AppColors.neumorphicShadow,
           padding: AppSpacing.buttonPadding,
           minimumSize: const Size(0, 46),
           shape: const RoundedRectangleBorder(
@@ -365,6 +360,8 @@ abstract final class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: scheme.surfaceContainerLow,
           foregroundColor: scheme.primary,
+          elevation: 2,
+          shadowColor: AppColors.neumorphicShadow,
           padding: AppSpacing.buttonPadding,
         ),
       ),
@@ -376,7 +373,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: base.inputDecorationTheme.copyWith(
         filled: true,
-        fillColor: surface,
+        fillColor: scheme.surfaceContainerLow,
         hintStyle: TextStyle(color: scheme.onSurfaceVariant),
         labelStyle: TextStyle(color: scheme.onSurfaceVariant),
         floatingLabelStyle: TextStyle(color: scheme.primary),

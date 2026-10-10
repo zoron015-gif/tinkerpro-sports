@@ -34,6 +34,7 @@ void main() {
                 'firstName': 'Ziggy',
                 'lastName': 'Player',
                 'avatarUrl': reviewerAvatar,
+                'imageData': reviewerAvatar,
                 'rating': 5,
                 'comment': 'Great court.',
               },
@@ -70,6 +71,7 @@ void main() {
     expect(reviewerImage.image, isA<MemoryImage>());
     expect(find.text('Ziggy Player'), findsOneWidget);
     expect(find.text('Great court.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('review-photo-0')), findsOneWidget);
     final reviewerRating = tester.widget<Row>(
       find.byKey(const ValueKey('review-rating-stars-0')),
     );

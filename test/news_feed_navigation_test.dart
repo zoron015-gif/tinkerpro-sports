@@ -105,6 +105,9 @@ void main() {
               headers: {'content-type': 'application/json'},
             );
           }
+          if (request.url.path == '/api/customer/venue-hearts') {
+            return http.Response('{}', 404);
+          }
           return http.Response('{}', 200);
         }),
       );
@@ -165,6 +168,30 @@ void main() {
     final filterBadge = tester.widget<Badge>(find.byType(Badge).first);
     expect(filterBadge.isLabelVisible, isTrue);
     expect(find.byTooltip('Filter venues (1 active)'), findsOneWidget);
+  });
+
+  testWidgets('empty venue search offers a clear-search action', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: api())));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('news-feed-search')),
+      'no matching venue',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No courts match your search.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('news-feed-clear-search-and-filters')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('news-feed-clear-search-and-filters')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Basketball court'), findsWidgets);
+    expect(find.text('Tennis court'), findsWidgets);
   });
 
   testWidgets('Event dashboard uses the shared Event-only feed cards', (
@@ -447,6 +474,9 @@ void main() {
             headers: {'content-type': 'application/json'},
           );
         }
+        if (request.url.path == '/api/customer/venue-hearts') {
+          return http.Response('{}', 404);
+        }
         return http.Response(
           jsonEncode({'bookings': [], 'conversations': []}),
           200,
@@ -705,6 +735,9 @@ void main() {
             headers: {'content-type': 'application/json'},
           );
         }
+        if (request.url.path == '/api/customer/venue-hearts') {
+          return http.Response('{}', 404);
+        }
         return http.Response('{}', 200);
       }),
     );
@@ -724,8 +757,12 @@ void main() {
     expect(requests, contains('GET /api/businesses'));
     expect(requests, isNot(contains('GET /api/customer/event-businesses')));
     expect(requests, isNot(contains('GET /api/news-feed')));
+    final firstEventCard = find.byKey(
+      const ValueKey('news-feed-card-business-91'),
+      skipOffstage: false,
+    );
     await tester.scrollUntilVisible(
-      find.text('All listed event venues'),
+      firstEventCard,
       180,
       scrollable: find
           .descendant(
@@ -734,14 +771,22 @@ void main() {
           )
           .first,
     );
-    expect(
-      find.byKey(const ValueKey('news-feed-card-business-91')),
-      findsOneWidget,
+    expect(firstEventCard, findsOneWidget);
+    final firstEventHeart = find.byKey(
+      const ValueKey('news-feed-heart-business-91'),
+      skipOffstage: false,
     );
-    expect(
-      find.byKey(const ValueKey('news-feed-heart-business-91')),
-      findsOneWidget,
+    await tester.scrollUntilVisible(
+      firstEventHeart,
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('news-feed-content-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
+    expect(firstEventHeart, findsOneWidget);
   });
 
   testWidgets('Event dashboard remains available when heart-state route is missing', (
@@ -880,7 +925,6 @@ void main() {
   ) async {
     final venue = {
       ...venues.first,
-      'imageUrl': 'https://example.com/court.jpg',
       'imageUrls': [
         'https://example.com/court.jpg',
         'https://example.com/court-2.jpg',
@@ -916,6 +960,28 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: multiImageApi)));
     for (var frame = 0; frame < 8; frame++) {
       await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    for (final section in ['most-popular', 'highest-rate']) {
+      final miniCard = find.byKey(
+        ValueKey('news-feed-$section-card-business-42'),
+      );
+      await tester.ensureVisible(miniCard);
+      final miniImages = tester
+          .widgetList<Image>(
+            find.descendant(of: miniCard, matching: find.byType(Image)),
+          )
+          .toList();
+      expect(
+        miniImages.any(
+          (image) =>
+              image.image is NetworkImage &&
+              (image.image as NetworkImage).url ==
+                  'https://example.com/court.jpg',
+        ),
+        isTrue,
+        reason: '$section should display the merchant gallery image',
+      );
     }
 
     final card = find.byKey(const ValueKey('news-feed-card-business-42'));
