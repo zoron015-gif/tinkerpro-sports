@@ -1679,7 +1679,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         _error = null;
       });
     } on Exception catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = 'Could not select the photo: $error');
     }
   }

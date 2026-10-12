@@ -355,7 +355,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
               icon: const Icon(Icons.receipt_long_rounded, size: 18),
               label: const AppText('Review booking requests', localize: true),
               style: FilledButton.styleFrom(
-                backgroundColor: _merchantNavy,
+                backgroundColor: _merchantOrange,
                 minimumSize: const Size.fromHeight(44),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
