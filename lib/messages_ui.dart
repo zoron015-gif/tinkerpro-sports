@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'core/booking_ticket_view_model.dart';
 
 Color get messageBackground => AppColors.page;
 Color get messageNavy => AppColors.ink;
@@ -128,50 +129,31 @@ class MessagesBookingTicket extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = safeString(data['type']);
-    final isBookingRequest = type == 'booking';
-    final approved =
-        type == 'booking_ticket' ||
-        safeString(data['status']) == 'approved';
-    final bookingId = safeString(data['bookingId'], '—');
-    final venueName = safeString(data['venueName'], 'Sports venue');
-    final sportType = safeString(data['sportType']);
-    final fitnessPlanType = safeString(data['fitnessPlanType']);
-    final fitnessCategory = safeString(data['fitnessCategory'], sportType);
-    final businessType = safeString(data['businessType']).toLowerCase();
-    final eventType = safeString(data['eventType']);
-    final fitnessCoachName = safeString(data['fitnessCoachName']);
-    final fitnessCoachDurationMonths = int.tryParse(
-      safeString(data['fitnessCoachDurationMonths']),
-    );
-    final fitnessPlanPrice = num.tryParse(safeString(data['fitnessPlanPrice']));
-    final fitnessCoachPrice = num.tryParse(
-      safeString(data['fitnessCoachPrice']),
-    );
-    final isFitnessBooking = fitnessPlanType.isNotEmpty;
-    final isEventBooking = businessType == 'event' || eventType.isNotEmpty;
-    final fullStudio = data['fullStudio'] == true;
-    final slotNumber = safeString(data['slotNumber']);
-    final date = safeString(data['bookingDate'], 'Date to be confirmed');
-    final time = safeString(data['startTime'], 'Time to be confirmed');
-    final amount = num.tryParse(
-      safeString(data['amount'], safeString(data['total'])),
-    );
-    final downpayment = num.tryParse(safeString(data['downpayment']));
-    final ticketCode = safeString(data['ticketCode']);
-    final bookingToken = safeString(data['bookingToken']);
-    final paymentReference = safeString(data['paymentReference']);
-    final transactionId = safeString(
-      data['transactionId'],
-      int.tryParse(bookingId) == null
-          ? '—'
-          : 'TP-TXN-${int.parse(bookingId).toString().padLeft(8, '0')}',
-    );
-    final paymentMethod = safeString(data['paymentMethod']);
-    final paymentStatus = safeString(data['paymentStatus']);
-    final isPaid =
-        paymentStatus == 'paid' ||
-        safeString(data['type']) == 'booking_payment_ticket';
+    final ticket = BookingTicketViewModel.fromMap(data);
+    final isBookingRequest = ticket.isBookingRequest;
+    final approved = ticket.approved;
+    final bookingId = ticket.bookingId;
+    final venueName = ticket.venueName;
+    final sportType = ticket.sportType;
+    final fitnessPlanType = ticket.fitnessPlanType;
+    final fitnessCategory = ticket.fitnessCategory;
+    final eventType = ticket.eventType;
+    final fitnessCoachName = ticket.fitnessCoachName;
+    final fitnessCoachDurationMonths = ticket.fitnessCoachDurationMonths;
+    final fitnessPlanPrice = ticket.fitnessPlanPrice;
+    final fitnessCoachPrice = ticket.fitnessCoachPrice;
+    final isFitnessBooking = ticket.isFitnessBooking;
+    final isEventBooking = ticket.isEventBooking;
+    final date = ticket.date;
+    final time = ticket.time;
+    final amount = ticket.amount;
+    final downpayment = ticket.downpayment;
+    final ticketCode = ticket.ticketCode;
+    final bookingToken = ticket.bookingToken;
+    final paymentReference = ticket.paymentReference;
+    final transactionId = ticket.transactionId;
+    final paymentMethod = ticket.paymentMethod;
+    final isPaid = ticket.isPaid;
     final ticketHighlight = isBookingRequest
         ? const Color(0xFFB45309)
         : approved
@@ -294,7 +276,7 @@ class MessagesBookingTicket extends StatelessWidget {
                     venueName,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style:  TextStyle(
+                    style: TextStyle(
                       color: AppColors.ink,
                       fontSize: 19,
                       fontWeight: FontWeight.w900,
@@ -310,7 +292,8 @@ class MessagesBookingTicket extends StatelessWidget {
                         color: messageMuted,
                         fontWeight: FontWeight.w600,
                       ),
-                     localize: true,),
+                      localize: true,
+                    ),
                     if (fitnessCoachName.isNotEmpty)
                       AppText(
                         'Coach: $fitnessCoachName'
@@ -321,7 +304,8 @@ class MessagesBookingTicket extends StatelessWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
-                       localize: true,),
+                        localize: true,
+                      ),
                     if (fitnessPlanPrice != null)
                       AppText(
                         'Plan total: \u{20B1} ${fitnessPlanPrice.toStringAsFixed(2)}',
@@ -330,7 +314,8 @@ class MessagesBookingTicket extends StatelessWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
-                       localize: true,),
+                        localize: true,
+                      ),
                   ] else if (isEventBooking && eventType.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     AppText(
@@ -350,11 +335,10 @@ class MessagesBookingTicket extends StatelessWidget {
                       ),
                     ),
                   ],
-                  if (!isFitnessBooking &&
-                      (fullStudio || slotNumber.isNotEmpty)) ...[
+                  if (!isFitnessBooking && ticket.hasBookedArea) ...[
                     const SizedBox(height: 6),
                     AppText(
-                      fullStudio ? 'Whole studio' : 'Slot $slotNumber',
+                      ticket.bookedArea,
                       style: TextStyle(
                         color: messageMuted,
                         fontSize: 12,
@@ -444,7 +428,8 @@ class MessagesBookingTicket extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                             letterSpacing: .8,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                         const SizedBox(height: 6),
                         AppText(
                           transactionId,
@@ -464,7 +449,8 @@ class MessagesBookingTicket extends StatelessWidget {
                             fontSize: 9,
                             fontWeight: FontWeight.w700,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                         AppText(
                           'BK-$bookingId',
                           key: const ValueKey('messages-ticket-reference'),
@@ -473,7 +459,8 @@ class MessagesBookingTicket extends StatelessWidget {
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
-                         localize: true,),
+                          localize: true,
+                        ),
                         if (approved && ticketCode.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           AppText(
@@ -483,7 +470,8 @@ class MessagesBookingTicket extends StatelessWidget {
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
                             ),
-                           localize: true,),
+                            localize: true,
+                          ),
                           AppText(
                             ticketCode,
                             style: TextStyle(
@@ -522,7 +510,8 @@ class MessagesBookingTicket extends StatelessWidget {
                                 color: messageMuted,
                                 fontSize: 10,
                               ),
-                             localize: true,),
+                              localize: true,
+                            ),
                           ),
                         if (paymentReference.isNotEmpty) ...[
                           const SizedBox(height: 6),
@@ -530,11 +519,9 @@ class MessagesBookingTicket extends StatelessWidget {
                             'Payment ref: $paymentReference',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: messageMuted,
-                              fontSize: 9,
-                            ),
-                           localize: true,),
+                            style: TextStyle(color: messageMuted, fontSize: 9),
+                            localize: true,
+                          ),
                         ],
                       ],
                     ),

@@ -4,7 +4,6 @@ import 'package:myapp/auth_api.dart';
 import 'package:myapp/app_design_system.dart';
 
 import '../data/activity_log_repository.dart';
-import '../domain/activity_log_entry.dart';
 import 'activity_log_controller.dart';
 import '../../../skeleton_loader.dart';
 import 'widgets/activity_log_controls.dart';
@@ -449,6 +448,7 @@ class _ActivityTile extends StatelessWidget {
     'item_removed' => Icons.bookmark_remove_outlined,
     'booking_requested' => Icons.event_available_outlined,
     'booking_approved' || 'booking_finished' => Icons.check_circle_outline,
+    'booking_declined' => Icons.event_busy_outlined,
     'review_submitted' => Icons.star_outline_rounded,
     'message_sent' => Icons.chat_bubble_outline_rounded,
     'account_registration' => Icons.person_add_alt_rounded,

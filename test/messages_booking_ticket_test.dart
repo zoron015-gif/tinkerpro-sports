@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myapp/app_design_system.dart';
 import 'package:myapp/app_preferences.dart';
 import 'package:myapp/app_theme.dart';
 import 'package:myapp/messages_ui.dart';
@@ -105,6 +104,7 @@ void main() {
             'startTime': '09:00:00',
             'durationHours': 1,
             'players': 2,
+            'slotNumbers': [2, 3],
             'total': 500,
             'downpayment': 250,
           }),
@@ -120,6 +120,7 @@ void main() {
     expect(find.text('PENDING REVIEW'), findsOneWidget);
     expect(find.text('TP-TXN-00000504'), findsOneWidget);
     expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
+    expect(find.text('Slots 2, 3'), findsOneWidget);
     expect(find.text('\u{20B1} 500.00'), findsOneWidget);
     expect(find.text('Downpayment: \u{20B1} 250.00'), findsOneWidget);
     expect(

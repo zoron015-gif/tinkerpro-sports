@@ -1096,9 +1096,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
 
   Future<void> _loadMerchantBusinesses() async {
     try {
-      final rows = await VenueCatalogRepository(
-        AuthApi(),
-      ).customerBusinesses();
+      final rows = await VenueCatalogRepository(AuthApi()).customerBusinesses();
       if (!mounted) return;
       final venues = <SportsVenue>[];
       for (final venueBusiness in rows) {
@@ -1373,7 +1371,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       return;
     }
     var selectedSportType = '${venue.sportsSlots.first['sportType']}';
-    var selectedSlotNumber = 1;
+    var selectedSlotNumbers = <int>{};
+    var selectedSlotCount = 1;
     var hours = 1;
     var players = 1;
     var payment = 'online';
@@ -1418,7 +1417,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
             orElse: () => venue.sportsSlots.first,
           );
           final rate = (selectedSport['pricePerHour'] as num).toDouble();
-          final selectedIncludedPlayers =
+          final includedPlayersPerSlot =
               (selectedSport['includedPlayers'] as num).toInt();
           final selectedAdditionalPlayerFee =
               (selectedSport['additionalPlayerFee'] as num).toDouble();
@@ -1426,28 +1425,44 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           final selectedSportSlotCount = selectedSportIsFullStudio
               ? 1
               : (selectedSport['slotCount'] as num).toInt();
+          final selectedIncludedPlayers =
+              includedPlayersPerSlot * selectedSlotCount;
           final extraPlayerCharge = calculateExtraPlayerCharge(
             players: players,
             includedPlayers: selectedIncludedPlayers,
             feePerExtraPlayer: selectedAdditionalPlayerFee,
           );
-          final total = rate * hours + extraPlayerCharge;
+          final selectedSlotList = selectedSlotNumbers.toList()..sort();
+          final availableSlotNumbers = [
+            for (var slot = 1; slot <= selectedSportSlotCount; slot++)
+              if (!_bookingSlotOverlaps(
+                bookingTime,
+                hours,
+                occupiedBookings,
+                slotNumber: slot,
+                fullStudio: selectedSportIsFullStudio,
+              ))
+                slot,
+          ];
+          final selectedSlotsAvailable = selectedSlotList.every(
+            availableSlotNumbers.contains,
+          );
+          final selectionMatchesRequestedCount =
+              selectedSlotList.length == selectedSlotCount &&
+              selectedSlotsAvailable;
+          final total =
+              rate * hours * selectedSlotList.length + extraPlayerCharge;
           final cashOnArrival = double.parse((total * 0.5).toStringAsFixed(2));
           final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
-          final selectedSlotBooked = _bookingSlotOverlaps(
-            bookingTime,
-            hours,
-            occupiedBookings,
-            slotNumber: selectedSlotNumber,
-            fullStudio: selectedSportIsFullStudio,
-          );
+          final selectedSlotBooked = !selectionMatchesRequestedCount;
           final relevantBookings = occupiedBookings.where((booking) {
-            return selectedSportIsFullStudio ||
-                _bookingUsesSlot(
-                  booking,
-                  selectedSlotNumber,
-                  fullStudio: false,
-                );
+            return _bookingSlotOverlaps(
+              bookingTime,
+              hours,
+              [booking],
+              slotNumber: 1,
+              fullStudio: true,
+            );
           }).toList();
           return SafeArea(
             child: Padding(
@@ -1495,21 +1510,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         _modalIconButton(Icons.help_outline_rounded, () {}),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: AppColors.border),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0D0F172A),
-                            blurRadius: 16,
-                            offset: Offset(0, 5),
-                          ),
-                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1521,25 +1529,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 9,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.softOrangeAlt,
-                                        borderRadius: BorderRadius.circular(99),
-                                      ),
-                                      child: AppText(
-                                        venue.sport.isEmpty
-                                            ? 'VENUE'
-                                            : venue.sport.toUpperCase(),
-                                        style: TextStyle(
-                                          color: _sportsAccentForeground,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: .7,
-                                        ),
+                                    AppText(
+                                      venue.sport.isEmpty
+                                          ? 'Venue'
+                                          : venue.sport,
+                                      style: TextStyle(
+                                        color: _sportsMuted,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     const SizedBox(height: 6),
@@ -1550,7 +1547,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                       style: TextStyle(
                                         color: _sportsInk,
                                         fontSize: 19,
-                                        fontWeight: FontWeight.w900,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ],
@@ -1561,7 +1558,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 style: TextStyle(
                                   color: _sportsAccentForeground,
                                   fontSize: 16,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                 ),
                                 localize: true,
                               ),
@@ -1585,12 +1582,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     const SizedBox(height: 6),
                     AppText(
-                      'CHOOSE SPORT AND SLOT',
+                      selectedSportIsFullStudio
+                          ? 'Choose sport and slot'
+                          : 'Choose sport and slots',
                       style: TextStyle(
                         color: _sportsMuted,
                         fontSize: 11,
-                        letterSpacing: .9,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                       localize: true,
                     ),
@@ -1606,7 +1604,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           DropdownMenuItem(
                             value: '${sport['sportType']}',
                             child: AppText(
-                              '${sport['sportType']} · ? '
+                              '${sport['sportType']} · ₱ '
                               '${(sport['pricePerHour'] as num).toStringAsFixed(2)} / hr',
                               localize: true,
                             ),
@@ -1616,92 +1614,53 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         if (value == null) return;
                         setModalState(() {
                           selectedSportType = value;
-                          selectedSlotNumber = 1;
+                          selectedSlotNumbers = <int>{};
+                          selectedSlotCount = 1;
                         });
                       },
                     ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (
-                          var slot = 1;
-                          slot <= selectedSportSlotCount;
-                          slot++
-                        )
-                          Builder(
-                            builder: (context) {
-                              final blocked = _bookingSlotOverlaps(
-                                bookingTime,
-                                hours,
-                                occupiedBookings,
-                                slotNumber: slot,
-                                fullStudio: selectedSportIsFullStudio,
-                              );
-                              final selected = selectedSlotNumber == slot;
-                              final label = selectedSportIsFullStudio
-                                  ? 'Whole studio'
-                                  : 'Slot $slot';
-                              return ChoiceChip(
-                                selected: selected,
-                                onSelected: (_) => setModalState(
-                                  () => selectedSlotNumber = slot,
-                                ),
-                                avatar: Icon(
-                                  blocked
-                                      ? Icons.event_busy_rounded
-                                      : Icons.check_circle_outline_rounded,
-                                  size: 16,
-                                  color: blocked
-                                      ? AppColors.errorText
-                                      : AppColors.success,
-                                ),
-                                label: AppText(
-                                  '$label · ${blocked ? 'Unavailable' : 'Open'}',
-                                  localize: true,
-                                ),
-                                selectedColor: blocked
-                                    ? AppColors.error.withValues(alpha: .14)
-                                    : AppColors.successSurface,
-                                labelStyle: TextStyle(
-                                  color: selected
-                                      ? blocked
-                                            ? AppColors.errorText
-                                            : AppColors.success
-                                      : _sportsInk,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                side: BorderSide(
-                                  color: blocked
-                                      ? AppColors.errorText.withValues(
-                                          alpha: .55,
-                                        )
-                                      : AppColors.success.withValues(
-                                          alpha: .55,
-                                        ),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
+                    if (!selectedSportIsFullStudio) ...[
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<int>(
+                        initialValue: selectedSlotCount,
+                        decoration: _bookingInputDecoration(
+                          prefixIcon: const Icon(Icons.grid_view_rounded),
+                          labelText: 'Number of slots',
+                        ),
+                        items: [
+                          for (
+                            var count = 1;
+                            count <= selectedSportSlotCount;
+                            count++
+                          )
+                            DropdownMenuItem(
+                              value: count,
+                              child: AppText(
+                                '$count ${count == 1 ? 'slot' : 'slots'}',
+                                localize: true,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setModalState(() {
+                            selectedSlotCount = value;
+                            if (selectedSlotNumbers.length > value) {
+                              final slots = selectedSlotNumbers.toList()
+                                ..sort();
+                              selectedSlotNumbers = slots.take(value).toSet();
+                            }
+                          });
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     AppText(
-                      selectedSportIsFullStudio
-                          ? 'This sport uses the whole studio; its bookings block every small slot.'
-                          : '\u{20B1} ${rate.toStringAsFixed(2)} per slot per hour. '
-                                'Different slots can be booked at the same time.',
-                      style: TextStyle(color: _sportsMuted, fontSize: 12),
-                    ),
-                    const SizedBox(height: 6),
-                    AppText(
-                      'CHOOSE DATE AND TIME',
+                      'Choose date and time',
                       style: TextStyle(
                         color: _sportsMuted,
                         fontSize: 11,
-                        letterSpacing: .9,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                       localize: true,
                     ),
@@ -1784,14 +1743,127 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ),
                     const SizedBox(height: 6),
                     AppText(
+                      selectedSportIsFullStudio
+                          ? 'Select slot'
+                          : 'Select $selectedSlotCount '
+                                '${selectedSlotCount == 1 ? 'slot' : 'slots'}',
+                      style: TextStyle(
+                        color: _sportsMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      localize: true,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (
+                          var slot = 1;
+                          slot <= selectedSportSlotCount;
+                          slot++
+                        )
+                          Builder(
+                            builder: (context) {
+                              final available = availableSlotNumbers.contains(
+                                slot,
+                              );
+                              final selected = selectedSlotNumbers.contains(
+                                slot,
+                              );
+                              final label = selectedSportIsFullStudio
+                                  ? 'Whole studio'
+                                  : 'Slot $slot';
+                              return ChoiceChip(
+                                selected: selected,
+                                onSelected: !available && !selected
+                                    ? null
+                                    : (_) => setModalState(() {
+                                        if (selected) {
+                                          selectedSlotNumbers.remove(slot);
+                                        } else if (selectedSlotNumbers.length <
+                                            selectedSlotCount) {
+                                          selectedSlotNumbers.add(slot);
+                                        }
+                                      }),
+                                avatar: Icon(
+                                  available
+                                      ? Icons.check_circle_outline_rounded
+                                      : Icons.event_busy_rounded,
+                                  size: 16,
+                                  color: available
+                                      ? AppColors.success
+                                      : AppColors.errorText,
+                                ),
+                                label: AppText(
+                                  '$label · ${available ? 'Open' : 'Unavailable'}',
+                                  localize: true,
+                                ),
+                                selectedColor: AppColors.successSurface,
+                                labelStyle: TextStyle(
+                                  color: selected
+                                      ? AppColors.success
+                                      : _sportsInk,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                side: BorderSide(
+                                  color: available
+                                      ? AppColors.success.withValues(alpha: .55)
+                                      : AppColors.errorText.withValues(
+                                          alpha: .55,
+                                        ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (availabilityLoading)
+                      const LinearProgressIndicator()
+                    else if (!selectedSportIsFullStudio &&
+                        availableSlotNumbers.length < selectedSlotCount)
+                      AppText(
+                        'Only ${availableSlotNumbers.length} '
+                        '${availableSlotNumbers.length == 1 ? 'slot is' : 'slots are'} '
+                        'available at this date and time; you selected '
+                        '$selectedSlotCount. Choose another time or reduce the number of slots.',
+                        style: TextStyle(
+                          color: AppColors.errorText,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      )
+                    else if (!selectionMatchesRequestedCount)
+                      AppText(
+                        'Select exactly $selectedSlotCount '
+                        '${selectedSlotCount == 1 ? 'available slot' : 'available slots'} to continue.',
+                        style: TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      )
+                    else
+                      AppText(
+                        '${selectedSlotList.length} of '
+                        '${availableSlotNumbers.length} slots available. '
+                        'Each costs \u{20B1} ${rate.toStringAsFixed(2)} per hour.',
+                        style: TextStyle(
+                          color: AppColors.success,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                    AppText(
                       'Please choose a time within the venue’s opening hours (${venue.hours}).',
                       style: TextStyle(color: _sportsMuted, fontSize: 12),
                       localize: true,
                     ),
                     const SizedBox(height: 6),
-                    if (availabilityLoading)
-                      const LinearProgressIndicator()
-                    else if (relevantBookings.isEmpty)
+                    if (!availabilityLoading && relevantBookings.isEmpty)
                       AppText(
                         'Selected slot is open for this date.',
                         style: TextStyle(
@@ -1860,12 +1932,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     ],
                     const SizedBox(height: 6),
                     AppText(
-                      'BOOKING CONFIGURATION',
+                      'Booking details',
                       style: TextStyle(
                         color: _sportsMuted,
                         fontSize: 11,
-                        letterSpacing: .9,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                       localize: true,
                     ),
@@ -1922,7 +1993,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         padding: const EdgeInsets.only(top: 8),
                         child: AppText(
                           '$selectedIncludedPlayers players included; '
-                          'each additional player costs ? '
+                          'each additional player costs ₱ '
                           '${selectedAdditionalPlayerFee.toStringAsFixed(2)}.',
                           style: TextStyle(
                             color: AppColors.warning,
@@ -1934,12 +2005,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       ),
                     const SizedBox(height: 6),
                     AppText(
-                      'PAYMENT METHOD',
+                      'Payment method',
                       style: TextStyle(
                         color: _sportsMuted,
                         fontSize: 11,
-                        letterSpacing: .9,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                       localize: true,
                     ),
@@ -1948,12 +2018,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       style: ButtonStyle(
                         backgroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
-                              ? _sportsOrange
-                              : AppColors.surface,
+                              ? AppColors.softOrange
+                              : AppColors.surfaceVariant,
                         ),
                         foregroundColor: WidgetStateProperty.resolveWith(
                           (states) => states.contains(WidgetState.selected)
-                              ? AppColors.onAccent
+                              ? _sportsAccentForeground
                               : _sportsInk,
                         ),
                         side: WidgetStateProperty.all(
@@ -1986,8 +2056,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 '\u{20B1} ${total.toStringAsFixed(2)}.',
                       style: TextStyle(color: _sportsMuted),
                     ),
-                    const Divider(height: 24),
-                    _bookingAmountRow('Merchant rate', rate, '/ hour'),
+                    Divider(height: 20, color: AppColors.borderSubtle),
+                    _bookingAmountRow(
+                      selectedSlotList.length == 1
+                          ? 'Merchant rate'
+                          : 'Merchant rate (${selectedSlotList.length} slots)',
+                      rate * selectedSlotList.length,
+                      '/ hour',
+                    ),
                     _bookingAmountRow('Duration', hours.toDouble(), ' hour(s)'),
                     _bookingAmountRow(
                       'Players',
@@ -2030,9 +2106,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
+                        color: AppColors.surfaceVariant.withValues(alpha: .65),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.borderSubtle),
                       ),
                       child: AppText(
                         'Cancellation Policy: Free cancellation up to 6 hours before the slot. Proper sports footwear is required.',
@@ -2060,7 +2136,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   hours: hours,
                                   players: players,
                                   sportType: selectedSportType,
-                                  slotNumber: selectedSlotNumber,
+                                  slotNumbers: selectedSlotList,
                                   total: total,
                                   extraPlayerCharge: extraPlayerCharge,
                                   payment: payment,
@@ -2073,10 +2149,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           foregroundColor: AppColors.onAccent,
                           minimumSize: const Size.fromHeight(52),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          elevation: 5,
-                          shadowColor: _sportsOrange.withValues(alpha: .34),
+                          elevation: 0,
                         ),
                         icon: const Icon(Icons.lock_outline_rounded),
                         label: AppText(
@@ -2124,14 +2199,14 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       prefixIcon: prefixIcon,
       labelText: appLanguageText(labelText, labelText),
       filled: true,
-      fillColor: AppColors.surface,
+      fillColor: AppColors.surfaceVariant,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: AppColors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: AppColors.border),
       ),
     );
@@ -2143,8 +2218,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       backgroundColor: AppColors.surface,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-      side: BorderSide(color: AppColors.border, width: 1.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+      side: BorderSide(color: AppColors.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
 
@@ -2193,6 +2268,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         booking['occupiesFullStudio'] == 1 ||
         booking['occupies_full_studio'] == 1;
     if (fullStudio || bookingIsFullStudio) return true;
+    final bookingSlotNumbers = booking['slotNumbers'];
+    if (bookingSlotNumbers is List &&
+        bookingSlotNumbers.any(
+          (value) => int.tryParse('$value') == slotNumber,
+        )) {
+      return true;
+    }
     return int.tryParse(
           '${booking['slotNumber'] ?? booking['slot_number'] ?? ''}',
         ) ==
@@ -2257,7 +2339,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required int hours,
     required int players,
     required String sportType,
-    required int slotNumber,
+    required List<int> slotNumbers,
     required double total,
     required double extraPlayerCharge,
     required String payment,
@@ -2294,7 +2376,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         hours: hours,
         players: players,
         sportType: sportType,
-        slotNumber: slotNumber,
+        slotNumbers: slotNumbers,
         fullStudio:
             venue.sportsSlots.firstWhere(
               (sport) => sport['sportType'] == sportType,
@@ -2317,7 +2399,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         players: players,
         paymentMethod: payment,
         sportType: sportType,
-        slotNumber: slotNumber,
+        slotNumbers: slotNumbers,
       );
       if (!mounted || !modalContext.mounted) return;
       Navigator.of(modalContext).pop();
@@ -2389,7 +2471,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required int hours,
     required int players,
     required String sportType,
-    required int slotNumber,
+    required List<int> slotNumbers,
     required bool fullStudio,
     required String payment,
     required String? onlineProvider,
@@ -2435,7 +2517,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               _confirmationRow('Sport', sportType),
               _confirmationRow(
                 'Booked area',
-                fullStudio ? 'Whole studio' : 'Slot $slotNumber',
+                fullStudio
+                    ? 'Whole studio'
+                    : slotNumbers.length == 1
+                    ? 'Slot ${slotNumbers.first}'
+                    : 'Slots ${slotNumbers.join(', ')}',
               ),
               _confirmationRow('Date', _bookingDateLabel(bookingDate)),
               _confirmationRow('Time', _timeLabel(bookingTime)),
@@ -2560,7 +2646,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           ),
         ),
         AppText(
-          label == 'Duration'
+          label == 'Duration' || label == 'Players'
               ? '${amount.toStringAsFixed(0)}$suffix'
               : '\u{20B1} ${amount.toStringAsFixed(2)}$suffix',
           style: TextStyle(

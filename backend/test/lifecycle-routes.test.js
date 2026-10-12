@@ -182,6 +182,17 @@ function makeConnection() {
         }
         return [{ affectedRows: 1 }, []];
       }
+      if (sql.includes('paid_amount AS paidAmount') && sql.includes('FOR UPDATE')) {
+        return response(db.declineBooking ? [db.declineBooking] : []);
+      }
+      if (
+        sql.includes("UPDATE bookings") &&
+        sql.includes("SET status = 'cancelled'") &&
+        sql.includes('paid_amount = 0')
+      ) {
+        if (db.declineBooking) db.declineBooking.status = 'cancelled';
+        return [{ affectedRows: db.declineBooking ? 1 : 0 }, []];
+      }
       if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
         return response([{
           id: Number(params[0]),
@@ -304,6 +315,15 @@ function resetDatabase() {
     deleteAffected: true,
     cancelAffected: true,
     cancellationBooking: null,
+    declineBooking: {
+      id: 501,
+      customerId: 42,
+      venueId: 7,
+      paidAmount: 0,
+      venueName: 'Test Court',
+      sportType: 'Basketball',
+      status: 'pending',
+    },
     conversationBusinessType: 'sports',
     messageReadScope: null,
     duplicateDirectConversationIds: [],
@@ -2172,6 +2192,103 @@ test('bookings on separate small slots can overlap and use the selected sport ra
   assert.equal(booking.total, 195);
 });
 
+test('multi-slot bookings reserve every selected slot and charge each slot once', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 5,
+      paymentMethod: 'online',
+      sportType: 'Badminton',
+      slotNumbers: [2, 3],
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.deepEqual(booking.slotNumbers, [2, 3]);
+  assert.equal(booking.slotNumber, 2);
+  assert.equal(booking.pricePerHour, 90);
+  assert.equal(booking.extraPlayerCharge, 5);
+  assert.equal(booking.includedPlayers, 4);
+  assert.equal(booking.total, 365);
+  const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
+  assert.equal(insert.params[25], '[2,3]');
+});
+
+test('four booked slots multiply included player capacity before charging extras', async () => {
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    idempotencyKey: 'four-slot-capacity-0001',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 8,
+      paymentMethod: 'online',
+      sportType: 'Badminton',
+      slotNumbers: [1, 2, 3, 4],
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.includedPlayers, 8);
+  assert.equal(booking.extraPlayerCharge, 0);
+  assert.equal(booking.total, 360);
+});
+
+test('multi-slot bookings are rejected when any selected slot is occupied', async () => {
+  db.overlapRows = [{
+    slotNumber: 3,
+    slotNumbers: [3],
+    occupiesFullStudio: 0,
+  }];
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 2,
+      paymentMethod: 'online',
+      sportType: 'Badminton',
+      slotNumbers: [2, 3],
+    },
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
+});
+
+test('multi-slot bookings reject duplicate and out-of-range slot numbers', async () => {
+  for (const slotNumbers of [[2, 2], [2, 5]]) {
+    const response = await request('/api/bookings', {
+      method: 'POST',
+      body: {
+        venueId: 7,
+        date: '2026-10-01',
+        startTime: '09:00',
+        durationHours: 1,
+        players: 2,
+        paymentMethod: 'online',
+        sportType: 'Badminton',
+        slotNumbers,
+      },
+    });
+
+    assert.equal(response.status, 400);
+  }
+});
+
 test('two overlapping bookings cannot use the same small slot', async () => {
   db.overlapRows = [{ slotNumber: 2, occupiesFullStudio: 0 }];
   const response = await request('/api/bookings', {
@@ -2291,19 +2408,54 @@ test('merchant can decline a pending booking', async () => {
   const response = await request('/api/merchant/bookings/501/decline', {
     method: 'PATCH',
     role: 'merchant',
+    body: { reason: 'The court is unavailable at the requested time.' },
   });
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    message: 'Booking declined.',
+    message: 'Booking declined and customer notified.',
     status: 'cancelled',
   });
   const declineUpdate = db.calls.find(({ sql }) =>
-    sql.includes("SET b.status = 'cancelled'"),
+    sql.includes("SET status = 'cancelled'") && sql.includes('paid_amount = 0'),
   );
   assert.ok(declineUpdate);
-  assert.match(declineUpdate.sql, /v\.merchant_id = \?/);
-  assert.match(declineUpdate.sql, /b\.status = 'pending'/);
+  const notification = db.calls.find(({ sql, params }) =>
+    sql.includes('INSERT INTO messages') &&
+    params[2]?.includes('Reason: The court is unavailable'),
+  );
+  assert.ok(notification, 'decline reason should be sent in the booking conversation');
+  assert.equal(notification.params[0], 601);
+  assert.equal(notification.params[1], '88');
+  assert.ok(db.calls.some(({ sql, params }) =>
+    sql.includes('UPDATE conversation_members') &&
+    sql.includes('SET archived_at = NULL, deleted_at = NULL') &&
+    params[0] === 601,
+  ));
+  assert.ok(db.calls.some(({ sql, params }) =>
+    sql.includes('INSERT INTO user_activity_logs') &&
+    params[0] === 42 &&
+    params[1] === 'booking_declined',
+  ));
+});
+
+test('merchant decline requires a non-empty reason before accessing the database', async () => {
+  for (const reason of ['', '   ', undefined, 'x'.repeat(1001)]) {
+    db.calls = [];
+    const response = await request('/api/merchant/bookings/501/decline', {
+      method: 'PATCH',
+      role: 'merchant',
+      body: reason === undefined ? {} : { reason },
+    });
+    assert.equal(response.status, 400);
+    assert.equal(
+      db.calls.some(({ sql }) =>
+        sql.includes("SET status = 'cancelled'") ||
+        sql.includes('INSERT INTO messages'),
+      ),
+      false,
+    );
+  }
 });
 
 test('merchant can permanently delete only their completed booking', async () => {
@@ -2335,14 +2487,14 @@ test('merchant can permanently delete only their completed booking', async () =>
   });
 });
 
-test('customer can permanently delete only their own completed booking', async () => {
+test('customer can delete their own completed or unpaid cancelled booking', async () => {
   const deleted = await request('/api/bookings/501', {
     method: 'DELETE',
     role: 'customer',
   });
   assert.equal(deleted.status, 200);
   assert.deepEqual(await deleted.json(), {
-    message: 'Completed booking permanently deleted.',
+    message: 'Booking permanently deleted.',
   });
   const deleteQuery = db.calls.find(({ sql }) =>
     sql.includes('DELETE FROM bookings'),
@@ -2350,6 +2502,9 @@ test('customer can permanently delete only their own completed booking', async (
   assert.ok(deleteQuery);
   assert.match(deleteQuery.sql, /customer_id = \?/);
   assert.match(deleteQuery.sql, /status = 'finished'/);
+  assert.match(deleteQuery.sql, /status = 'cancelled'/);
+  assert.match(deleteQuery.sql, /paid_amount = 0/);
+  assert.match(deleteQuery.sql, /payment_refund_status <> 'pending'/);
   assert.deepEqual(deleteQuery.params, ['501', '42']);
 
   db.deleteAffected = false;
@@ -2359,7 +2514,7 @@ test('customer can permanently delete only their own completed booking', async (
   });
   assert.equal(notCompleted.status, 404);
   assert.deepEqual(await notCompleted.json(), {
-    error: 'Completed booking not found.',
+    error: 'Completed or unpaid cancelled booking not found.',
   });
 });
 

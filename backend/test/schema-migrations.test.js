@@ -95,6 +95,7 @@ test('ensures older databases add the missing fitness coach duration column befo
   await runSchemaMigrations(pool);
 
   assert.ok(calls.some(({ sql }) => sql.includes('ALTER TABLE `bookings` ADD COLUMN `fitness_coach_duration_months`')));
+  assert.ok(calls.some(({ sql }) => sql.includes('ALTER TABLE `bookings` ADD COLUMN `slot_numbers_json`')));
   assert.ok(calls.some(({ sql }) =>
     sql.includes("SET paid_amount = total_amount") &&
     sql.includes("payment_status = 'paid'"),

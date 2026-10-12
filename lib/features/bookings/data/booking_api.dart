@@ -12,6 +12,7 @@ extension AuthApiBookingOperations on AuthApi {
     required String paymentMethod,
     String sportType = '',
     int slotNumber = 1,
+    List<int>? slotNumbers,
     String fitnessPlanType = '',
     String fitnessCoachName = '',
     int fitnessCoachDurationMonths = 0,
@@ -27,7 +28,10 @@ extension AuthApiBookingOperations on AuthApi {
       'players': players,
       'paymentMethod': paymentMethod,
       'sportType': sportType,
-      'slotNumber': slotNumber,
+      'slotNumber': slotNumbers != null && slotNumbers.isNotEmpty
+          ? slotNumbers.first
+          : slotNumber,
+      ...?slotNumbers == null ? null : {'slotNumbers': slotNumbers},
       'fitnessPlanType': fitnessPlanType,
       'fitnessCoachName': fitnessCoachName,
       'fitnessCoachDurationMonths': fitnessCoachDurationMonths,
@@ -72,7 +76,7 @@ extension AuthApiBookingOperations on AuthApi {
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
 
-  Future<void> deleteCustomerCompletedBooking({
+  Future<void> deleteCustomerBooking({
     required String token,
     required int bookingId,
   }) async {
@@ -194,11 +198,16 @@ extension AuthApiBookingOperations on AuthApi {
   Future<void> declineBooking({
     required String token,
     required int bookingId,
+    required String reason,
   }) async {
     await _request(
       'PATCH',
       '/api/merchant/bookings/$bookingId/decline',
-      headers: _authHeaders(token),
+      headers: _authHeaders(
+        token,
+        extra: {'Content-Type': 'application/json'},
+      ),
+      body: {'reason': reason},
     );
   }
 

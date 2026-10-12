@@ -1,18 +1,25 @@
-part of '../../../auth_api.dart';
+class VenueDomainException implements Exception {
+  const VenueDomainException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class VenueBusiness {
   VenueBusiness._(this.id, this.businessType, this.enabled, this._data);
 
   factory VenueBusiness.fromJson(Map<String, dynamic> json) {
-    final id = _venuePositiveId(json['id'] ?? json['businessId']);
+    final id = parseVenuePositiveId(json['id'] ?? json['businessId']);
     final businessType = json['businessType'] ?? json['business_type'];
     if (id == null || (businessType != null && businessType is! String)) {
-      throw _invalidVenueResponse('The server returned an invalid business.');
+      throw const VenueDomainException('The server returned an invalid business.');
     }
     return VenueBusiness._(
       id,
       businessType as String? ?? '',
-      _venueBoolean(json['enabled'] ?? true, 'enabled'),
+      parseVenueBoolean(json['enabled'] ?? true, 'enabled'),
       Map<String, dynamic>.unmodifiable(json),
     );
   }
@@ -29,15 +36,15 @@ class VenueFeedPost {
   VenueFeedPost._(this.id, this.businessId, this.title, this.body, this._data);
 
   factory VenueFeedPost.fromJson(Map<String, dynamic> json) {
-    final id = _venuePositiveId(json['id'] ?? json['businessId']);
-    final businessId = _venuePositiveId(json['businessId']);
+    final id = parseVenuePositiveId(json['id'] ?? json['businessId']);
+    final businessId = parseVenuePositiveId(json['businessId']);
     final title = json['title'];
     final body = json['body'];
     if (id == null ||
         businessId == null ||
         title is! String ||
         body is! String) {
-      throw _invalidVenueResponse('The server returned an invalid news post.');
+      throw const VenueDomainException('The server returned an invalid news post.');
     }
     return VenueFeedPost._(
       id,
@@ -71,30 +78,30 @@ class VenueReview {
   });
 
   factory VenueReview.fromJson(Map<String, dynamic> json) {
-    final id = _venuePositiveId(json['id']);
-    final customerId = _venuePositiveId(
+    final id = parseVenuePositiveId(json['id']);
+    final customerId = parseVenuePositiveId(
       json['customerId'] ?? json['customer_id'],
     );
-    final rating = _venueInteger(json['rating'], 'rating');
+    final rating = parseVenueInteger(json['rating'], 'rating');
     if (rating < 1 || rating > 5) {
-      throw _invalidVenueResponse('The server returned an invalid review.');
+      throw const VenueDomainException('The server returned an invalid review.');
     }
     return VenueReview(
       id: id,
       customerId: customerId,
       rating: rating,
-      comment: _venueOptionalString(json['comment'], 'comment'),
-      firstName: _venueOptionalString(json['firstName'], 'firstName'),
-      lastName: _venueOptionalString(json['lastName'], 'lastName'),
-      avatarUrl: _venueOptionalString(
+      comment: parseVenueOptionalString(json['comment'], 'comment'),
+      firstName: parseVenueOptionalString(json['firstName'], 'firstName'),
+      lastName: parseVenueOptionalString(json['lastName'], 'lastName'),
+      avatarUrl: parseVenueOptionalString(
         json['avatarUrl'] ?? json['avatar_url'],
         'avatarUrl',
       ),
-      imageData: _venueOptionalString(
+      imageData: parseVenueOptionalString(
         json['imageData'] ?? json['image_data'],
         'imageData',
       ),
-      createdAt: _venueOptionalString(json['createdAt'], 'createdAt'),
+      createdAt: parseVenueOptionalString(json['createdAt'], 'createdAt'),
     );
   }
 
@@ -153,8 +160,8 @@ class MerchantNewsPost {
   );
 
   factory MerchantNewsPost.fromJson(Map<String, dynamic> json) {
-    final id = _venuePositiveId(json['id']);
-    final businessId = _venuePositiveId(json['businessId']);
+    final id = parseVenuePositiveId(json['id']);
+    final businessId = parseVenuePositiveId(json['businessId']);
     final title = json['title'];
     final body = json['body'];
     final statusName = json['status'];
@@ -166,7 +173,7 @@ class MerchantNewsPost {
         title is! String ||
         body is! String ||
         status.isEmpty) {
-      throw _invalidVenueResponse(
+      throw const VenueDomainException(
         'The server returned an invalid merchant news post.',
       );
     }
@@ -190,7 +197,7 @@ class MerchantNewsPost {
   Map<String, dynamic> toViewData() => Map<String, dynamic>.of(_data);
 }
 
-int? _venuePositiveId(dynamic value) {
+int? parseVenuePositiveId(dynamic value) {
   final id = value is int
       ? value
       : value is num && value.isFinite && value == value.roundToDouble()
@@ -201,8 +208,32 @@ int? _venuePositiveId(dynamic value) {
   return id != null && id > 0 ? id : null;
 }
 
-String? _venueOptionalString(dynamic value, String field) {
+String? parseVenueOptionalString(dynamic value, String field) {
   if (value == null) return null;
   if (value is String) return value;
-  throw _invalidVenueResponse('The server returned an invalid $field value.');
+  throw VenueDomainException('The server returned an invalid $field value.');
+}
+
+int parseVenueInteger(dynamic value, String field) {
+  if (value is int) return value;
+  if (value is num && value.isFinite && value == value.roundToDouble()) {
+    return value.toInt();
+  }
+  if (value is String) {
+    final parsed = int.tryParse(value.trim());
+    if (parsed != null) return parsed;
+  }
+  throw VenueDomainException('The server returned an invalid $field value.');
+}
+
+bool parseVenueBoolean(dynamic value, String field) {
+  if (value == true || value == 1 || value == '1') {
+    return true;
+  }
+  if (value == false || value == 0 || value == '0') {
+    return false;
+  }
+  if (value is String && value.trim().toLowerCase() == 'true') return true;
+  if (value is String && value.trim().toLowerCase() == 'false') return false;
+  throw VenueDomainException('The server returned an invalid $field value.');
 }

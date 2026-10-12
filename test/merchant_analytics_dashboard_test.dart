@@ -429,6 +429,7 @@ void main() {
         'status': 'approved',
       },
     ];
+    Map<String, dynamic>? declinePayload;
     final api = AuthApi(
       client: MockClient((request) async {
         if (request.method == 'PATCH' &&
@@ -451,6 +452,8 @@ void main() {
               200,
             );
           }
+          expect(request.headers['content-type'], contains('application/json'));
+          declinePayload = jsonDecode(request.body) as Map<String, dynamic>;
           booking['status'] = 'cancelled';
           return http.Response(
             jsonEncode({'message': 'Booking declined.'}),
@@ -530,6 +533,17 @@ void main() {
       findsNothing,
     );
     expect(find.text('1 pending'), findsOneWidget);
+    final analyticsMetricKeys = [
+      'revenue',
+      'collected',
+      'bookings',
+      'live-venues',
+    ];
+    final analyticsMetricSizes = [
+      for (final key in analyticsMetricKeys)
+        tester.getSize(find.byKey(ValueKey('merchant-analytics-metric-$key'))),
+    ];
+    expect(analyticsMetricSizes.toSet(), hasLength(1));
     final bookingsMetric = find.byKey(
       const ValueKey('merchant-analytics-metric-bookings'),
     );
@@ -1018,9 +1032,14 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('merchant-booking-decline-11')));
     await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('merchant-booking-decline-reason')),
+      'The venue is unavailable at that time.',
+    );
     await tester.tap(find.text('Decline booking'));
     await tester.pumpAndSettle();
     expect(find.text('Booking declined.'), findsOneWidget);
+    expect(declinePayload?['reason'], 'The venue is unavailable at that time.');
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Active'));

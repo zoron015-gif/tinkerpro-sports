@@ -23,7 +23,6 @@ import 'qr_scanner_page.dart';
 import 'core/booking_status.dart';
 import 'core/business_type.dart';
 
-import 'app_card_styles.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
 import 'app_settings_page.dart';
@@ -902,28 +901,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     required String address,
   }) => Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(18),
+    padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      gradient: AppGradients.navyBrand,
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: Colors.white.withValues(alpha: .18), width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: .22),
-          blurRadius: 20,
-          offset: const Offset(8, 9),
-        ),
-        BoxShadow(
-          color: Colors.white.withValues(alpha: .58),
-          blurRadius: 15,
-          offset: const Offset(-5, -5),
-        ),
-        BoxShadow(
-          color: AppColors.accent.withValues(alpha: .14),
-          blurRadius: 22,
-          spreadRadius: -8,
-        ),
-      ],
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _profileLine),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -934,18 +916,18 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white54, width: 1.5),
+                border: Border.all(color: AppColors.border),
               ),
               child: TappableProfileAvatar(
                 radius: 32,
-                backgroundColor: Colors.white24,
+                backgroundColor: AppColors.softSurface,
                 image: _avatarImage(avatarUrl),
                 fallback: AppText(
                   initials,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _profileInk,
                     fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -959,10 +941,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
+                    style: TextStyle(
+                      color: _profileInk,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -970,17 +952,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     email,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFD5E2F7),
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: _profileMuted, fontSize: 12),
                   ),
                 ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         _profileHeroDetail(
           Icons.location_on_outlined,
           address.isEmpty ? 'Add your address' : address,
@@ -993,7 +972,6 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       ],
     ),
   );
-
   Widget _statsCard({
     required int matches,
     required int venues,
@@ -1010,14 +988,14 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
               style: TextStyle(
                 color: _profileInk,
                 fontSize: 15,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
           Icon(Icons.insights_rounded, color: _profileOrange, size: 18),
         ],
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 16),
       Row(
         children: [
           _Stat(
@@ -1032,7 +1010,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           _statDivider(),
           _Stat(
             value: '$venues',
-            label: _isEventProfile ? 'Event venues visited' : 'Venues visited',
+            label: event ? 'Event venues visited' : 'Venues visited',
             icon: Icons.place_outlined,
           ),
         ],
@@ -1040,7 +1018,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     ],
   );
 
-  Widget _statDivider() => Container(height: 34, width: 1, color: _profileLine);
+  Widget _statDivider() => Container(
+    height: 58,
+    width: 1,
+    margin: const EdgeInsets.symmetric(horizontal: 8),
+    color: _profileLine,
+  );
 
   Widget _profileHistorySection(BuildContext context) {
     final historyTitle = _historyTitle;
@@ -1096,12 +1079,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.all(5),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: _profileLine.withValues(alpha: .8)),
-            borderRadius: BorderRadius.circular(17),
-            boxShadow: AppCardStyles.raisedShadows,
+            color: AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
@@ -1116,26 +1097,16 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                       message: tab.title,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        height: 66,
+                        height: 58,
                         decoration: BoxDecoration(
                           color: _selectedHistoryTab == tab.title
                               ? AppColors.surface
                               : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                          border: _selectedHistoryTab == tab.title
-                              ? Border.all(
-                                  color: AppColors.accent.withValues(
-                                    alpha: .16,
-                                  ),
-                                )
-                              : null,
-                          boxShadow: _selectedHistoryTab == tab.title
-                              ? AppCardStyles.insetShadows
-                              : null,
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 3,
-                          vertical: 7,
+                          vertical: 5,
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1183,7 +1154,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                   style: TextStyle(
                     color: _profileInk,
                     fontSize: 17,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -1430,17 +1401,17 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
 
   Widget _profileHeroDetail(IconData icon, String text) => Row(
     children: [
-      Icon(icon, color: const Color(0xFFD5E2F7), size: 15),
+      Icon(icon, color: _profileMuted, size: 15),
       const SizedBox(width: 8),
       Expanded(
         child: AppText(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFFD5E2F7),
+          style: TextStyle(
+            color: _profileMuted,
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -3226,9 +3197,8 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     padding: padding,
     decoration: BoxDecoration(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: _profileLine.withValues(alpha: .8)),
-      boxShadow: AppCardStyles.raisedShadows,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _profileLine),
     ),
     child: Column(children: children),
   );
@@ -3438,25 +3408,25 @@ class _Stat extends StatelessWidget {
     child: Column(
       children: [
         Container(
-          width: 34,
-          height: 34,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: AppColors.softOrangeAlt,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(13),
           ),
-          child: Icon(icon, color: _profileOrange, size: 18),
+          child: Icon(icon, color: _profileOrange, size: 20),
         ),
-        const SizedBox(height: 7),
+        const SizedBox(height: 9),
         AppText(
           value,
           style: TextStyle(
             color: _profileInk,
-            fontSize: 21,
+            fontSize: 24,
             height: 1,
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 7),
         AppText(
           label,
           textAlign: TextAlign.center,
@@ -3464,7 +3434,8 @@ class _Stat extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: _profileMuted,
-            fontSize: 10,
+            fontSize: 11,
+            height: 1.25,
             fontWeight: FontWeight.w600,
           ),
         ),

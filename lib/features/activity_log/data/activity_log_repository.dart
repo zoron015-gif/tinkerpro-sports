@@ -1,8 +1,6 @@
 import 'package:myapp/app_session.dart';
 import 'package:myapp/auth_api.dart';
 
-import '../domain/activity_log_entry.dart';
-
 abstract interface class ActivityLogDataSource {
   Future<List<ActivityLogEntry>> loadActivities();
 }

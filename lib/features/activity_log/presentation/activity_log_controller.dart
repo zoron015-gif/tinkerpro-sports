@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../../auth_api.dart';
 import '../data/activity_log_repository.dart';
-import '../domain/activity_log_entry.dart';
 
 enum ActivityLogLoadState { loading, loaded, failed }
 

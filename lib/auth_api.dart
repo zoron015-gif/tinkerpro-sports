@@ -5,10 +5,13 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 import 'core/api_response.dart';
+import 'features/venues/domain/venue_models.dart';
 import 'models/booking.dart';
 
+export 'features/activity_log/domain/activity_log_entry.dart';
+export 'features/venues/domain/venue_models.dart';
+
 part 'features/bookings/data/booking_api.dart';
-part 'features/venues/domain/venue_models.dart';
 part 'features/venues/data/venue_api.dart';
 part 'features/messaging/data/messaging_api.dart';
 part 'features/saved_items/data/saved_items_api.dart';

@@ -1790,7 +1790,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                     booking['occupiesFullStudio'] == true ||
                             booking['occupiesFullStudio'] == 1
                         ? 'Whole studio'
-                        : 'Slot ${booking['slotNumber'] ?? '—'}',
+                        : _bookingSlotLabel(booking),
                   ),
                 if (booking['eventType'] != null)
                   _payoutDetailRow('Event type', booking['eventType']),
@@ -2104,8 +2104,17 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         booking['occupiesFullStudio'] == true ||
             booking['occupiesFullStudio'] == 1
         ? 'Whole studio'
-        : 'Slot ${booking['slotNumber'] ?? '—'}';
+        : _bookingSlotLabel(booking);
     return '${booking['sportType'] ?? 'Sport'} · $area';
+  }
+
+  String _bookingSlotLabel(Map<String, dynamic> booking) {
+    final slots = booking['slotNumbers'];
+    if (slots is List && slots.isNotEmpty) {
+      final labels = slots.map((slot) => '$slot').join(', ');
+      return slots.length > 1 ? 'Slots $labels' : 'Slot $labels';
+    }
+    return 'Slot ${booking['slotNumber'] ?? '—'}';
   }
 
   Widget _merchantHome() => RefreshIndicator(
@@ -2864,13 +2873,40 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Future<void> _declineMerchantBooking(int bookingId) async {
+    final formKey = GlobalKey<FormState>();
+    String? reason;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const AppText('Decline booking?', localize: true),
-        content: const AppText(
-          'This will cancel the customer booking request.',
-          localize: true,
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AppText(
+                'Please provide a reason. The customer will receive it in Messages.',
+                localize: true,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const ValueKey('merchant-booking-decline-reason'),
+                autofocus: true,
+                maxLength: 1000,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for decline',
+                  alignLabelWithHint: true,
+                ),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter a reason to continue.'
+                    : null,
+                onSaved: (value) => reason = value?.trim(),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -2878,17 +2914,28 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             child: const AppText('Keep booking', localize: true),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
+              formKey.currentState?.save();
+              Navigator.pop(context, true);
+            },
             child: const AppText('Decline booking', localize: true),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    final declineReason = reason?.trim();
+    if (confirmed != true || declineReason == null || declineReason.isEmpty) {
+      return;
+    }
     try {
       final token = (await AppSession.load()).apiToken;
       if (token == null || token.isEmpty) return;
-      await _api.declineBooking(token: token, bookingId: bookingId);
+      await _api.declineBooking(
+        token: token,
+        bookingId: bookingId,
+        reason: declineReason,
+      );
       await _loadBookings();
       _showMessage('Booking declined.');
     } on Exception catch (error) {

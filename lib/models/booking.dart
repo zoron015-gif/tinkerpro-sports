@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Venue {
   const Venue({
     this.id,
@@ -91,6 +93,7 @@ class Booking {
     this.sportType = '',
     this.eventType = '',
     this.slotNumber,
+    this.slotNumbers = const [],
     this.occupiesFullStudio = true,
     this.paymentMethod = '',
     this.paymentStatus = '',
@@ -123,6 +126,7 @@ class Booking {
   final String sportType;
   final String eventType;
   final int? slotNumber;
+  final List<int> slotNumbers;
   final bool occupiesFullStudio;
   final String paymentMethod;
   final String paymentStatus;
@@ -155,6 +159,7 @@ class Booking {
     sportType: _text(json['sportType']),
     eventType: _text(json['eventType']),
     slotNumber: _intValue(json['slotNumber']),
+    slotNumbers: _intList(json['slotNumbers'], json['slotNumber']),
     occupiesFullStudio:
         json['occupiesFullStudio'] == true || json['occupiesFullStudio'] == 1,
     paymentMethod: _text(json['paymentMethod']),
@@ -196,6 +201,7 @@ class Booking {
     'sportType' => sportType.isNotEmpty ? sportType : venue.category,
     'eventType' => eventType,
     'slotNumber' => slotNumber,
+    'slotNumbers' => slotNumbers,
     'occupiesFullStudio' => occupiesFullStudio,
     'address' => venue.address,
     'ownerName' => venue.ownerName,
@@ -268,6 +274,28 @@ List<String> _stringList(dynamic value) {
         .toList();
   }
   return const [];
+}
+
+List<int> _intList(dynamic value, dynamic fallback) {
+  var values = value;
+  if (values is String) {
+    try {
+      values = jsonDecode(values);
+    } on FormatException {
+      values = null;
+    }
+  }
+  if (values is List) {
+    return values
+        .map(_intValue)
+        .whereType<int>()
+        .where((item) => item > 0)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+  final slot = _intValue(fallback);
+  return slot == null || slot <= 0 ? const [] : [slot];
 }
 
 List<Map<String, dynamic>> _mapList(dynamic value) {

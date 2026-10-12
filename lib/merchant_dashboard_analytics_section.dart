@@ -773,63 +773,71 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: _merchantOrange, size: 21),
-              const SizedBox(width: _analyticsElementGap),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppText(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: _merchantMuted, fontSize: 11),
-                    ),
-                    const SizedBox(height: _analyticsElementGap),
-                    AppText(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _merchantInk,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    AppText(
-                      context,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _merchantMuted,
-                        fontSize: 10,
-                        height: 1.2,
-                      ),
-                      localize: true,
-                    ),
-                    if (progress != null) ...[
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: LinearProgressIndicator(
-                          value: progress.clamp(0.0, 1.0),
-                          minHeight: 4,
-                          backgroundColor: _merchantLine,
-                          color: _merchantOrange,
-                          semanticsLabel: progressLabel,
+        child: SizedBox(
+          height: 128,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: _merchantOrange, size: 21),
+                const SizedBox(width: _analyticsElementGap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppText(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _merchantMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(height: _analyticsElementGap),
+                      AppText(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _merchantInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      AppText(
+                        context,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _merchantMuted,
+                          fontSize: 10,
+                          height: 1.2,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        localize: true,
+                      ),
+                      if (progress != null) ...[
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                            value: progress.clamp(0.0, 1.0),
+                            minHeight: 4,
+                            backgroundColor: _merchantLine,
+                            color: _merchantOrange,
+                            semanticsLabel: progressLabel,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

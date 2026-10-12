@@ -2265,6 +2265,27 @@ function configuredSportsSlots(venue) {
   }];
 }
 
+function bookingSlotNumbers(value, fallback = null) {
+  let slotNumbers = value;
+  if (typeof slotNumbers === 'string') {
+    try {
+      slotNumbers = JSON.parse(slotNumbers);
+    } catch {
+      slotNumbers = null;
+    }
+  }
+  if (Array.isArray(slotNumbers)) {
+    const validSlots = [...new Set(slotNumbers.map(Number).filter((slot) =>
+      Number.isSafeInteger(slot) && slot > 0,
+    ))].sort((a, b) => a - b);
+    if (validSlots.length > 0) return validSlots;
+  }
+  const slotNumber = Number(fallback);
+  return Number.isSafeInteger(slotNumber) && slotNumber > 0
+    ? [slotNumber]
+    : [];
+}
+
 app.get('/api/bookings/availability', requireAuth, requireRole('customer'), async (req, res, next) => {
   const venueId = Number(req.query.venueId);
   const bookingDate = req.query.date;
@@ -2276,6 +2297,7 @@ app.get('/api/bookings/availability', requireAuth, requireRole('customer'), asyn
     const [bookings] = await pool.execute(
       `SELECT start_time AS startTime, duration_hours AS durationHours,
               sport_type AS sportType, slot_number AS slotNumber,
+              slot_numbers_json AS slotNumbers,
               occupies_full_studio AS occupiesFullStudio
        FROM bookings
        WHERE venue_id = ? AND booking_date = ?
@@ -2283,6 +2305,12 @@ app.get('/api/bookings/availability', requireAuth, requireRole('customer'), asyn
        ORDER BY start_time`,
       [venueId, bookingDate],
     );
+    for (const booking of bookings) {
+      booking.slotNumbers = bookingSlotNumbers(
+        booking.slotNumbers,
+        booking.slotNumber,
+      );
+    }
     return res.json({ bookings });
   } catch (error) {
     return next(error);
@@ -2448,6 +2476,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.booking_date AS bookingDate, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
@@ -2476,6 +2505,10 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       await connection.rollback();
       return res.status(404).json({ error: 'Checkout session is not linked to a booking.' });
     }
+    booking.slotNumbers = bookingSlotNumbers(
+      booking.slotNumbers,
+      booking.slotNumber,
+    );
     const expectedBookingId = String(booking.id);
     const transactionId = bookingTransactionId(booking.id);
     const metadataBookingId = attributes?.metadata?.booking_id;
@@ -2568,6 +2601,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       fitnessPlanPrice: booking.fitnessPlanPrice,
       fitnessCoachPrice: booking.fitnessCoachPrice,
       slotNumber: booking.slotNumber,
+      slotNumbers: booking.slotNumbers,
       fullStudio: Number(booking.occupiesFullStudio) === 1,
       bookingDate: booking.bookingDate,
       startTime: booking.startTime,
@@ -2666,6 +2700,20 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
   const requestedEventType = typeof req.body.eventType === 'string'
     ? req.body.eventType.trim().slice(0, 100) : '';
   const requestedSlot = Number(req.body.slotNumber);
+  const hasRequestedSlots = req.body.slotNumbers !== undefined;
+  const requestedSlots = hasRequestedSlots && Array.isArray(req.body.slotNumbers)
+    ? req.body.slotNumbers.map(Number)
+    : [requestedSlot];
+  const invalidRequestedSlots = hasRequestedSlots &&
+    (!Array.isArray(req.body.slotNumbers) ||
+      req.body.slotNumbers.length < 1 ||
+      req.body.slotNumbers.length > 100 ||
+      req.body.slotNumbers.some((slot) =>
+        !isNumericInput(slot) ||
+        !Number.isSafeInteger(Number(slot)) ||
+        Number(slot) < 1,
+      ) ||
+      new Set(requestedSlots).size !== requestedSlots.length);
   const allowedPaymentMethods = new Set(['online', 'cash_on_arrival']);
   const optionalTextFields = [
     ['sportType', 100],
@@ -2683,6 +2731,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       !isNumericInput(req.body.players) ||
       (req.body.slotNumber !== undefined &&
         !isNumericInput(req.body.slotNumber)) ||
+      invalidRequestedSlots ||
         (req.body.fitnessCoachDurationMonths !== undefined &&
           (!isNumericInput(req.body.fitnessCoachDurationMonths) ||
             !Number.isSafeInteger(fitnessCoachDurationMonths) ||
@@ -2713,7 +2762,11 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       players,
       paymentMethod,
       sportType,
-      slotNumber: Number.isFinite(requestedSlot) ? requestedSlot : null,
+      ...(hasRequestedSlots
+        ? { slotNumbers: [...requestedSlots].sort((a, b) => a - b) }
+        : {
+            slotNumber: Number.isFinite(requestedSlot) ? requestedSlot : null,
+          }),
       fitnessPlanType,
       fitnessCoachName,
       fitnessCoachDurationMonths,
@@ -2769,6 +2822,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     let selectedSportType = sportType || venue.category || '';
     let fullStudio = true;
     let slotNumber = null;
+    let slotNumbers = [];
     if (isFitness) {
       if (durationHours !== 1 || players !== 1) {
         await connection.rollback();
@@ -2897,29 +2951,38 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           sport.sportType.toLowerCase() === selectedSportType.toLowerCase(),
       );
       fullStudio = sportConfig?.fullStudio === true;
-      slotNumber = fullStudio ? null : requestedSlot;
+      slotNumbers = fullStudio ? [] : requestedSlots;
+      slotNumber = fullStudio ? null : slotNumbers[0] ?? requestedSlot;
       if (!sportConfig || (!fullStudio &&
-          (!Number.isInteger(slotNumber) || slotNumber < 1 ||
-           slotNumber > Number(sportConfig.slotCount)))) {
+          (slotNumbers.length === 0 ||
+           slotNumbers.some((slot) =>
+             !Number.isSafeInteger(slot) ||
+             slot < 1 ||
+             slot > Number(sportConfig.slotCount),
+           ))) ||
+          (fullStudio && requestedSlots.length > 1)) {
         await connection.rollback();
         return res.status(400).json({ error: 'Choose a valid sport and available slot.' });
       }
     }
     const [overlaps] = await connection.execute(
       `SELECT slot_number AS slotNumber,
+              slot_numbers_json AS slotNumbers,
               occupies_full_studio AS occupiesFullStudio
        FROM bookings
        WHERE venue_id = ? AND booking_date = ?
          AND status IN ('pending', 'approved')
          AND start_time < ADDTIME(?, SEC_TO_TIME(? * 3600))
-         AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ?`,
+         AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ?
+       FOR UPDATE`,
       [venueId, bookingDate, startTime, durationHours, startTime],
     );
     const hasConflict = overlaps.some((booking) =>
       isEvent ||
       fullStudio ||
       Number(booking.occupiesFullStudio) === 1 ||
-      Number(booking.slotNumber) === slotNumber,
+      bookingSlotNumbers(booking.slotNumbers, booking.slotNumber)
+        .some((slot) => slotNumbers.includes(slot)),
     );
     if (hasConflict) {
       await connection.rollback();
@@ -2944,7 +3007,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       ? 0
       : isEvent
       ? players
-      : Number(sportConfig.includedPlayers ?? venue.included_players);
+      : Number(sportConfig.includedPlayers ?? venue.included_players) *
+        (fullStudio ? 1 : slotNumbers.length);
     const additionalPlayerFee = isFitness
       ? 0
       : isEvent
@@ -2959,7 +3023,10 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         ? fitnessPlanPrice + fitnessCoachPrice
         : isEvent
         ? pricePerHour
-        : pricePerHour * durationHours + extraPlayerCharge
+        : pricePerHour *
+              durationHours *
+              (fullStudio ? 1 : slotNumbers.length) +
+            extraPlayerCharge
       ).toFixed(2),
     );
     const downpayment = Number(
@@ -2975,8 +3042,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         fitness_coach_name, fitness_plan_price, fitness_coach_price,
         fitness_coach_duration_months,
         booking_token_hash, payment_status, idempotency_key,
-        idempotency_request_hash, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        idempotency_request_hash, status, slot_numbers_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
        paymentMethod, selectedSportType, slotNumber, fullStudio ? 1 : 0,
        pricePerHour, total, downpayment, extraPlayerCharge,
@@ -2989,7 +3056,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
        isFitness && fitnessCoach ? fitnessCoachDurationMonths : null,
        hashBookingToken(bookingToken),
        'unpaid',
-       idempotencyKey, idempotencyRequestHash],
+       idempotencyKey, idempotencyRequestHash,
+       slotNumbers.length > 0 ? JSON.stringify(slotNumbers) : null],
     );
     const [conversation] = await connection.execute(
       'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
@@ -3024,6 +3092,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           downpayment,
           paymentMethod,
           slotNumber,
+          slotNumbers,
           fullStudio,
           includedPlayers,
           additionalPlayerFee,
@@ -3063,6 +3132,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           paymentMethod,
           total,
           downpayment,
+          ...(slotNumbers.length > 0 ? { slotNumbers } : {}),
           ...(isFitness
             ? {
                 fitnessPlanType,
@@ -3082,7 +3152,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         businessType: venue.businessType, venueId, date: bookingDate, startTime,
         durationHours, players, sportType: selectedSportType,
         eventType: selectedEventType,
-        slotNumber, fullStudio, paymentMethod, pricePerHour, total, downpayment,
+        slotNumber, slotNumbers, fullStudio, paymentMethod, pricePerHour, total, downpayment,
         extraPlayers, extraPlayerCharge, includedPlayers,
         additionalPlayerFee, fitnessPlanType: isFitness ? fitnessPlanType : null,
         fitnessCategory: isFitness ? selectedSportType : null,
@@ -3191,6 +3261,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.booking_date AS date, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players, b.payment_method AS paymentMethod,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
@@ -3222,6 +3293,10 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
       params,
     );
     for (const booking of bookings) {
+      booking.slotNumbers = bookingSlotNumbers(
+        booking.slotNumbers,
+        booking.slotNumber,
+      );
       booking.transactionId = bookingTransactionId(booking.id);
       for (const field of [
         'eventTypes',
@@ -3334,13 +3409,23 @@ app.delete('/api/bookings/:bookingId', requireAuth, requireRole('customer'), asy
   try {
     const [result] = await pool.execute(
       `DELETE FROM bookings
-       WHERE id = ? AND customer_id = ? AND status = 'finished'`,
+       WHERE id = ? AND customer_id = ?
+         AND (
+           status = 'finished'
+           OR (
+             status = 'cancelled'
+             AND paid_amount = 0
+             AND payment_refund_status <> 'pending'
+           )
+         )`,
       [req.params.bookingId, req.auth.sub],
     );
     if (!result.affectedRows) {
-      return res.status(404).json({ error: 'Completed booking not found.' });
+      return res.status(404).json({
+        error: 'Completed or unpaid cancelled booking not found.',
+      });
     }
-    return res.json({ message: 'Completed booking permanently deleted.' });
+    return res.json({ message: 'Booking permanently deleted.' });
   } catch (error) { return next(error); }
 });
 
@@ -3600,6 +3685,7 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               v.business_type AS businessType, b.booking_date AS date,
               b.start_time AS startTime, b.duration_hours AS durationHours, b.players,
               b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
               b.fitness_category AS fitnessCategory,
@@ -3624,37 +3710,123 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
        WHERE v.merchant_id = ? ORDER BY b.booking_date, b.start_time`,
       [req.auth.sub],
     );
+    for (const booking of bookings) {
+      booking.slotNumbers = bookingSlotNumbers(
+        booking.slotNumbers,
+        booking.slotNumber,
+      );
+    }
     return res.json({ bookings });
   } catch (error) { return next(error); }
 });
 
 app.patch('/api/merchant/bookings/:id/decline', requireAuth, requireRole('merchant'), async (req, res, next) => {
+  const reason = typeof req.body?.reason === 'string'
+    ? req.body.reason.trim()
+    : '';
+  if (!reason || reason.length > 1000) {
+    return res.status(400).json({
+      error: 'Provide a reason of no more than 1000 characters to decline this booking.',
+    });
+  }
+
+  let connection;
   try {
-    const [result] = await pool.execute(
-      `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
-       SET b.status = 'cancelled'
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [bookings] = await connection.execute(
+      `SELECT b.id, b.customer_id AS customerId, b.venue_id AS venueId,
+              b.paid_amount AS paidAmount, v.name AS venueName,
+              COALESCE(b.sport_type, v.category) AS sportType
+       FROM bookings b
+       JOIN merchant_businesses v ON v.id = b.venue_id
        WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
-         AND b.paid_amount = 0`,
+       LIMIT 1 FOR UPDATE`,
       [req.params.id, req.auth.sub],
     );
-    if (!result.affectedRows) {
-      const [paidOnline] = await pool.execute(
-        `SELECT b.id FROM bookings b
-         JOIN merchant_businesses v ON v.id = b.venue_id
-         WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
-           AND b.paid_amount > 0
-         LIMIT 1`,
-        [req.params.id, req.auth.sub],
-      );
-      if (paidOnline.length > 0) {
-        return res.status(409).json({
-          error: 'Return the received payment before declining this booking.',
-        });
-      }
+    if (bookings.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ error: 'Pending booking not found.' });
     }
-    return res.json({ message: 'Booking declined.', status: 'cancelled' });
-  } catch (error) { return next(error); }
+    const booking = bookings[0];
+    if (Number(booking.paidAmount) > 0) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'Return the received payment before declining this booking.',
+      });
+    }
+
+    const [result] = await connection.execute(
+      `UPDATE bookings
+       SET status = 'cancelled'
+       WHERE id = ? AND status = 'pending' AND paid_amount = 0`,
+      [booking.id],
+    );
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Pending booking not found.' });
+    }
+
+    const [conversations] = await connection.execute(
+      'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
+      ['direct', `Booking ${booking.id}`],
+    );
+    let conversationId = conversations[0]?.id;
+    if (!conversationId) {
+      const [conversation] = await connection.execute(
+        'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+        ['direct', `Booking ${booking.id}`, req.auth.sub],
+      );
+      conversationId = conversation.insertId;
+      await connection.execute(
+        'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+        [conversationId, req.auth.sub, conversationId, booking.customerId],
+      );
+    }
+    await connection.execute(
+      `UPDATE conversation_members
+       SET archived_at = NULL, deleted_at = NULL
+       WHERE conversation_id = ?`,
+      [conversationId],
+    );
+    const message = `Your booking request #${booking.id} for ${booking.venueName} was declined.\nReason: ${reason}`;
+    await connection.execute(
+      `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+       VALUES (?, ?, ?, NULL)`,
+      [conversationId, req.auth.sub, message],
+    );
+
+    const activityDetails = {
+      venueId: booking.venueId,
+      venueName: booking.venueName,
+      sportType: booking.sportType,
+      details: { bookingId: booking.id, reason },
+    };
+    await recordUserActivity(
+      connection,
+      req.auth.sub,
+      'booking_declined',
+      'Booking declined',
+      `Booking #${booking.id} for ${booking.venueName} was declined. Reason: ${reason}`,
+      activityDetails,
+    );
+    await recordUserActivity(
+      connection,
+      booking.customerId,
+      'booking_declined',
+      'Booking declined',
+      message,
+      activityDetails,
+    );
+
+    await connection.commit();
+    return res.json({ message: 'Booking declined and customer notified.', status: 'cancelled' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return next(error);
+  } finally {
+    connection?.release();
+  }
 });
 
 app.delete('/api/merchant/bookings/:id', requireAuth, requireRole('merchant'), async (req, res, next) => {
@@ -3759,12 +3931,17 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
               b.fitness_plan_price AS fitnessPlanPrice,
               b.fitness_coach_price AS fitnessCoachPrice,
               b.slot_number AS slotNumber,
+              b.slot_numbers_json AS slotNumbers,
               b.occupies_full_studio AS occupiesFullStudio
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        WHERE b.id = ? AND v.merchant_id = ? LIMIT 1`,
       [req.params.id, req.auth.sub],
     );
     const booking = rows[0];
+    booking.slotNumbers = bookingSlotNumbers(
+      booking.slotNumbers,
+      booking.slotNumber,
+    );
     const [existingConversation] = await connection.execute(
       'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
       ['direct', `Booking ${booking.id}`],
@@ -3804,6 +3981,7 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
           fitnessPlanPrice: booking.fitnessPlanPrice,
           fitnessCoachPrice: booking.fitnessCoachPrice,
           slotNumber: booking.slotNumber,
+          slotNumbers: booking.slotNumbers,
           fullStudio: Number(booking.occupiesFullStudio) === 1,
           bookingDate: booking.bookingDate,
           startTime: booking.startTime,

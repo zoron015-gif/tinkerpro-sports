@@ -83,7 +83,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
     await tester.pumpAndSettle();
     expect(find.textContaining('Could not load bookings'), findsOneWidget);
-    expect(find.byKey(const ValueKey('customer-bookings-retry')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('customer-bookings-retry')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const ValueKey('customer-bookings-retry')));
     await tester.pumpAndSettle();
@@ -186,7 +189,7 @@ void main() {
             request.method == 'DELETE') {
           bookings.clear();
           return http.Response(
-            jsonEncode({'message': 'Completed booking permanently deleted.'}),
+            jsonEncode({'message': 'Booking permanently deleted.'}),
             200,
           );
         }
@@ -227,7 +230,69 @@ void main() {
 
     expect(find.text('Completed (0)'), findsOneWidget);
     expect(find.text('Completed Court'), findsNothing);
-    expect(find.text('Completed booking permanently deleted.'), findsOneWidget);
+    expect(find.text('Booking permanently deleted.'), findsOneWidget);
+  });
+
+  testWidgets('customer can delete an unpaid cancelled booking', (
+    tester,
+  ) async {
+    final bookings = <Map<String, dynamic>>[
+      {
+        'id': 25,
+        'venueName': 'Cancelled Court',
+        'status': 'cancelled',
+        'paymentStatus': 'unpaid',
+        'paymentRefundStatus': 'not_requested',
+        'paidAmount': 0,
+        'date': '2026-10-12',
+        'startTime': '10:30:00',
+        'durationHours': 2,
+      },
+    ];
+    var deleteRequested = false;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings' && request.method == 'GET') {
+          return http.Response(jsonEncode({'bookings': bookings}), 200);
+        }
+        if (request.url.path == '/api/bookings/25' &&
+            request.method == 'DELETE') {
+          deleteRequested = true;
+          bookings.clear();
+          return http.Response(
+            jsonEncode({'message': 'Booking permanently deleted.'}),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Completed (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('customer-booking-details-25')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancelled Court'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    final deleteButton = find.byKey(
+      const ValueKey('customer-booking-delete-25'),
+    );
+    await tester.ensureVisible(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete cancelled booking?'), findsOneWidget);
+    await tester.tap(find.text('Delete permanently'));
+    await tester.pumpAndSettle();
+
+    expect(deleteRequested, isTrue);
+    expect(find.text('Completed (0)'), findsOneWidget);
+    expect(find.text('Booking permanently deleted.'), findsOneWidget);
   });
 
   testWidgets('customer can cancel an approved booking within six hours', (

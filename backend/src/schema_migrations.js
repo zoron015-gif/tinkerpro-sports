@@ -308,6 +308,7 @@ async function ensureBookingsSchema() {
       fitness_coach_duration_months INT UNSIGNED NULL,
       booking_token_hash CHAR(64) NULL,
       ticket_token_hash CHAR(64) NULL,
+      slot_numbers_json JSON NULL,
       idempotency_key VARCHAR(100) NULL,
       idempotency_request_hash CHAR(64) NULL,
       idempotency_response_json JSON NULL,
@@ -348,6 +349,7 @@ async function ensureBookingsSchema() {
     ['fitness_coach_duration_months', 'INT UNSIGNED NULL'],
     ['sport_type', 'VARCHAR(100) NULL'],
     ['slot_number', 'INT UNSIGNED NULL'],
+    ['slot_numbers_json', 'JSON NULL'],
     ['occupies_full_studio', 'TINYINT(1) NOT NULL DEFAULT 1'],
     ['payment_status', "ENUM('unpaid', 'partial', 'paid', 'not_required') NOT NULL DEFAULT 'not_required'"],
     ['paid_amount', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
@@ -749,6 +751,14 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [8, 'venue-review-customer-photo'],
+      );
+    }
+    if (!appliedVersions.has(9)) {
+      await ensureTableColumn('bookings', 'slot_numbers_json', 'JSON NULL');
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [9, 'multi-slot-booking'],
       );
     }
   } finally {

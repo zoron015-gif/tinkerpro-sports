@@ -86,7 +86,11 @@ class VenueApi {
     return _venueObjects(
       response,
       'businesses',
-    ).map(VenueBusiness.fromJson).toList(growable: false);
+    )
+        .map(
+          (entry) => _parseVenueModel(entry, VenueBusiness.fromJson, 'business'),
+        )
+        .toList(growable: false);
   }
 
   Future<List<VenueFeedPost>> newsFeed(
@@ -113,7 +117,11 @@ class VenueApi {
     return _venueObjects(
       response,
       'posts',
-    ).map(VenueFeedPost.fromJson).toList(growable: false);
+    )
+        .map(
+          (entry) => _parseVenueModel(entry, VenueFeedPost.fromJson, 'news post'),
+        )
+        .toList(growable: false);
   }
 
   Future<VenueHeartState> setBusinessHearted({
@@ -130,8 +138,8 @@ class VenueApi {
         headers: _authHeaders(token),
       ),
     );
-    final heartCount = _venueInteger(response['heartCount'], 'heartCount');
-    final heartedByMe = _venueBoolean(response['heartedByMe'], 'heartedByMe');
+    final heartCount = parseVenueInteger(response['heartCount'], 'heartCount');
+    final heartedByMe = parseVenueBoolean(response['heartedByMe'], 'heartedByMe');
     if (heartCount < 0 || heartedByMe != hearted) {
       throw _invalidVenueResponse('The venue heart state was invalid.');
     }
@@ -149,7 +157,7 @@ class VenueApi {
     );
     return _venueObjects(response, 'businesses').map((business) {
       final value = business['businessId'] ?? business['business_id'];
-      final id = _venuePositiveId(value);
+      final id = parseVenuePositiveId(value);
       if (id == null) {
         throw _invalidVenueResponse(
           'A venue heart response contained an invalid business ID.',
@@ -175,7 +183,9 @@ class VenueApi {
     return _venueObjects(
       response,
       'reviews',
-    ).map(VenueReview.fromJson).toList(growable: false);
+    )
+        .map((entry) => _parseVenueModel(entry, VenueReview.fromJson, 'review'))
+        .toList(growable: false);
   }
 
   Future<void> createNewsReview({
@@ -240,7 +250,11 @@ class VenueApi {
     return _venueObjects(
       response,
       'posts',
-    ).map(MerchantNewsPost.fromJson).toList(growable: false);
+    )
+        .map(
+          (entry) => _parseVenueModel(entry, MerchantNewsPost.fromJson, 'news post'),
+        )
+        .toList(growable: false);
   }
 
   Future<void> createMerchantNewsPost({
@@ -329,6 +343,22 @@ Future<Map<String, dynamic>> _venueRequest(
   }
 }
 
+T _parseVenueModel<T>(
+  Map<String, dynamic> json,
+  T Function(Map<String, dynamic>) parser,
+  String label,
+) {
+  try {
+    return parser(json);
+  } on VenueDomainException catch (error) {
+    throw _invalidVenueResponse(
+      error.message.isEmpty
+          ? 'The server returned an invalid $label.'
+          : error.message,
+    );
+  }
+}
+
 List<Map<String, dynamic>> _venueObjects(
   Map<String, dynamic> response,
   String key,
@@ -390,30 +420,6 @@ void _validateNewsPost(
   if (post.imageUrl != null && post.imageUrl!.length > 10 * 1024 * 1024) {
     throw _invalidVenueInput('The venue image is invalid or too large.');
   }
-}
-
-int _venueInteger(dynamic value, String field) {
-  if (value is int) return value;
-  if (value is num && value.isFinite && value == value.roundToDouble()) {
-    return value.toInt();
-  }
-  if (value is String) {
-    final parsed = int.tryParse(value.trim());
-    if (parsed != null) return parsed;
-  }
-  throw _invalidVenueResponse('The server returned an invalid $field value.');
-}
-
-bool _venueBoolean(dynamic value, String field) {
-  if (value == true || value == 1 || value == '1') {
-    return true;
-  }
-  if (value == false || value == 0 || value == '0') {
-    return false;
-  }
-  if (value is String && value.trim().toLowerCase() == 'true') return true;
-  if (value is String && value.trim().toLowerCase() == 'false') return false;
-  throw _invalidVenueResponse('The server returned an invalid $field value.');
 }
 
 VenueApiException _invalidVenueInput(String message) =>

@@ -12,6 +12,7 @@ import 'core/booking_status.dart';
 Color get _profileInk => AppColors.ink;
 Color get _profileMuted => AppColors.muted;
 Color get _profileLine => AppColors.border;
+Color get _profileAccent => AppColors.accentForeground;
 
 enum _MerchantProfileSetting {
   editProfile,
@@ -406,15 +407,8 @@ class _MerchantProfileDashboardPageState
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       border: Border.all(color: _profileLine),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0D192B50),
-          blurRadius: 16,
-          offset: Offset(0, 6),
-        ),
-      ],
     ),
     child: Row(
       children: [
@@ -498,23 +492,19 @@ class _MerchantProfileDashboardPageState
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _profileLine),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D192B50),
-            blurRadius: 18,
-            offset: Offset(0, 7),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
-            decoration: const BoxDecoration(gradient: AppGradients.navyBrand),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border(bottom: BorderSide(color: _profileLine)),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -526,9 +516,9 @@ class _MerchantProfileDashboardPageState
                             ? "Today's performance"
                             : '$_performancePeriod performance',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: _profileInk,
                           fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                         ),
                         localize: true,
                       ),
@@ -537,10 +527,10 @@ class _MerchantProfileDashboardPageState
                       child: DropdownButton<String>(
                         key: const ValueKey('merchant-profile-date-filter'),
                         value: _performancePeriod,
-                        dropdownColor: AppColors.navy,
-                        iconEnabledColor: Colors.white,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        dropdownColor: AppColors.surface,
+                        iconEnabledColor: _profileMuted,
+                        style: TextStyle(
+                          color: _profileInk,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -572,12 +562,12 @@ class _MerchantProfileDashboardPageState
                   ],
                 ),
                 const SizedBox(height: 6),
-                const AppText(
+                AppText(
                   'CONFIRMED REVENUE',
                   style: TextStyle(
-                    color: Color(0xFFD8E1F1),
+                    color: _profileMuted,
                     fontSize: 10,
-                    letterSpacing: 1.1,
+                    letterSpacing: .8,
                     fontWeight: FontWeight.w700,
                   ),
                   localize: true,
@@ -586,11 +576,11 @@ class _MerchantProfileDashboardPageState
                 AppText(
                   '₱${_performanceRevenue.toStringAsFixed(2)}',
                   key: const ValueKey('merchant-profile-performance-revenue'),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _profileAccent,
                     fontSize: 30,
                     height: 1.1,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                   ),
                   localize: true,
                 ),
@@ -601,10 +591,7 @@ class _MerchantProfileDashboardPageState
                             ? 'No bookings scheduled today'
                             : '${bookings.length} booking${bookings.length == 1 ? '' : 's'} scheduled today'
                       : '${filteredBookings.length} booking${filteredBookings.length == 1 ? '' : 's'} in selected period',
-                  style: const TextStyle(
-                    color: Color(0xFFD8E1F1),
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: _profileMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -689,8 +676,8 @@ class _MerchantProfileDashboardPageState
     constraints: const BoxConstraints(minHeight: 82),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: AppColors.page,
-      borderRadius: BorderRadius.circular(14),
+      color: AppColors.surfaceVariant,
+      borderRadius: BorderRadius.circular(10),
       border: Border.all(color: _profileLine),
     ),
     child: Column(
@@ -909,15 +896,8 @@ class _MerchantProfileDashboardPageState
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       border: Border.all(color: _profileLine),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0D192B50),
-          blurRadius: 16,
-          offset: Offset(0, 6),
-        ),
-      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
