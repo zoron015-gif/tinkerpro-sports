@@ -583,15 +583,6 @@ class _ToggleOption extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x16000000),
-                    blurRadius: 5,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
         ),
         child: Center(
           child: AppText(
@@ -816,14 +807,7 @@ class _Hero extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
       decoration: BoxDecoration(
         color: _navy,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x25192B50),
-            blurRadius: 18,
-            offset: Offset(0, 9),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Stack(
         children: [
@@ -1307,13 +1291,6 @@ class _SelectionHeroState extends State<_SelectionHero> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x30192B50),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
       ),
       child: Stack(
         fit: StackFit.expand,
@@ -1451,15 +1428,6 @@ class _SportCard extends StatelessWidget {
             color: selected ? _orange : const Color(0xFFE6EAF1),
             width: selected ? 2 : 1,
           ),
-          boxShadow: selected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x28192B50),
-                    blurRadius: 12,
-                    offset: Offset(0, 5),
-                  ),
-                ]
-              : null,
         ),
         child: Stack(
           fit: StackFit.expand,

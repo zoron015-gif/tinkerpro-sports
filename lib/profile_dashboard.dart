@@ -74,6 +74,8 @@ class ProfileDashboardPage extends StatefulWidget {
 
 class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   late final AuthApi _api;
+  final _profileScrollController = ScrollController();
+  final _profileRefreshKey = GlobalKey<RefreshIndicatorState>();
   Timer? _bookingReminderTimer;
   Map<String, dynamic>? _user;
   List<Map<String, dynamic>> _bookings = [];
@@ -100,7 +102,30 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
   @override
   void dispose() {
     _bookingReminderTimer?.cancel();
+    _profileScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshAndScrollToTop() async {
+    final refresh = _profileRefreshKey.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _refreshProfile();
+    }
+    if (!mounted) return;
+    if (_profileScrollController.hasClients) {
+      await _profileScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
+  Future<void> _refreshProfile() async {
+    await FirebaseAuth.instance.currentUser?.reload();
+    await _loadProfile();
   }
 
   Future<void> _loadProfile() async {
@@ -775,11 +800,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async {
-            await FirebaseAuth.instance.currentUser?.reload();
-            await _loadProfile();
-          },
+          key: _profileRefreshKey,
+          onRefresh: _refreshProfile,
           child: ListView(
+            controller: _profileScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             children: [
@@ -810,6 +834,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       ),
       bottomNavigationBar: AppBottomNavigation(
         selectedIndex: 4,
+        onDestinationReselected: _refreshAndScrollToTop,
         onDestinationSelected: (index) {
           if (index == 0) {
             _openExplore(context);

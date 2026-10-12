@@ -525,13 +525,6 @@ class _EventBookingPageState extends State<EventBookingPage> {
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: AppColors.border),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x0D0F172A),
-                        blurRadius: 16,
-                        offset: Offset(0, 5),
-                      ),
-                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

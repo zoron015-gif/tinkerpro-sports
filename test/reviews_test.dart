@@ -85,6 +85,17 @@ void main() {
     );
     expect(find.text('5/5'), findsNothing);
 
+    await tester.tap(find.byKey(const ValueKey('review-photo-tap-0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('review-photo-fullscreen')),
+      findsOneWidget,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('review-photo-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('review-photo-fullscreen')), findsNothing);
+
     client.close();
   });
 

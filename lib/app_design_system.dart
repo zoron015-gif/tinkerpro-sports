@@ -262,8 +262,8 @@ abstract final class AppResponsive {
 abstract final class AppRadii {
   static const control = 12.0;
   static const button = 12.0;
-  static const merchantCard = 16.0;
-  static const marketplaceCard = 18.0;
+  static const merchantCard = 12.0;
+  static const marketplaceCard = 14.0;
   static const dialog = 14.0;
 }
 

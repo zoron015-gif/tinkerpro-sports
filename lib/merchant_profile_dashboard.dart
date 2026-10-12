@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'features/activity_log/presentation/activity_log_routes.dart';
+import 'app_session.dart';
 import 'app_bottom_navigation.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
@@ -54,13 +55,69 @@ class _MerchantProfileDashboardPageState
     extends State<MerchantProfileDashboardPage> {
   late Map<String, dynamic> _owner;
   late ImageProvider<Object>? _profileImage;
+  late final AuthApi _api;
+  late List<Map<String, dynamic>> _bookings;
+  late List<Map<String, dynamic>> _businesses;
+  final _profileRefreshKey = GlobalKey<RefreshIndicatorState>();
+  final _profileScrollController = ScrollController();
   String _performancePeriod = 'Today';
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? AuthApi();
     _owner = widget.owner;
     _profileImage = widget.profileImage;
+    _bookings = widget.bookings;
+    _businesses = widget.businesses;
+  }
+
+  @override
+  void dispose() {
+    _profileScrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshAndScrollToTop() async {
+    final refresh = _profileRefreshKey.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _refreshProfileData();
+    }
+    if (!mounted) return;
+    if (_profileScrollController.hasClients) {
+      await _profileScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
+  Future<void> _refreshProfileData() async {
+    try {
+      final session = await AppSession.load();
+      final token = session.apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException('Your session has expired.', 401);
+      }
+      final response = await _api.merchantProfile(token);
+      final businesses = await _api.merchantBusinesses(token);
+      final bookings = await _api.merchantBookings(token);
+      if (!mounted) return;
+      setState(() {
+        _owner = response['profile'] as Map<String, dynamic>? ?? {};
+        _businesses = businesses;
+        _bookings = bookings;
+      });
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not refresh merchant profile: $error')),
+        );
+      }
+    }
   }
 
   bool _isConfirmedBooking(Map<String, dynamic> booking) =>
@@ -71,7 +128,7 @@ class _MerchantProfileDashboardPageState
 
   List<Map<String, dynamic>> get _todayBookings {
     final now = DateTime.now();
-    return widget.bookings.where((booking) {
+    return _bookings.where((booking) {
       if (BookingStatusParser.isCancelled(booking['status'])) {
         return false;
       }
@@ -85,7 +142,7 @@ class _MerchantProfileDashboardPageState
   }
 
   List<Map<String, dynamic>> get _performanceBookings {
-    if (_performancePeriod == 'All time') return widget.bookings;
+    if (_performancePeriod == 'All time') return _bookings;
     final now = DateTime.now();
     final days = switch (_performancePeriod) {
       '7 days' => 7,
@@ -97,7 +154,7 @@ class _MerchantProfileDashboardPageState
       now.month,
       now.day,
     ).subtract(Duration(days: days - 1));
-    return widget.bookings.where((booking) {
+    return _bookings.where((booking) {
       final value = booking['date'] ?? booking['bookingDate'];
       final date = value is DateTime ? value : DateTime.tryParse('$value');
       return date != null &&
@@ -212,22 +269,29 @@ class _MerchantProfileDashboardPageState
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-        children: [
-          const SizedBox(height: 6),
-          _profileCard(name, email, phone),
-          const SizedBox(height: 6),
-          _performanceCard(),
-          const SizedBox(height: 6),
-          _quickToolsCard(),
-          const SizedBox(height: 6),
-          _businessOverviewCard(),
-        ],
+      body: RefreshIndicator(
+        key: _profileRefreshKey,
+        onRefresh: _refreshProfileData,
+        child: ListView(
+          controller: _profileScrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
+          children: [
+            const SizedBox(height: 6),
+            _profileCard(name, email, phone),
+            const SizedBox(height: 6),
+            _performanceCard(),
+            const SizedBox(height: 6),
+            _quickToolsCard(),
+            const SizedBox(height: 6),
+            _businessOverviewCard(),
+          ],
+        ),
       ),
       bottomNavigationBar: AppBottomNavigation(
         merchantMode: true,
         selectedIndex: 4,
+        onDestinationReselected: _refreshAndScrollToTop,
         onDestinationSelected: (index) {
           if (index == 4) return;
           widget.onNavigate?.call(index);
@@ -637,7 +701,7 @@ class _MerchantProfileDashboardPageState
                       child: _metric(
                         Icons.location_city_rounded,
                         'Active venues',
-                        '${widget.venueCount}',
+                        '${_businesses.length}',
                         const Color(0xFF7655C5),
                       ),
                     ),
@@ -757,23 +821,23 @@ class _MerchantProfileDashboardPageState
     final completionChecks = [
       businessName.isNotEmpty,
       '${_owner['address'] ?? ''}'.trim().isNotEmpty,
-      widget.businesses.any(_businessHasImage),
-      widget.businesses.isNotEmpty,
+      _businesses.any(_businessHasImage),
+      _businesses.isNotEmpty,
     ];
     final completed = completionChecks.where((value) => value).length;
-    final ratings = widget.businesses
+    final ratings = _businesses
         .map((business) => _number(business['averageRating']))
         .where((rating) => rating > 0)
         .toList();
     final rating = ratings.isEmpty
         ? null
         : ratings.reduce((first, second) => first + second) / ratings.length;
-    final openVenues = widget.businesses.where((business) {
+    final openVenues = _businesses.where((business) {
       final availability = '${business['availability'] ?? ''}'.toLowerCase();
       return availability.contains('open') ||
           availability.contains('available');
     }).length;
-    final recentBookings = [...widget.bookings]
+    final recentBookings = [..._bookings]
       ..sort((first, second) {
         final firstDate = DateTime.tryParse(
           '${first['createdAt'] ?? first['date'] ?? ''}',
@@ -830,9 +894,9 @@ class _MerchantProfileDashboardPageState
             const SizedBox(width: 6),
             Expanded(
               child: AppText(
-                widget.businesses.isEmpty
+                _businesses.isEmpty
                     ? 'No venues added yet'
-                    : '$openVenues of ${widget.businesses.length} venues marked open or available',
+                    : '$openVenues of ${_businesses.length} venues marked open or available',
                 style: TextStyle(color: _profileMuted, fontSize: 12),
               ),
             ),

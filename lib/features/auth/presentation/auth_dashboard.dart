@@ -518,13 +518,7 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x40101B33),
-                    blurRadius: 22,
-                    offset: Offset(0, -8),
-                  ),
-                ],
+                border: Border(top: BorderSide(color: AppColors.border)),
               ),
               child: SingleChildScrollView(
                 key: const ValueKey('auth-content-scroll'),

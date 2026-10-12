@@ -121,7 +121,8 @@ void main() {
     expect(AppColors.orange, const Color(0xFFFF8200));
     expect(AppColors.page, const Color(0xFFF7F9FC));
     expect(AppSpacing.large, 16);
-    expect(AppRadii.marketplaceCard, 18);
+    expect(AppRadii.marketplaceCard, 14);
+    expect(AppRadii.merchantCard, 12);
     expect(
       AppSpacing.buttonPadding,
       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -169,6 +170,11 @@ void main() {
     );
     expect(theme.cardTheme.color, Colors.white);
     expect(theme.cardTheme.elevation, AppCardStyles.elevation);
+    expect(theme.cardTheme.shadowColor, Colors.transparent);
+    expect(theme.navigationBarTheme.elevation, 0);
+    expect(theme.filledButtonTheme.style!.elevation!.resolve({}), 0);
+    expect(theme.elevatedButtonTheme.style!.elevation!.resolve({}), 0);
+    expect(AppCardStyles.surfaceDecoration().boxShadow ?? const [], isEmpty);
 
     final configuredTheme = AppTheme.configured(
       darkMode: true,
@@ -177,6 +183,14 @@ void main() {
     expect(
       configuredTheme.filledButtonTheme.style!.padding!.resolve({}),
       AppSpacing.buttonPadding,
+    );
+    expect(configuredTheme.cardTheme.elevation, 0);
+    expect(configuredTheme.cardTheme.shadowColor, Colors.transparent);
+    expect(configuredTheme.navigationBarTheme.elevation, 0);
+    expect(configuredTheme.filledButtonTheme.style!.elevation!.resolve({}), 0);
+    expect(
+      configuredTheme.elevatedButtonTheme.style!.elevation!.resolve({}),
+      0,
     );
     expect(
       configuredTheme.outlinedButtonTheme.style!.padding!.resolve({}),

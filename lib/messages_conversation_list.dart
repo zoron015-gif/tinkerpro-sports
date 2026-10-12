@@ -19,6 +19,7 @@ class MessagesConversationList extends StatelessWidget {
     required this.showArchived,
     required this.showBlocked,
     required this.currentUserId,
+    this.scrollController,
   });
 
   final List<Map<String, dynamic>> conversations;
@@ -35,6 +36,7 @@ class MessagesConversationList extends StatelessWidget {
   final bool showArchived;
   final bool showBlocked;
   final int? currentUserId;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +119,7 @@ class MessagesConversationList extends StatelessWidget {
         Expanded(
           child: filtered.isEmpty
               ? ListView(
+                  controller: scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
@@ -137,6 +140,7 @@ class MessagesConversationList extends StatelessWidget {
                   ],
                 )
               : ListView(
+                  controller: scrollController,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   children: filtered.map((conversation) {

@@ -187,13 +187,33 @@ class MerchantAddPageState extends State<MerchantAddPage> {
   String _selectedAddSection = 'Booking cards';
   String _businessSearchQuery = '';
   final _businessSearchController = TextEditingController();
+  final _addPageScrollController = ScrollController();
   List<Map<String, dynamic>> _newsPosts = [];
   bool _newsLoading = false;
+  final _addPageRefreshKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void dispose() {
     _businessSearchController.dispose();
+    _addPageScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> refreshAndScrollToTop() async {
+    final refresh = _addPageRefreshKey.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _refreshAddPage();
+    }
+    if (!mounted) return;
+    if (_addPageScrollController.hasClients) {
+      await _addPageScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   void openAddBusinessForm() {
@@ -3857,8 +3877,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
 
   @override
   Widget build(BuildContext context) => RefreshIndicator(
+    key: _addPageRefreshKey,
     onRefresh: _refreshAddPage,
     child: ListView(
+      controller: _addPageScrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),

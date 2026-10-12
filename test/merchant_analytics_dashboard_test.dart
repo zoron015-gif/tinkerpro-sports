@@ -162,12 +162,36 @@ void main() {
     final deleteButton = find.byKey(
       const ValueKey('merchant-booking-delete-42'),
     );
+    expect(deleteButton, findsOneWidget);
+
+    await tester.tap(find.text('Customer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('No-show'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-booking-delete-42')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Payment'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Payments'));
+    await tester.pumpAndSettle();
+    final paymentDeleteButton = find.byKey(
+      const ValueKey('merchant-payment-delete-42'),
+    );
+    expect(paymentDeleteButton, findsOneWidget);
     await tester.scrollUntilVisible(
-      deleteButton,
+      paymentDeleteButton,
       240,
       scrollable: _managementScrollable(tester),
     );
-    await tester.tap(deleteButton);
+    await Scrollable.ensureVisible(
+      tester.element(paymentDeleteButton),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(paymentDeleteButton);
     await tester.pumpAndSettle();
     expect(find.text('This action cannot be undone.'), findsNothing);
     expect(
@@ -177,6 +201,10 @@ void main() {
     await tester.tap(find.text('Delete permanently'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Booking'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Completed'));
+    await tester.pumpAndSettle();
     expect(find.text('No completed bookings'), findsOneWidget);
     expect(find.text('Completed booking permanently deleted.'), findsOneWidget);
   });
@@ -270,6 +298,12 @@ void main() {
     final mainManagementTabsFinder = find.byKey(
       const ValueKey('merchant-management-tabs'),
     );
+    final mainManagementTabs = tester.widget<SegmentedButton<int>>(
+      mainManagementTabsFinder,
+    );
+    final mainManagementTabsWidth = tester
+        .getSize(mainManagementTabsFinder)
+        .width;
     final bookingSubtabsFinder = find.byKey(
       const ValueKey('merchant-booking-management-status-tabs'),
     );
@@ -290,13 +324,37 @@ void main() {
       bookingSubtabs.style?.textStyle?.resolve({})?.fontWeight,
       FontWeight.w800,
     );
-    await tester.tap(find.text('Customer'));
-    await tester.pumpAndSettle();
+    final swipeContentFinder = find.byKey(
+      const ValueKey('merchant-management-swipe-content'),
+    );
+    Future<void> swipeManagement(Offset delta) async {
+      await tester.ensureVisible(swipeContentFinder);
+      final topLeft = tester.getTopLeft(swipeContentFinder);
+      final width = tester.getSize(swipeContentFinder).width;
+      await tester.dragFrom(topLeft + Offset(width / 2, 60), delta);
+      await tester.pumpAndSettle();
+    }
+
+    await swipeManagement(const Offset(-260, 0));
+    expect(
+      tester.widget<SegmentedButton<int>>(mainManagementTabsFinder).selected,
+      {1},
+    );
 
     final showVenueQr = tester.widget<FilledButton>(
       find.byKey(const ValueKey('merchant-show-arrival-qr')),
     );
     expect(showVenueQr.style!.foregroundColor!.resolve({}), Colors.white);
+    await swipeManagement(const Offset(-260, 0));
+    expect(
+      find.byKey(const ValueKey('merchant-payment-management-tabs')),
+      findsOneWidget,
+    );
+    await swipeManagement(const Offset(260, 0));
+    expect(
+      find.byKey(const ValueKey('merchant-customer-arrival-tabs')),
+      findsOneWidget,
+    );
     final arrivalTabs = tester.widget<SegmentedButton<int>>(
       find.byKey(const ValueKey('merchant-customer-arrival-tabs')),
     );
@@ -305,7 +363,7 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('merchant-customer-arrival-tabs')))
           .width,
-      tester.getSize(mainManagementTabsFinder).width,
+      mainManagementTabsWidth,
     );
     expect(
       arrivalTabs.style?.minimumSize?.resolve({}),
@@ -318,9 +376,6 @@ void main() {
     expect(
       arrivalTabs.style?.textStyle?.resolve({})?.fontWeight,
       bookingSubtabs.style?.textStyle?.resolve({})?.fontWeight,
-    );
-    final mainManagementTabs = tester.widget<SegmentedButton<int>>(
-      mainManagementTabsFinder,
     );
     expect(
       mainManagementTabs.style?.textStyle?.resolve({})?.fontSize,
@@ -1107,6 +1162,22 @@ void main() {
     expect(find.text('No refunds to review'), findsOneWidget);
     await tester.tap(find.text('Payments'));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('merchant-payment-overview')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-payment-overview-received')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-payment-overview-balance')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-payment-card-10')),
+      findsOneWidget,
+    );
     expect(find.text('Price'), findsWidgets);
     final paymentView = find.byKey(const ValueKey('merchant-payment-view-10'));
     tester.widget<OutlinedButton>(paymentView).onPressed!.call();

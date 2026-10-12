@@ -24,7 +24,7 @@ void main() {
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     expect(find.text('Messages'), findsOneWidget);
-    expect(find.text('Bookings'), findsOneWidget);
+    expect(find.text('Manage'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
 
@@ -46,7 +46,33 @@ void main() {
     expect(selectedStyle?.fontWeight, FontWeight.w700);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).height, 72);
 
-    await tester.tap(find.text('Bookings'));
+    await tester.tap(find.text('Manage'));
     expect(selectedIndex, 3);
+  });
+
+  testWidgets('quickly reselecting a merchant tab runs its callback', (
+    tester,
+  ) async {
+    var destinationSelections = 0;
+    var reselections = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          bottomNavigationBar: AppBottomNavigation(
+            merchantMode: true,
+            selectedIndex: 0,
+            onDestinationSelected: (_) => destinationSelections++,
+            onDestinationReselected: () => reselections++,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Dashboard'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('Dashboard'));
+
+    expect(destinationSelections, 1);
+    expect(reselections, 1);
   });
 }
