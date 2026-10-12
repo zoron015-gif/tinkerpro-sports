@@ -1683,7 +1683,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         setState(() => _error = 'Could not select the photo: $error');
     }
   }
-
+  }
   void _removeImage() {
     setState(() {
       _imageBytes = null;
