@@ -22,6 +22,7 @@ class MessagesChatView extends StatelessWidget {
     required this.onPickImage,
     required this.onRemovePendingImage,
     required this.onSend,
+    this.scrollController,
   });
 
   final List<Map<String, dynamic>> messages;
@@ -36,6 +37,7 @@ class MessagesChatView extends StatelessWidget {
   final VoidCallback onPickImage;
   final VoidCallback onRemovePendingImage;
   final Future<void> Function() onSend;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +49,7 @@ class MessagesChatView extends StatelessWidget {
                   child: AppText('Write the first message.', localize: true),
                 )
               : ListView.builder(
+                  controller: scrollController,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {

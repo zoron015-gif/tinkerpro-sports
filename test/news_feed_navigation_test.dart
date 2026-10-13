@@ -422,8 +422,8 @@ void main() {
       find.byKey(const ValueKey('sports-venue-content-panel')),
     );
     expect(
-      (eventContentPanel.decoration! as BoxDecoration).boxShadow,
-      isNotEmpty,
+      (eventContentPanel.decoration! as BoxDecoration).boxShadow ?? const [],
+      isEmpty,
     );
     expect(find.text('\u{20B1} 1200.00 / event'), findsWidgets);
     expect(find.text('Bring your own decorations.'), findsOneWidget);
@@ -997,6 +997,14 @@ void main() {
     );
 
     expect(
+      find.descendant(of: card, matching: find.text('Sports')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: card, matching: find.text('Basketball')),
+      findsOneWidget,
+    );
+    expect(
       tester
           .getSize(find.byKey(const ValueKey('news-feed-image-business-42')))
           .height,
@@ -1341,8 +1349,8 @@ void main() {
       find.byKey(const ValueKey('sports-venue-content-panel')),
     );
     expect(
-      (sportsContentPanel.decoration! as BoxDecoration).boxShadow,
-      isNotEmpty,
+      (sportsContentPanel.decoration! as BoxDecoration).boxShadow ?? const [],
+      isEmpty,
     );
     final imageCountBottom = tester.getBottomLeft(
       find.byKey(const ValueKey('sports-venue-image-count')),
@@ -1373,6 +1381,7 @@ void main() {
       find.byKey(const ValueKey('sports-venue-heart-count')),
     );
     expect((venueTitle.dy - heartCount.dy).abs(), lessThan(8));
+
   });
 
   testWidgets('Fitness venue route opens its configured booking plans', (
@@ -1477,8 +1486,8 @@ void main() {
       find.byKey(const ValueKey('sports-venue-content-panel')),
     );
     expect(
-      (fitnessContentPanel.decoration! as BoxDecoration).boxShadow,
-      isNotEmpty,
+      (fitnessContentPanel.decoration! as BoxDecoration).boxShadow ?? const [],
+      isEmpty,
     );
     for (final control in [
       Icons.arrow_back_ios_new_rounded,

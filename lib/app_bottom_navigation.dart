@@ -8,11 +8,12 @@ Color get _navigationInk => AppColors.ink;
 Color get _navigationOrange => AppColors.accent;
 Color get _navigationMuted => AppColors.muted;
 
-class AppBottomNavigation extends StatelessWidget {
+class AppBottomNavigation extends StatefulWidget {
   const AppBottomNavigation({
     super.key,
     required this.selectedIndex,
     required this.onDestinationSelected,
+    this.onDestinationReselected,
     this.unreadMessageCount = 0,
     this.unreadBookingCount = 0,
     this.merchantRequestCount = 0,
@@ -22,11 +23,39 @@ class AppBottomNavigation extends StatelessWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final VoidCallback? onDestinationReselected;
   final int unreadMessageCount;
   final int unreadBookingCount;
   final int merchantRequestCount;
   final bool merchantMode;
   final bool hideMerchantVenues;
+
+  @override
+  State<AppBottomNavigation> createState() => _AppBottomNavigationState();
+}
+
+class _AppBottomNavigationState extends State<AppBottomNavigation> {
+  static const _reselectWindow = Duration(milliseconds: 450);
+  int? _lastDestination;
+  DateTime? _lastTapAt;
+
+  void _onDestinationSelected(int index) {
+    final now = DateTime.now();
+    final isQuickReselect =
+        index == widget.selectedIndex &&
+        index == _lastDestination &&
+        _lastTapAt != null &&
+        now.difference(_lastTapAt!) <= _reselectWindow;
+
+    _lastDestination = index;
+    _lastTapAt = now;
+    if (isQuickReselect) {
+      _lastTapAt = null;
+      widget.onDestinationReselected?.call();
+      return;
+    }
+    widget.onDestinationSelected(index);
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -48,8 +77,8 @@ class AppBottomNavigation extends StatelessWidget {
           navigationBarTheme: NavigationBarThemeData(
             backgroundColor: AppColors.surface,
             surfaceTintColor: AppColors.surface,
-            shadowColor: const Color(0x14000000),
-            elevation: 2,
+            shadowColor: Colors.transparent,
+            elevation: 0,
             height: barHeight,
             indicatorColor: AppColors.softOrange,
             iconTheme: WidgetStateProperty.resolveWith((states) {
@@ -75,12 +104,12 @@ class AppBottomNavigation extends StatelessWidget {
           indicatorShape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          selectedIndex: selectedIndex,
+          selectedIndex: widget.selectedIndex,
           labelBehavior: veryNarrow
               ? NavigationDestinationLabelBehavior.onlyShowSelected
               : NavigationDestinationLabelBehavior.alwaysShow,
-          onDestinationSelected: onDestinationSelected,
-          destinations: merchantMode
+          onDestinationSelected: _onDestinationSelected,
+          destinations: widget.merchantMode
               ? [
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-dashboard'),
@@ -104,13 +133,13 @@ class AppBottomNavigation extends StatelessWidget {
                     key: ValueKey('merchant-dashboard-nav-payouts'),
                     icon: _countBadge(
                       Icons.pending_actions_outlined,
-                      merchantRequestCount,
+                      widget.merchantRequestCount,
                     ),
                     selectedIcon: _countBadge(
                       Icons.pending_actions_rounded,
-                      merchantRequestCount,
+                      widget.merchantRequestCount,
                     ),
-                    label: label('Bookings', 'Mga booking'),
+                    label: label('Manage', 'Pamahalaan'),
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-profile'),
@@ -134,10 +163,10 @@ class AppBottomNavigation extends StatelessWidget {
                   ),
                   NavigationDestination(
                     key: const ValueKey('news-feed-nav-messages'),
-                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
+                    icon: _countBadge(Icons.send_outlined, widget.unreadMessageCount),
                     selectedIcon: _countBadge(
                       Icons.send_rounded,
-                      unreadMessageCount,
+                      widget.unreadMessageCount,
                     ),
                     label: label('Messages', 'Mga mensahe'),
                   ),
@@ -145,11 +174,11 @@ class AppBottomNavigation extends StatelessWidget {
                     key: const ValueKey('news-feed-nav-bookings'),
                     icon: _countBadge(
                       Icons.calendar_today_outlined,
-                      unreadBookingCount,
+                      widget.unreadBookingCount,
                     ),
                     selectedIcon: _countBadge(
                       Icons.calendar_today_rounded,
-                      unreadBookingCount,
+                      widget.unreadBookingCount,
                     ),
                     label: label('Bookings', 'Mga booking'),
                   ),

@@ -275,9 +275,7 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
   );
 
   ({double average, int ratedUsers}) get _ratingSummary {
-    final ratings = _reviews
-        .map((review) => review.rating.toDouble())
-        .toList();
+    final ratings = _reviews.map((review) => review.rating.toDouble()).toList();
     final average = ratings.isEmpty
         ? 0.0
         : ratings.reduce((total, rating) => total + rating) / ratings.length;
@@ -364,20 +362,31 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (review.comment?.isNotEmpty == true)
-                AppText(review.comment!),
+              if (review.comment?.isNotEmpty == true) AppText(review.comment!),
               if (reviewImage != null) ...[
                 if (review.comment?.isNotEmpty == true)
                   const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image(
-                    key: ValueKey('review-photo-$index'),
-                    image: reviewImage,
-                    width: double.infinity,
-                    height: 150,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                Semantics(
+                  button: true,
+                  label: appLanguageText(
+                    'View review photo',
+                    'Tingnan ang larawan ng review',
+                  ),
+                  child: InkWell(
+                    key: ValueKey('review-photo-tap-$index'),
+                    onTap: () => _showReviewPhoto(reviewImage),
+                    borderRadius: BorderRadius.circular(12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image(
+                        key: ValueKey('review-photo-$index'),
+                        image: reviewImage,
+                        width: double.infinity,
+                        height: 150,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -387,6 +396,58 @@ class _ReviewsSheetState extends State<ReviewsSheet> {
       },
     );
   }
+
+  Future<void> _showReviewPhoto(ImageProvider<Object> image) =>
+      showGeneralDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: appLanguageText(
+          'Close review photo',
+          'Isara ang larawan ng review',
+        ),
+        barrierColor: Colors.black87,
+        transitionDuration: const Duration(milliseconds: 180),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) => SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Center(
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Image(
+                      key: const ValueKey('review-photo-fullscreen'),
+                      image: image,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton(
+                  key: const ValueKey('review-photo-close'),
+                  tooltip: appLanguageText(
+                    'Close review photo',
+                    'Isara ang larawan ng review',
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
+      );
 
   ImageProvider<Object>? _reviewAvatar(String value) {
     if (value.startsWith('data:image/')) {

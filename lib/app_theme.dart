@@ -34,7 +34,7 @@ abstract final class AppTheme {
       color: AppColors.surface,
       surfaceTintColor: Colors.transparent,
       elevation: AppCardStyles.elevation,
-      shadowColor: AppColors.neumorphicShadow,
+      shadowColor: Colors.transparent,
       shape: AppCardStyles.marketplaceShape,
     ),
     chipTheme: ChipThemeData(
@@ -89,6 +89,8 @@ abstract final class AppTheme {
         foregroundColor: Colors.white,
         padding: AppSpacing.buttonPadding,
         minimumSize: const Size(0, 46),
+        elevation: 0,
+        shadowColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(AppRadii.button)),
         ),
@@ -108,7 +110,10 @@ abstract final class AppTheme {
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(padding: AppSpacing.buttonPadding),
+      style: ElevatedButton.styleFrom(
+        padding: AppSpacing.buttonPadding,
+        shadowColor: Colors.transparent,
+      ).copyWith(elevation: const WidgetStatePropertyAll(0)),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(padding: AppSpacing.buttonPadding),
@@ -125,7 +130,7 @@ abstract final class AppTheme {
       backgroundColor: AppColors.surface,
       surfaceTintColor: AppColors.surface,
       shadowColor: Color(0x14000000),
-      elevation: 2,
+      elevation: 0,
       height: 72,
       indicatorColor: AppColors.softOrange,
       labelTextStyle: WidgetStatePropertyAll(
@@ -267,7 +272,7 @@ abstract final class AppTheme {
         color: surface,
         surfaceTintColor: Colors.transparent,
         elevation: AppCardStyles.elevation,
-        shadowColor: AppColors.neumorphicShadow,
+        shadowColor: Colors.transparent,
         shape: AppCardStyles.marketplaceShape,
       ),
       dividerTheme: DividerThemeData(
@@ -332,8 +337,8 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: accentColor,
           foregroundColor: onAccent,
-          elevation: 2,
-          shadowColor: AppColors.neumorphicShadow,
+          elevation: 0,
+          shadowColor: Colors.transparent,
           padding: AppSpacing.buttonPadding,
           minimumSize: const Size(0, 46),
           shape: const RoundedRectangleBorder(
@@ -365,10 +370,9 @@ abstract final class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: scheme.surfaceContainerLow,
           foregroundColor: scheme.primary,
-          elevation: 2,
-          shadowColor: AppColors.neumorphicShadow,
+          shadowColor: Colors.transparent,
           padding: AppSpacing.buttonPadding,
-        ),
+        ).copyWith(elevation: const WidgetStatePropertyAll(0)),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
@@ -477,6 +481,8 @@ abstract final class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
         surfaceTintColor: surface,
+        shadowColor: Colors.transparent,
+        elevation: 0,
         indicatorColor: accentColor.withValues(alpha: darkMode ? .28 : .14),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);

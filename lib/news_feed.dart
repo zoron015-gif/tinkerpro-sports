@@ -173,6 +173,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   late final AuthApi _api;
   late final VenueCatalogRepository _venueCatalog;
   final _searchController = TextEditingController();
+  final _feedScrollController = ScrollController();
+  final _feedRefreshKey = GlobalKey<RefreshIndicatorState>();
   late Future<List<Map<String, dynamic>>> _posts;
   final Set<String> _savedKeys = <String>{};
   final Set<String> _heartedVenueKeys = <String>{};
@@ -394,6 +396,23 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     await refreshed;
   }
 
+  Future<void> _refreshAndScrollToTop() async {
+    final refresh = _feedRefreshKey.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _reload();
+    }
+    if (!mounted) return;
+    if (_feedScrollController.hasClients) {
+      await _feedScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
   bool _handleFeedScroll(ScrollNotification notification) {
     if (widget.savedOnly ||
         notification.depth != 0 ||
@@ -432,6 +451,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _feedScrollController.dispose();
     super.dispose();
   }
 
@@ -496,6 +516,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _handleFeedScroll,
                   child: RefreshIndicator(
+                    key: _feedRefreshKey,
                     onRefresh: _reload,
                     child: FutureBuilder<List<Map<String, dynamic>>>(
                       future: _posts,
@@ -504,6 +525,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                             ConnectionState.waiting) {
                           return ListView(
                             key: const ValueKey('news-feed-loading-skeleton'),
+                            controller: _feedScrollController,
                             padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
                             children: [
                               const SkeletonBlock(height: 18, width: 150),
@@ -585,10 +607,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         : AppBottomNavigation(
             selectedIndex: widget.savedOnly ? 1 : 0,
             onDestinationSelected: _onNavigationSelected,
+            onDestinationReselected: _refreshAndScrollToTop,
           ),
   );
 
   Widget _savedCardList(List<Map<String, dynamic>> posts) => ListView.separated(
+    controller: _feedScrollController,
     physics: const AlwaysScrollableScrollPhysics(),
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
     padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
@@ -1568,6 +1592,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
     return ListView(
       key: const ValueKey('news-feed-content-list'),
+      controller: _feedScrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
@@ -1888,13 +1913,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                 color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: AppColors.border),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x0A192B50),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2392,6 +2410,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   Widget _message(String text, {Widget? action}) => ListView(
+    controller: _feedScrollController,
     physics: const AlwaysScrollableScrollPhysics(),
     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
     padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
@@ -2504,58 +2523,135 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                   ],
                 ),
               ),
-              if (type.isNotEmpty)
-                Positioned(
-                  top: 14,
-                  left: 14,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface.withValues(alpha: .94),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      child: AppText(
-                        type,
-                        localize: true,
-                        style: TextStyle(
-                          color: _newsInk,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (category.isNotEmpty) ...[
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _newsOrange,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: AppText(
+                            category,
+                            localize: true,
+                            style: TextStyle(
+                              color: AppColors.onAccent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              if (category.isNotEmpty)
-                Positioned(
-                  right: 14,
-                  top: 14,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _newsOrange,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+                      const SizedBox(height: 10),
+                    ],
+                    IconButton(
+                      key: ValueKey('news-feed-save-${_venueIdentifier(post)}'),
+                      onPressed: () => _toggleSaved(post),
+                      tooltip: appLanguageText(
+                        isSaved ? 'Remove from Saved' : 'Save venue',
+                        isSaved ? 'Remove from Saved' : 'Save venue',
+                        languageCode: Localizations.localeOf(context)
+                            .languageCode,
                       ),
-                      child: AppText(
-                        category,
-                        localize: true,
-                        style: TextStyle(
-                          color: AppColors.onAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 38,
+                        height: 38,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.surface.withValues(
+                          alpha: .94,
                         ),
+                        foregroundColor: isSaved
+                            ? _newsAccentForeground
+                            : _newsInk,
+                      ),
+                      icon: Icon(
+                        isSaved ? savedItemSelectedIcon : savedItemIcon,
+                        size: 20,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 38,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            key: ValueKey(
+                              'news-feed-heart-${_venueIdentifier(post)}',
+                            ),
+                            onPressed: () => _toggleHeart(post),
+                            tooltip: appLanguageText(
+                              isHearted ? 'Remove heart' : 'Heart venue',
+                              isHearted ? 'Remove heart' : 'Heart venue',
+                              languageCode: Localizations.localeOf(context)
+                                  .languageCode,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 38,
+                              height: 38,
+                            ),
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.surface.withValues(
+                                alpha: .94,
+                              ),
+                              foregroundColor: isHearted
+                                  ? Colors.red
+                                  : _newsInk,
+                            ),
+                            icon: Icon(
+                              isHearted
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          DecoratedBox(
+                            key: ValueKey(
+                              'news-feed-heart-count-${_venueIdentifier(post)}',
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface.withValues(alpha: .94),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              child: AppText(
+                                '$heartCount',
+                                style: TextStyle(
+                                  color: _newsMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                localize: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
           Padding(
@@ -2577,65 +2673,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      key: ValueKey('news-feed-save-${_venueIdentifier(post)}'),
-                      onPressed: () => _toggleSaved(post),
-                      tooltip: appLanguageText(
-                        isSaved ? 'Remove from Saved' : 'Save venue',
-                        isSaved ? 'Remove from Saved' : 'Save venue',
-                        languageCode: Localizations.localeOf(context)
-                            .languageCode,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      padding: AppSpacing.buttonPadding,
-                      constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
-                      ),
-                      color: isSaved ? _newsAccentForeground : _newsInk,
-                      icon: Icon(
-                        isSaved ? savedItemSelectedIcon : savedItemIcon,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      key: ValueKey(
-                        'news-feed-heart-${_venueIdentifier(post)}',
-                      ),
-                      onPressed: () => _toggleHeart(post),
-                      tooltip: appLanguageText(
-                        isHearted ? 'Remove heart' : 'Heart venue',
-                        isHearted ? 'Remove heart' : 'Heart venue',
-                        languageCode: Localizations.localeOf(context)
-                            .languageCode,
-                      ),
-                      visualDensity: VisualDensity.compact,
-                      padding: AppSpacing.buttonPadding,
-                      constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
-                      ),
-                      color: isHearted ? Colors.red : _newsInk,
-                      icon: Icon(
-                        isHearted
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    AppText(
-                      '$heartCount',
-                      key: ValueKey(
-                        'news-feed-heart-count-${_venueIdentifier(post)}',
-                      ),
-                      style: TextStyle(
-                        color: _newsMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      localize: true,
-                    ),
+                    const SizedBox(width: 8),
+                    _priceTag(priceLabel),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -2666,8 +2705,6 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                               ],
                             ),
                     ),
-                    const SizedBox(width: 6),
-                    _priceTag(priceLabel),
                   ],
                 ),
                 if (_distanceLabel(post) case final distance?) ...[

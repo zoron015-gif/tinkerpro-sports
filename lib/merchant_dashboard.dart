@@ -119,6 +119,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   int _paymentManagementTab = 0;
   String _payoutBookingType = 'All';
   String _payoutSearchQuery = '';
+  double _managementSwipeDistance = 0;
+  final _homeRefreshKey = GlobalKey<RefreshIndicatorState>();
+  final _managementRefreshKey = GlobalKey<RefreshIndicatorState>();
+  final ScrollController _homeScrollController = ScrollController();
   final ScrollController _managementScrollController = ScrollController();
   Timer? _payoutRefreshTimer;
 
@@ -196,6 +200,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       controller.dispose();
     }
     _managementScrollController.dispose();
+    _merchantAnalyticsUiStateFor(this).scrollController.dispose();
+    _homeScrollController.dispose();
     super.dispose();
   }
 
@@ -673,6 +679,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Widget _merchantPayouts() => RefreshIndicator(
+    key: _managementRefreshKey,
     onRefresh: _loadBookings,
     child: ListView(
       key: const ValueKey('merchant-management-list'),
@@ -738,12 +745,32 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           ),
         if (_payoutSearchQuery.isNotEmpty || _payoutBookingType != 'All')
           const SizedBox(height: 8),
-        if (_payoutTab == 1)
-          _customerManagementContent()
-        else if (_payoutTab == 2)
-          _paymentManagementContent()
-        else
-          _bookingManagementContent(),
+        GestureDetector(
+          key: const ValueKey('merchant-management-swipe-content'),
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (_) => _managementSwipeDistance = 0,
+          onHorizontalDragUpdate: (details) {
+            _managementSwipeDistance += details.delta.dx;
+          },
+          onHorizontalDragEnd: (_) {
+            if (_managementSwipeDistance.abs() >= 48) {
+              final direction = _managementSwipeDistance < 0 ? 1 : -1;
+              final nextTab = _payoutTab + direction;
+              if (nextTab >= 0 && nextTab <= 2) {
+                setState(() => _payoutTab = nextTab);
+              }
+            }
+            _managementSwipeDistance = 0;
+          },
+          child: SizedBox(
+            width: double.infinity,
+            child: _payoutTab == 1
+                ? _customerManagementContent()
+                : _payoutTab == 2
+                ? _paymentManagementContent()
+                : _bookingManagementContent(),
+          ),
+        ),
       ],
     ),
   );
@@ -817,7 +844,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           for (final booking in bookings) ...[
             _customerManagementBookingCard(
               booking,
-              showDelete: _bookingManagementTab == 2,
+              showDelete: _isMerchantDeletableBooking(booking),
             ),
             const SizedBox(height: 6),
           ],
@@ -895,7 +922,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             emptyMessage.$3,
           ),
         for (final booking in bookings) ...[
-          _customerManagementBookingCard(booking),
+          _customerManagementBookingCard(
+            booking,
+            showDelete: _isMerchantDeletableBooking(booking),
+          ),
           const SizedBox(height: 6),
         ],
       ],
@@ -1059,11 +1089,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'No booking payments',
               'Payments for customer bookings will appear here.',
             )
-          else
+          else ...[
+            _paymentOverviewCard(paymentBookings),
+            const SizedBox(height: 8),
             for (final booking in paymentBookings) ...[
               _paymentManagementBookingCard(booking),
-              const SizedBox(height: 6),
-            ]
+              const SizedBox(height: 8),
+            ],
+          ]
         else if (_paymentManagementTab == 1)
           _paymentEarningsContent(bookings)
         else if (refundBookings.isEmpty)
@@ -1080,6 +1113,138 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       ],
     );
   }
+
+  Widget _paymentOverviewCard(List<Map<String, dynamic>> bookings) {
+    final received = bookings.fold<double>(
+      0,
+      (sum, booking) => sum + _bookingAmountReceived(booking),
+    );
+    final balanceDue = bookings.fold<double>(0, (sum, booking) {
+      final amount = _bookingAmount(booking['total']);
+      final amountReceived = _bookingAmountReceived(booking);
+      return sum +
+          (amount - amountReceived).clamp(0, amount).toDouble();
+    });
+    return Card(
+      key: const ValueKey('merchant-payment-overview'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: _merchantOrange,
+                  size: 19,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppText(
+                    'Payment overview',
+                    style: TextStyle(
+                      color: _merchantInk,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    localize: true,
+                  ),
+                ),
+                AppText(
+                  '${bookings.length} ${bookings.length == 1 ? 'booking' : 'bookings'}',
+                  style: TextStyle(
+                    color: _merchantMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  localize: true,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _paymentOverviewAmount(
+                    key: const ValueKey('merchant-payment-overview-received'),
+                    label: 'Received',
+                    amount: received,
+                    icon: Icons.check_circle_outline_rounded,
+                    color: AppColors.success,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _paymentOverviewAmount(
+                    key: const ValueKey('merchant-payment-overview-balance'),
+                    label: 'Balance due',
+                    amount: balanceDue,
+                    icon: Icons.hourglass_bottom_rounded,
+                    color: _merchantOrange,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _paymentOverviewAmount({
+    required Key key,
+    required String label,
+    required double amount,
+    required IconData icon,
+    required Color color,
+  }) => Container(
+    key: key,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .08),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: color.withValues(alpha: .22)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: color, size: 15),
+            const SizedBox(width: 5),
+            Expanded(
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _merchantMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+                localize: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        AppText(
+          '\u{20B1} ${amount.toStringAsFixed(2)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _merchantInk,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _paymentEarningsContent(List<Map<String, dynamic>> bookings) {
     final grossCollected = bookings.fold<double>(
@@ -1411,27 +1576,177 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final total = _bookingAmount(booking['total']);
     final downpayment = _bookingAmount(booking['downpayment']);
     final balance = (total - received).clamp(0, total).toDouble();
+    final paymentStatusLabel = paid
+        ? 'Fully paid'
+        : paymentStatus == 'partial'
+        ? 'Downpayment received'
+        : 'Unpaid';
+    final statusColor = paid
+        ? AppColors.success
+        : paymentStatus == 'partial'
+        ? AppColors.warning
+        : _merchantOrange;
+    final dueLabel = isCashOnArrival && paymentStatus == 'unpaid'
+        ? 'Cash downpayment due'
+        : 'Balance due';
+    final dueAmount = isCashOnArrival && paymentStatus == 'unpaid'
+        ? downpayment
+        : balance;
     return Card(
+      key: ValueKey('merchant-payment-card-${booking['id']}'),
+      margin: EdgeInsets.zero,
       elevation: 0,
       color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.border),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AppText(
-              '${booking['customerName'] ?? 'Customer'}',
-              style: TextStyle(
-                color: _merchantInk,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-              localize: true,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppText(
+                        '${booking['customerName'] ?? 'Customer'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _merchantInk,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        localize: true,
+                      ),
+                      const SizedBox(height: 3),
+                      AppText(
+                        '#${booking['id']} · ${booking['venueName'] ?? 'Venue'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _merchantMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        localize: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: statusColor.withValues(alpha: .3)),
+                  ),
+                  child: AppText(
+                    paymentStatusLabel,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    localize: true,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant.withValues(alpha: .65),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderSubtle),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(
+                          'Booking total',
+                          style: TextStyle(
+                            color: _merchantMuted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          localize: true,
+                        ),
+                        const SizedBox(height: 3),
+                        AppText(
+                          '\u{20B1} ${total.toStringAsFixed(2)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _merchantInk,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 38,
+                    color: AppColors.border,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(
+                          dueLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _merchantMuted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          localize: true,
+                        ),
+                        const SizedBox(height: 3),
+                        AppText(
+                          '\u{20B1} ${dueAmount.toStringAsFixed(2)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: dueAmount > 0 ? _merchantOrange : AppColors.success,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             _payoutManagementInfoRow(
               'Payment method',
               _payoutPaymentLabel(booking['paymentMethod']),
+            ),
+            _payoutManagementInfoRow('Booking date', booking['date']),
+            _payoutManagementInfoRow(
+              'Amount received',
+              '\u{20B1} ${received.toStringAsFixed(2)}',
             ),
             _payoutManagementInfoRow(
               'Price',
@@ -1467,23 +1782,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   : 'Unpaid',
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
                 key: ValueKey('merchant-payment-view-${booking['id']}'),
                 onPressed: () =>
                     _showPayoutBookingDetails(booking, paymentOnly: true),
                 icon: const Icon(Icons.visibility_outlined),
                 label: const AppText('View payment', localize: true),
-              ),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: isCashOnArrival &&
-                      (paymentStatus == 'unpaid' ||
-                          paymentStatus == 'partial') &&
-                      !isCancelled
-                  ? OutlinedButton.icon(
+                ),
+                if (isCashOnArrival &&
+                    (paymentStatus == 'unpaid' ||
+                        paymentStatus == 'partial') &&
+                    !isCancelled)
+                  OutlinedButton.icon(
                       key: ValueKey('merchant-payment-toggle-${booking['id']}'),
                       onPressed: () => _setCashOnArrivalPaymentStatus(
                         booking,
@@ -1496,17 +1811,41 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                             : 'Mark remaining balance paid',
                         localize: true,
                       ),
-                    )
-                  : AppText(
-                      isCancelled
-                          ? 'Cancelled booking'
-                          : isCashOnArrival && paymentStatus == 'unpaid'
-                          ? 'Waiting for cash downpayment'
-                          : 'Online payment status is provider-managed',
-                      localize: true,
-                      style: const TextStyle(fontSize: 12),
                     ),
+                if (_isMerchantDeletableBooking(booking))
+                  OutlinedButton.icon(
+                    key: ValueKey(
+                      'merchant-payment-delete-${booking['id']}',
+                    ),
+                    onPressed: () => _deleteCompletedBooking(
+                      (booking['id'] as num).toInt(),
+                    ),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const AppText('Delete', localize: true),
+                  ),
+              ],
             ),
+            if (!(isCashOnArrival &&
+                (paymentStatus == 'unpaid' || paymentStatus == 'partial') &&
+                !isCancelled)) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: AppText(
+                  isCancelled
+                      ? 'Cancelled booking'
+                      : isCashOnArrival
+                      ? 'Cash payment recorded'
+                      : 'Online payment status is provider-managed',
+                  localize: true,
+                  style: TextStyle(
+                    color: _merchantMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1704,6 +2043,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.done;
+
+  bool _isMerchantDeletableBooking(Map<String, dynamic> booking) =>
+      '${booking['status'] ?? ''}'.trim().toLowerCase() == 'finished';
 
   bool _hasCheckedIn(Map<String, dynamic> booking) {
     final checkedInAt = booking['checkedInAt'];
@@ -2118,10 +2460,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Widget _merchantHome() => RefreshIndicator(
-    onRefresh: () async {
-      await _loadBusinesses();
-      await _loadBookings();
-    },
+    key: _homeRefreshKey,
+    onRefresh: _refreshMerchantDashboardData,
     child: LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 760;
@@ -2129,6 +2469,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             .where(_venueMatchesSearch)
             .toList();
         return ListView(
+          controller: _homeScrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: EdgeInsets.fromLTRB(wide ? 24 : 16, 8, wide ? 24 : 16, 28),
@@ -2735,6 +3076,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     merchantMode: true,
     selectedIndex: _merchantTab,
     merchantRequestCount: _bookings.where(_isPendingBooking).length,
+    onDestinationReselected: _refreshAndScrollToTop,
     onDestinationSelected: (index) {
       if (index == 2) {
         _openMerchantMessages();
@@ -2756,6 +3098,55 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       }
     },
   );
+
+  Future<void> _refreshMerchantDashboardData() async {
+    await _loadBusinesses();
+    await _loadBookings();
+  }
+
+  Future<void> _refreshAndScrollToTop() async {
+    final refreshKey = switch (_merchantTab) {
+      0 => _merchantAnalyticsUiStateFor(this).refreshKey,
+      1 => null,
+      3 => _managementRefreshKey,
+      _ => _homeRefreshKey,
+    };
+    if (_merchantTab == 1) {
+      await _merchantAddPageKey.currentState?.refreshAndScrollToTop();
+      return;
+    }
+
+    final refresh = refreshKey?.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else if (_merchantTab == 3) {
+      await _loadBookings();
+    } else {
+      await _refreshMerchantDashboardData();
+    }
+
+    if (!mounted) return;
+    switch (_merchantTab) {
+      case 0:
+      case 3:
+        break;
+      default:
+        return;
+    }
+
+    final controller = switch (_merchantTab) {
+      0 => _merchantAnalyticsUiStateFor(this).scrollController,
+      3 => _managementScrollController,
+      _ => null,
+    };
+    if (controller?.hasClients == true) {
+      await controller!.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
 
   void _openMerchantProfile() {
     Navigator.of(context).push(

@@ -198,13 +198,6 @@ class _ReserveDashboardPageState extends State<ReserveDashboardPage> {
           decoration: BoxDecoration(
             color: _surface,
             border: Border(top: BorderSide(color: AppColors.border)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .08),
-                blurRadius: 14,
-                offset: const Offset(0, -4),
-              ),
-            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -344,15 +337,6 @@ class _ExperienceCard extends StatelessWidget {
               color: selected ? accentForeground : AppColors.border,
               width: selected ? 2 : 1,
             ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: accentForeground.withValues(alpha: .16),
-                      blurRadius: 24,
-                      spreadRadius: 2,
-                    ),
-                  ]
-                : null,
           ),
           child: Row(
             children: [

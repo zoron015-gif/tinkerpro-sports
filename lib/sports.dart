@@ -352,13 +352,6 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(26),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x33000000),
-                        blurRadius: 18,
-                        offset: Offset(0, -7),
-                      ),
-                    ],
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -623,8 +616,8 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              gradient: AppGradients.warmSurface,
-                              borderRadius: BorderRadius.circular(18),
+                              color: AppColors.surfaceVariant,
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: AppColors.border),
                             ),
                             child: Column(
@@ -782,13 +775,6 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
             color: AppColors.surface.withValues(alpha: 0.97),
             borderRadius: BorderRadius.circular(20),
             border: Border(top: BorderSide(color: AppColors.border)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x24000000),
-                blurRadius: 20,
-                offset: Offset(0, -5),
-              ),
-            ],
           ),
           child: Row(
             children: [
@@ -866,13 +852,6 @@ class _SportsVenueDetailPageState extends State<SportsVenueDetailPage> {
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.96),
         shape: BoxShape.circle,
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 8,
-            offset: Offset(0, 3),
-          ),
-        ],
       ),
       child: IconButton(
         onPressed: onPressed,
@@ -1380,7 +1359,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     TimeOfDay bookingTime = TimeOfDay.now();
     var occupiedBookings = <Map<String, dynamic>>[];
     var availabilityLoading = true;
+    var availabilityError = false;
     var availabilityNow = DateTime.now();
+    var bookingSubmitting = false;
     final bookingIdempotencyKey = newBookingIdempotencyKey();
     Timer? availabilityTimer;
     final session = await AppSession.load();
@@ -1393,8 +1374,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           date: _bookingDateString(bookingDate),
         );
       } on Exception catch (error) {
+        availabilityError = true;
         _showMessage('Could not load this venue\'s availability: $error');
       }
+    } else {
+      availabilityError = true;
     }
     availabilityLoading = false;
     if (!mounted) return;
@@ -1455,15 +1439,24 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           final cashOnArrival = double.parse((total * 0.5).toStringAsFixed(2));
           final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
           final selectedSlotBooked = !selectionMatchesRequestedCount;
-          final relevantBookings = occupiedBookings.where((booking) {
-            return _bookingSlotOverlaps(
-              bookingTime,
-              hours,
-              [booking],
-              slotNumber: 1,
-              fullStudio: true,
-            );
-          }).toList();
+          final bookingStartsAt = DateTime(
+            bookingDate.year,
+            bookingDate.month,
+            bookingDate.day,
+            bookingTime.hour,
+            bookingTime.minute,
+          );
+          final bookingStartsInFuture = bookingStartsAt.isAfter(DateTime.now());
+          final validPayment =
+              payment == 'online' || payment == 'cash_on_arrival';
+          final validTotal = total.isFinite && total > 0 && dueNow.isFinite;
+          final bookingReady =
+              !availabilityLoading &&
+              !availabilityError &&
+              !selectedSlotBooked &&
+              bookingStartsInFuture &&
+              validTotal &&
+              validPayment;
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -1683,6 +1676,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                 setModalState(() {
                                   bookingDate = picked;
                                   availabilityLoading = true;
+                                  availabilityError = false;
+                                  occupiedBookings = [];
                                 });
                                 if (token != null && token.isNotEmpty) {
                                   try {
@@ -1696,22 +1691,25 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                       setModalState(() {
                                         occupiedBookings = bookings;
                                         availabilityLoading = false;
+                                        availabilityError = false;
                                       });
                                     }
                                   } on Exception catch (error) {
                                     if (context.mounted) {
-                                      setModalState(
-                                        () => availabilityLoading = false,
-                                      );
+                                      setModalState(() {
+                                        availabilityLoading = false;
+                                        availabilityError = true;
+                                      });
                                       _showMessage(
                                         'Could not refresh availability: $error',
                                       );
                                     }
                                   }
                                 } else {
-                                  setModalState(
-                                    () => availabilityLoading = false,
-                                  );
+                                  setModalState(() {
+                                    availabilityLoading = false;
+                                    availabilityError = true;
+                                  });
                                 }
                               }
                             },
@@ -1863,51 +1861,106 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       localize: true,
                     ),
                     const SizedBox(height: 6),
-                    if (!availabilityLoading && relevantBookings.isEmpty)
-                      AppText(
-                        'Selected slot is open for this date.',
-                        style: TextStyle(
-                          color: AppColors.success,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        localize: true,
+                    if (availabilityLoading)
+                      const LinearProgressIndicator()
+                    else if (availabilityError)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppText(
+                              token == null || token.isEmpty
+                                  ? 'Sign in to check availability before booking.'
+                                  : 'Availability could not be verified. Retry before paying.',
+                              style: TextStyle(
+                                color: AppColors.errorText,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              localize: true,
+                            ),
+                          ),
+                          if (token != null && token.isNotEmpty)
+                            TextButton(
+                              onPressed: () async {
+                                if (token.isEmpty) return;
+                                setModalState(() {
+                                  availabilityLoading = true;
+                                  availabilityError = false;
+                                  occupiedBookings = [];
+                                });
+                                try {
+                                  final bookings = await _api
+                                      .bookingAvailability(
+                                        token: token,
+                                        venueId: venue.id,
+                                        date: _bookingDateString(bookingDate),
+                                      );
+                                  if (context.mounted) {
+                                    setModalState(() {
+                                      occupiedBookings = bookings;
+                                      availabilityLoading = false;
+                                    });
+                                  }
+                                } on Exception catch (error) {
+                                  if (context.mounted) {
+                                    setModalState(() {
+                                      availabilityLoading = false;
+                                      availabilityError = true;
+                                    });
+                                    _showMessage(
+                                      'Could not refresh availability: $error',
+                                    );
+                                  }
+                                }
+                              },
+                              child: const AppText('Retry', localize: true),
+                            ),
+                        ],
                       )
                     else ...[
-                      AppText(
-                        'Selected slot schedule',
-                        style: TextStyle(
-                          color: AppColors.errorText,
-                          fontWeight: FontWeight.w800,
+                      if (occupiedBookings.isEmpty)
+                        AppText(
+                          'No booked slots for this date. Check another date.',
+                          style: TextStyle(
+                            color: AppColors.success,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          localize: true,
+                        )
+                      else
+                        AppText(
+                          'Booked schedule · ${occupiedBookings.length} booking${occupiedBookings.length == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: AppColors.errorText,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          localize: true,
                         ),
-                        localize: true,
-                      ),
                       const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: relevantBookings
-                            .map(
-                              (booking) => Chip(
-                                avatar: Icon(
-                                  Icons.event_busy_rounded,
-                                  size: 16,
-                                  color: AppColors.errorText,
-                                ),
-                                label: AppText(
-                                  _occupiedBookingLabel(
-                                    booking,
-                                    bookingDate: bookingDate,
-                                    now: availabilityNow,
-                                  ),
-                                ),
-                                backgroundColor: AppColors.error.withValues(
-                                  alpha: .12,
-                                ),
-                                side: BorderSide(color: AppColors.errorText),
-                              ),
-                            )
-                            .toList(),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          key: const ValueKey('selected-slot-schedule-toggle'),
+                          onPressed: () => _showOccupiedScheduleDialog(
+                            bookings: occupiedBookings,
+                            bookingDate: bookingDate,
+                            now: availabilityNow,
+                            fallbackSportType: selectedSportType,
+                            token: token!,
+                            venueId: venue.id,
+                          ),
+                          icon: const Icon(Icons.list_alt_rounded, size: 18),
+                          label: const AppText('View list', localize: true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.accentForeground,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
                       ),
                     ],
                     if (selectedSlotBooked) ...[
@@ -1928,6 +1981,20 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           ),
                           localize: true,
                         ),
+                      ),
+                    ],
+                    if (!availabilityLoading &&
+                        !availabilityError &&
+                        !bookingStartsInFuture) ...[
+                      const SizedBox(height: 6),
+                      AppText(
+                        'Choose a future time. Past booking times cannot be paid.',
+                        style: TextStyle(
+                          color: AppColors.errorText,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        localize: true,
                       ),
                     ],
                     const SizedBox(height: 6),
@@ -2014,38 +2081,32 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                       localize: true,
                     ),
                     const SizedBox(height: 6),
-                    SegmentedButton<String>(
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
-                              ? AppColors.softOrange
-                              : AppColors.surfaceVariant,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _bookingPaymentOption(
+                            value: 'online',
+                            selectedPayment: payment,
+                            title: 'Online payment',
+                            subtitle: 'Pay full amount securely',
+                            icon: Icons.lock_outline_rounded,
+                            onChanged: (value) =>
+                                setModalState(() => payment = value),
+                          ),
                         ),
-                        foregroundColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
-                              ? _sportsAccentForeground
-                              : _sportsInk,
-                        ),
-                        side: WidgetStateProperty.all(
-                          BorderSide(color: AppColors.border),
-                        ),
-                      ),
-                      segments: const [
-                        ButtonSegment(
-                          value: 'online',
-                          label: AppText('Online payment', localize: true),
-                          icon: Icon(Icons.lock_rounded),
-                        ),
-                        ButtonSegment(
-                          value: 'cash_on_arrival',
-                          label: AppText('COA', localize: true),
-                          icon: Icon(Icons.payments_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _bookingPaymentOption(
+                            value: 'cash_on_arrival',
+                            selectedPayment: payment,
+                            title: 'Cash at venue',
+                            subtitle: '50% downpayment',
+                            icon: Icons.payments_outlined,
+                            onChanged: (value) =>
+                                setModalState(() => payment = value),
+                          ),
                         ),
                       ],
-                      selected: {payment},
-                      onSelectionChanged: (selection) {
-                        setModalState(() => payment = selection.first);
-                      },
                     ),
                     const SizedBox(height: 6),
                     AppText(
@@ -2124,7 +2185,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: availabilityLoading || selectedSlotBooked
+                        onPressed: !bookingReady || bookingSubmitting
                             ? null
                             : () {
                                 _submitBooking(
@@ -2140,8 +2201,13 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                   total: total,
                                   extraPlayerCharge: extraPlayerCharge,
                                   payment: payment,
-                                  onPaymentChanged: (value) =>
-                                      setModalState(() => payment = value),
+                                  onSubmittingChanged: (submitting) {
+                                    if (modalContext.mounted) {
+                                      setModalState(
+                                        () => bookingSubmitting = submitting,
+                                      );
+                                    }
+                                  },
                                 );
                               },
                         style: FilledButton.styleFrom(
@@ -2153,9 +2219,18 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           ),
                           elevation: 0,
                         ),
-                        icon: const Icon(Icons.lock_outline_rounded),
+                        icon: bookingSubmitting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.lock_outline_rounded),
                         label: AppText(
-                          payment == 'cash_on_arrival'
+                          bookingSubmitting
+                              ? 'Processing payment…'
+                              : payment == 'cash_on_arrival'
                               ? 'Continue · \u{20B1} ${dueNow.toStringAsFixed(2)}'
                               : 'Pay · \u{20B1} ${dueNow.toStringAsFixed(2)}',
                         ),
@@ -2212,6 +2287,456 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     );
   }
 
+  Widget _bookingPaymentOption({
+    required String value,
+    required String selectedPayment,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required ValueChanged<String> onChanged,
+  }) {
+    final selected = value == selectedPayment;
+    return InkWell(
+      onTap: () => onChanged(value),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 90),
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.softOrange.withValues(alpha: .35)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? _sportsOrange : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: selected ? _sportsAccentForeground : _sportsMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppText(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _sportsInk,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    localize: true,
+                  ),
+                  const SizedBox(height: 3),
+                  AppText(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: _sportsMuted, fontSize: 10),
+                    localize: true,
+                  ),
+                ],
+              ),
+            ),
+            if (selected) ...[
+              const SizedBox(width: 4),
+              Icon(
+                Icons.check_circle_rounded,
+                size: 18,
+                color: _sportsAccentForeground,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showOccupiedScheduleDialog({
+    required List<Map<String, dynamic>> bookings,
+    required DateTime bookingDate,
+    required DateTime now,
+    required String fallbackSportType,
+    required String token,
+    required int venueId,
+  }) async {
+    var filteredBookings = bookings;
+    var selectedDate = bookingDate;
+    var loading = false;
+    String? loadError;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Dialog(
+          key: const ValueKey('selected-slot-schedule-dialog'),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 960,
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * .82,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const AppText(
+                              'Already booked slots',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              localize: true,
+                            ),
+                            const SizedBox(height: 3),
+                            AppText(
+                              '${MaterialLocalizations.of(dialogContext).formatMediumDate(selectedDate)} · ${filteredBookings.length} booking${filteredBookings.length == 1 ? '' : 's'}',
+                              style: TextStyle(
+                                color: _sportsMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: const ValueKey('selected-slot-schedule-date'),
+                          onPressed: loading
+                              ? null
+                              : () async {
+                                  final picked = await showDatePicker(
+                                    context: dialogContext,
+                                    initialDate: selectedDate,
+                                    firstDate: DateTime.now().subtract(
+                                      const Duration(days: 365),
+                                    ),
+                                    lastDate: DateTime.now().add(
+                                      const Duration(days: 365),
+                                    ),
+                                  );
+                                  if (picked == null ||
+                                      !dialogContext.mounted) {
+                                    return;
+                                  }
+                                  setDialogState(() {
+                                    selectedDate = picked;
+                                    filteredBookings = [];
+                                    loading = true;
+                                    loadError = null;
+                                  });
+                                  try {
+                                    final results = await _api
+                                        .bookingAvailability(
+                                          token: token,
+                                          venueId: venueId,
+                                          date: _bookingDateString(picked),
+                                        );
+                                    if (dialogContext.mounted) {
+                                      setDialogState(() {
+                                        filteredBookings = results;
+                                        loading = false;
+                                      });
+                                    }
+                                  } on Exception catch (error) {
+                                    if (dialogContext.mounted) {
+                                      setDialogState(() {
+                                        loading = false;
+                                        loadError =
+                                            'Could not load booked slots for this date: $error';
+                                      });
+                                    }
+                                  }
+                                },
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: AppText(
+                            MaterialLocalizations.of(dialogContext)
+                                .formatMediumDate(selectedDate),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Today',
+                        onPressed: loading
+                            ? null
+                            : () async {
+                                final today = DateTime.now();
+                                setDialogState(() {
+                                  selectedDate = today;
+                                  filteredBookings = [];
+                                  loading = true;
+                                  loadError = null;
+                                });
+                                try {
+                                  final results = await _api
+                                      .bookingAvailability(
+                                        token: token,
+                                        venueId: venueId,
+                                        date: _bookingDateString(today),
+                                      );
+                                  if (dialogContext.mounted) {
+                                    setDialogState(() {
+                                      filteredBookings = results;
+                                      loading = false;
+                                    });
+                                  }
+                                } on Exception catch (error) {
+                                  if (dialogContext.mounted) {
+                                    setDialogState(() {
+                                      loading = false;
+                                      loadError =
+                                          'Could not load booked slots for today: $error';
+                                    });
+                                  }
+                                }
+                              },
+                        icon: const Icon(Icons.today_outlined),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  if (loading)
+                    const Expanded(
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (loadError != null)
+                    Expanded(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: AppText(
+                            loadError!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.errorText,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (filteredBookings.isEmpty)
+                    const Expanded(
+                      child: Center(
+                        child: AppText(
+                          'No booked slots on this date.',
+                          localize: true,
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            horizontalMargin: 10,
+                            columnSpacing: 16,
+                            headingRowHeight: 42,
+                            dataRowMinHeight: 48,
+                            dataRowMaxHeight: 62,
+                            headingRowColor: WidgetStatePropertyAll(
+                              AppColors.surfaceVariant,
+                            ),
+                            columns: [
+                              for (final heading in [
+                                'Sport type',
+                                'Slot no.',
+                                'Date & time',
+                                'Duration',
+                                'Starting time',
+                                'End time',
+                                'Status',
+                              ])
+                                DataColumn(
+                                  label: AppText(
+                                    heading,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: _sportsMuted,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    localize: true,
+                                  ),
+                                ),
+                            ],
+                            rows: [
+                              for (final booking in filteredBookings)
+                                for (final slotLabel
+                                    in _occupiedBookingSlotLabels(booking))
+                                  DataRow(
+                                    cells: [
+                                      DataCell(
+                                        SizedBox(
+                                          width: 84,
+                                          child: AppText(
+                                            '${booking['sportType'] ?? booking['sport_type'] ?? fallbackSportType}',
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: _sportsInk,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        AppText(
+                                          slotLabel,
+                                          style: TextStyle(
+                                            color: AppColors.errorText,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        SizedBox(
+                                          width: 94,
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              AppText(
+                                                MaterialLocalizations.of(
+                                                  dialogContext,
+                                                ).formatMediumDate(
+                                                  selectedDate,
+                                                ),
+                                                maxLines: 1,
+                                                style: TextStyle(
+                                                  color: _sportsInk,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                              AppText(
+                                                _occupiedBookingStartTime(
+                                                  booking,
+                                                ),
+                                                maxLines: 1,
+                                                style: TextStyle(
+                                                  color: _sportsMuted,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        AppText(
+                                          _occupiedBookingDuration(booking),
+                                          style: TextStyle(
+                                            color: _sportsInk,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        AppText(
+                                          _occupiedBookingStartTime(booking),
+                                          style: TextStyle(
+                                            color: _sportsInk,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        SizedBox(
+                                          width: 100,
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              AppText(
+                                                _occupiedBookingEndTime(
+                                                  booking,
+                                                ),
+                                                maxLines: 1,
+                                                style: TextStyle(
+                                                  color: AppColors.errorText,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              if (_occupiedBookingCountdown(
+                                                    booking,
+                                                    bookingDate: selectedDate,
+                                                    now: now,
+                                                  )
+                                                  case final countdown?)
+                                                AppText(
+                                                  countdown,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    color: _sportsMuted,
+                                                    fontSize: 9,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        AppText(
+                                          'Booked',
+                                          style: TextStyle(
+                                            color: AppColors.errorText,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   ButtonStyle _bookingChoiceStyle() {
     return OutlinedButton.styleFrom(
       foregroundColor: _sportsInk,
@@ -2240,12 +2765,20 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     for (final booking in bookings) {
       final rawStart = '${booking['startTime'] ?? ''}';
       final parts = rawStart.split(':');
-      if (parts.length < 2) continue;
+      if (parts.length < 2) return true;
       final startHour = int.tryParse(parts[0]);
       final startMinute = int.tryParse(parts[1]);
       final duration = double.tryParse('${booking['durationHours']}');
-      if (startHour == null || startMinute == null || duration == null) {
-        continue;
+      if (startHour == null ||
+          startHour < 0 ||
+          startHour > 23 ||
+          startMinute == null ||
+          startMinute < 0 ||
+          startMinute > 59 ||
+          duration == null ||
+          !duration.isFinite ||
+          duration <= 0) {
+        return true;
       }
       final bookedStart = startHour * 60 + startMinute;
       final bookedEnd = bookedStart + (duration * 60).round();
@@ -2269,35 +2802,102 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         booking['occupies_full_studio'] == 1;
     if (fullStudio || bookingIsFullStudio) return true;
     final bookingSlotNumbers = booking['slotNumbers'];
-    if (bookingSlotNumbers is List &&
-        bookingSlotNumbers.any(
-          (value) => int.tryParse('$value') == slotNumber,
-        )) {
-      return true;
+    if (bookingSlotNumbers is List) {
+      final parsedSlots = bookingSlotNumbers
+          .map((value) => int.tryParse('$value'))
+          .whereType<int>()
+          .toList();
+      return parsedSlots.isEmpty || parsedSlots.contains(slotNumber);
     }
-    return int.tryParse(
-          '${booking['slotNumber'] ?? booking['slot_number'] ?? ''}',
-        ) ==
-        slotNumber;
+    final parsedSlotNumber = int.tryParse(
+      '${booking['slotNumber'] ?? booking['slot_number'] ?? ''}',
+    );
+    return parsedSlotNumber == null || parsedSlotNumber == slotNumber;
   }
 
-  String _occupiedBookingLabel(
-    Map<String, dynamic> booking, {
-    required DateTime bookingDate,
-    required DateTime now,
-  }) {
+  List<String> _occupiedBookingSlotLabels(Map<String, dynamic> booking) {
+    final fullStudio =
+        booking['occupiesFullStudio'] == true ||
+        booking['occupiesFullStudio'] == 1 ||
+        booking['occupies_full_studio'] == 1;
+    if (fullStudio) return ['Whole studio'];
+    final slotNumbers = booking['slotNumbers'];
+    if (slotNumbers is List) {
+      final slots =
+          slotNumbers
+              .map((value) => int.tryParse('$value'))
+              .whereType<int>()
+              .toSet()
+              .toList()
+            ..sort();
+      if (slots.isNotEmpty) return slots.map((slot) => 'Slot $slot').toList();
+    }
+    final slotNumber = int.tryParse(
+      '${booking['slotNumber'] ?? booking['slot_number'] ?? ''}',
+    );
+    return slotNumber == null ? ['—'] : ['Slot $slotNumber'];
+  }
+
+  int? _occupiedBookingStartMinutes(Map<String, dynamic> booking) {
     final rawStart = '${booking['startTime'] ?? ''}';
     final parts = rawStart.split(':');
     final hour = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
     final minute = parts.length > 1 ? int.tryParse(parts[1]) : null;
-    final duration = double.tryParse('${booking['durationHours']}') ?? 0;
-    if (hour == null || minute == null) return 'Unavailable';
-    final start = TimeOfDay(hour: hour, minute: minute);
-    final endMinutes = hour * 60 + minute + (duration * 60).round();
-    final end = TimeOfDay(
-      hour: (endMinutes ~/ 60) % 24,
-      minute: endMinutes % 60,
+    if (hour == null ||
+        hour < 0 ||
+        hour > 23 ||
+        minute == null ||
+        minute < 0 ||
+        minute > 59) {
+      return null;
+    }
+    return hour * 60 + minute;
+  }
+
+  double _occupiedBookingDurationHours(Map<String, dynamic> booking) =>
+      switch (double.tryParse('${booking['durationHours']}')) {
+        final duration? when duration.isFinite && duration > 0 => duration,
+        _ => 0,
+      };
+
+  String _occupiedBookingDuration(Map<String, dynamic> booking) {
+    final duration = _occupiedBookingDurationHours(booking);
+    if (duration <= 0) return '—';
+    final value = duration == duration.roundToDouble()
+        ? duration.toStringAsFixed(0)
+        : duration.toString();
+    return '$value ${duration == 1 ? 'hour' : 'hours'}';
+  }
+
+  String _occupiedBookingStartTime(Map<String, dynamic> booking) {
+    final startMinutes = _occupiedBookingStartMinutes(booking);
+    if (startMinutes == null) return '—';
+    return _formatTime(
+      TimeOfDay(hour: startMinutes ~/ 60, minute: startMinutes % 60),
     );
+  }
+
+  String _occupiedBookingEndTime(Map<String, dynamic> booking) {
+    final startMinutes = _occupiedBookingStartMinutes(booking);
+    if (startMinutes == null || _occupiedBookingDurationHours(booking) <= 0) {
+      return '—';
+    }
+    final endMinutes =
+        startMinutes + (_occupiedBookingDurationHours(booking) * 60).round();
+    return _formatTime(
+      TimeOfDay(hour: (endMinutes ~/ 60) % 24, minute: endMinutes % 60),
+    );
+  }
+
+  String? _occupiedBookingCountdown(
+    Map<String, dynamic> booking, {
+    required DateTime bookingDate,
+    required DateTime now,
+  }) {
+    final startMinutes = _occupiedBookingStartMinutes(booking);
+    if (startMinutes == null) return null;
+    final hour = startMinutes ~/ 60;
+    final minute = startMinutes % 60;
     final startDateTime = DateTime(
       bookingDate.year,
       bookingDate.month,
@@ -2305,23 +2905,15 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       hour,
       minute,
     );
-    final durationMinutes = (duration * 60).round();
+    final durationMinutes = (_occupiedBookingDurationHours(booking) * 60)
+        .round();
     final endDateTime = startDateTime.add(Duration(minutes: durationMinutes));
     final remaining = endDateTime.difference(now);
     final activeCountdown =
         !now.isBefore(startDateTime) && remaining.inSeconds > 0;
-    final slot =
-        booking['occupiesFullStudio'] == true ||
-            booking['occupiesFullStudio'] == 1 ||
-            booking['occupies_full_studio'] == 1
-        ? 'Whole studio'
-        : 'Slot ${booking['slotNumber'] ?? booking['slot_number'] ?? ''}';
-    final sport = '${booking['sportType'] ?? ''}'.trim();
-    final countdown = activeCountdown
-        ? ' · ${remaining.inHours}h ${remaining.inMinutes % 60}m remaining'
-        : '';
-    return '${sport.isEmpty ? slot : '$sport · $slot'} · '
-        '${_formatTime(start)} - ${_formatTime(end)}$countdown';
+    return activeCountdown
+        ? '${remaining.inHours}h ${remaining.inMinutes % 60}m remaining'
+        : null;
   }
 
   String _formatTime(TimeOfDay time) {
@@ -2343,12 +2935,72 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required double total,
     required double extraPlayerCharge,
     required String payment,
-    required ValueChanged<String> onPaymentChanged,
+    required ValueChanged<bool> onSubmittingChanged,
   }) async {
     final session = await AppSession.load();
     final token = session.apiToken;
     if (token == null || token.isEmpty || venue.id <= 0) {
       _showMessage('Please sign in before creating a booking.');
+      return;
+    }
+    if (hours < 1 ||
+        hours > 8 ||
+        players < 1 ||
+        players > 30 ||
+        slotNumbers.isEmpty ||
+        slotNumbers.toSet().length != slotNumbers.length ||
+        slotNumbers.any((slot) => slot <= 0) ||
+        (payment != 'online' && payment != 'cash_on_arrival') ||
+        !total.isFinite ||
+        total <= 0 ||
+        !extraPlayerCharge.isFinite ||
+        extraPlayerCharge < 0) {
+      _showMessage(
+        'Check the booking details and payment amount before continuing.',
+      );
+      return;
+    }
+    final bookingStart = DateTime(
+      bookingDate.year,
+      bookingDate.month,
+      bookingDate.day,
+      bookingTime.hour,
+      bookingTime.minute,
+    );
+    if (!bookingStart.isAfter(DateTime.now())) {
+      _showMessage('Choose a future date and time for this booking.');
+      return;
+    }
+    final selectedSport = venue.sportsSlots.firstWhere(
+      (sport) => sport['sportType'] == sportType,
+      orElse: () => venue.sportsSlots.first,
+    );
+    final fullStudio = selectedSport['fullStudio'] == true;
+    final configuredSlotCount = fullStudio
+        ? 1
+        : (selectedSport['slotCount'] as num?)?.toInt() ?? 0;
+    final rate = (selectedSport['pricePerHour'] as num?)?.toDouble() ?? 0;
+    final includedPlayersPerSlot =
+        (selectedSport['includedPlayers'] as num?)?.toInt() ?? 0;
+    final extraPlayerFee =
+        (selectedSport['additionalPlayerFee'] as num?)?.toDouble() ?? 0;
+    final expectedExtraPlayerCharge = calculateExtraPlayerCharge(
+      players: players,
+      includedPlayers: includedPlayersPerSlot * slotNumbers.length,
+      feePerExtraPlayer: extraPlayerFee,
+    );
+    final expectedTotal = rate * hours * slotNumbers.length + extraPlayerCharge;
+    if (rate <= 0 ||
+        !rate.isFinite ||
+        !extraPlayerFee.isFinite ||
+        extraPlayerFee < 0 ||
+        (fullStudio && slotNumbers.length != 1) ||
+        slotNumbers.any((slot) => slot > configuredSlotCount) ||
+        (extraPlayerCharge - expectedExtraPlayerCharge).abs() > 0.01 ||
+        (total - expectedTotal).abs() > 0.01) {
+      _showMessage(
+        'The booking total or selected slots are invalid. Review the details and try again.',
+      );
       return;
     }
     final date =
@@ -2358,14 +3010,35 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     final startTime =
         '${bookingTime.hour.toString().padLeft(2, '0')}:'
         '${bookingTime.minute.toString().padLeft(2, '0')}:00';
+    onSubmittingChanged(true);
     try {
-      final onlineProvider = payment == 'online'
-          ? await _chooseOnlineProvider()
-          : null;
-      if (payment == 'online' && onlineProvider == null) return;
       if (payment == 'online' && !await _api.payMongoPaymentsEnabled(token)) {
         _showMessage(
           'Online payments are unavailable right now. No booking has been created.',
+        );
+        return;
+      }
+      final onlineProvider = payment == 'online'
+          ? await _chooseOnlineProvider(amount: total)
+          : null;
+      if (payment == 'online' && onlineProvider == null) return;
+      final latestBookings = await _api.bookingAvailability(
+        token: token,
+        venueId: venue.id,
+        date: date,
+      );
+      final slotConflict = slotNumbers.any(
+        (slot) => _bookingSlotOverlaps(
+          bookingTime,
+          hours,
+          latestBookings,
+          slotNumber: slot,
+          fullStudio: fullStudio,
+        ),
+      );
+      if (slotConflict) {
+        _showMessage(
+          'This slot was just booked. Choose another available time before paying.',
         );
         return;
       }
@@ -2377,12 +3050,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         players: players,
         sportType: sportType,
         slotNumbers: slotNumbers,
-        fullStudio:
-            venue.sportsSlots.firstWhere(
-              (sport) => sport['sportType'] == sportType,
-              orElse: () => venue.sportsSlots.first,
-            )['fullStudio'] ==
-            true,
+        fullStudio: fullStudio,
         payment: payment,
         onlineProvider: onlineProvider,
         total: total,
@@ -2411,14 +3079,19 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           paymentMethod: onlineProvider!,
         );
         final checkoutUrl = checkout['checkoutUrl'] as String?;
-        if (checkoutUrl == null || checkoutUrl.isEmpty) {
+        final checkoutUri = checkoutUrl == null
+            ? null
+            : Uri.tryParse(checkoutUrl);
+        if (checkoutUri == null ||
+            checkoutUri.scheme != 'https' ||
+            checkoutUri.host.isEmpty) {
           throw const AuthApiException(
             'PayMongo did not return a checkout link.',
             502,
           );
         }
         final launched = await launchUrl(
-          Uri.parse(checkoutUrl),
+          checkoutUri,
           mode: LaunchMode.externalApplication,
         );
         if (!launched) {
@@ -2438,31 +3111,45 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       );
     } on Exception catch (error) {
       _showMessage('Could not submit booking: $error');
+    } finally {
+      onSubmittingChanged(false);
     }
   }
 
-  Future<String?> _chooseOnlineProvider() => showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const AppText('Choose online payment', localize: true),
-      content: const AppText(
-        'Select a payment provider to continue securely.',
-        localize: true,
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () => Navigator.pop(dialogContext, 'gcash'),
-          icon: const Icon(Icons.account_balance_wallet_rounded),
-          label: const AppText('GCash', localize: true),
+  Future<String?> _chooseOnlineProvider({required double amount}) =>
+      showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const AppText('Secure online payment', localize: true),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AppText(
+                'Choose a payment provider. You will review and complete payment on its secure checkout page.',
+                localize: true,
+              ),
+              const SizedBox(height: 12),
+              _confirmationRow(
+                'Amount to pay',
+                '\u{20B1} ${amount.toStringAsFixed(2)}',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, 'gcash'),
+              icon: const Icon(Icons.account_balance_wallet_rounded),
+              label: const AppText('GCash', localize: true),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
+              icon: const Icon(Icons.payments_rounded),
+              label: const AppText('PayMaya', localize: true),
+            ),
+          ],
         ),
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
-          icon: const Icon(Icons.payments_rounded),
-          label: const AppText('PayMaya', localize: true),
-        ),
-      ],
-    ),
-  );
+      );
 
   Future<bool> _confirmBookingDetails({
     required SportsVenue venue,

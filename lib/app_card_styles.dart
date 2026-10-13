@@ -8,33 +8,11 @@ abstract final class AppCardStyles {
   static const merchantRadius = AppRadii.merchantCard;
   static const marketplaceImageAspectRatio = 16 / 10;
   static const merchantImageHeight = 150.0;
-  static const elevation = 3.0;
+  static const elevation = 0.0;
 
-  static List<BoxShadow> get raisedShadows => [
-    BoxShadow(
-      color: AppColors.neumorphicShadow,
-      blurRadius: 14,
-      offset: const Offset(6, 6),
-    ),
-    BoxShadow(
-      color: AppColors.neumorphicHighlight,
-      blurRadius: 14,
-      offset: const Offset(-6, -6),
-    ),
-  ];
+  static List<BoxShadow> get raisedShadows => const [];
 
-  static List<BoxShadow> get insetShadows => [
-    BoxShadow(
-      color: AppColors.neumorphicShadow.withValues(alpha: .55),
-      blurRadius: 7,
-      offset: const Offset(3, 3),
-    ),
-    BoxShadow(
-      color: AppColors.neumorphicHighlight.withValues(alpha: .7),
-      blurRadius: 7,
-      offset: const Offset(-3, -3),
-    ),
-  ];
+  static List<BoxShadow> get insetShadows => const [];
 
   static BoxDecoration surfaceDecoration({
     Color? color,
@@ -46,19 +24,16 @@ abstract final class AppCardStyles {
     borderRadius: BorderRadius.circular(radius),
     border:
         border ??
-        Border.all(
-          color: AppColors.border.withValues(alpha: .65),
-        ),
-    boxShadow: inset ? insetShadows : raisedShadows,
+        Border.all(color: AppColors.border),
   );
 
   static RoundedRectangleBorder get marketplaceShape => RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(marketplaceRadius)),
-    side: BorderSide(color: borderColor.withValues(alpha: .65)),
+    side: BorderSide(color: borderColor),
   );
 
   static RoundedRectangleBorder get merchantShape => RoundedRectangleBorder(
     borderRadius: BorderRadius.all(Radius.circular(merchantRadius)),
-    side: BorderSide(color: borderColor.withValues(alpha: .65)),
+    side: BorderSide(color: borderColor),
   );
 }

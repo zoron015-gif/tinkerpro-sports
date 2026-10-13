@@ -54,9 +54,12 @@ class MessagesDashboardPage extends StatefulWidget {
 class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   late final MessagesService _messagesService;
   late final MessagesController _controller;
+  final _conversationScrollController = ScrollController();
+  final _chatScrollController = ScrollController();
   final _composer = TextEditingController();
   final _conversationSearch = TextEditingController();
   final _contactSearch = TextEditingController();
+  final _messagesRefreshKey = GlobalKey<RefreshIndicatorState>();
   final _imagePicker = ImagePicker();
   XFile? _pendingImage;
   String? _pendingImageData;
@@ -106,6 +109,8 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     _composer.dispose();
     _conversationSearch.dispose();
     _contactSearch.dispose();
+    _conversationScrollController.dispose();
+    _chatScrollController.dispose();
     super.dispose();
   }
 
@@ -139,6 +144,33 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         _show(error.toString());
       }
     }
+  }
+
+  Future<void> _refreshAndScrollToTop() async {
+    final refresh = _messagesRefreshKey.currentState?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _load();
+    }
+    if (!mounted) return;
+    try {
+      await _controller.refreshRealtime();
+    } on Exception catch (error) {
+      if (mounted) _show(error.toString());
+    }
+    await Future.wait([
+      for (final controller in [
+        _conversationScrollController,
+        _chatScrollController,
+      ])
+        if (controller.hasClients)
+          controller.animateTo(
+            0,
+            duration: const Duration(milliseconds: 700),
+            curve: Curves.easeInOutCubic,
+          ),
+    ]);
   }
 
   Future<void> _select(int id) async {
@@ -206,8 +238,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     if (token == null || conversationId == null || messageId == null) return;
 
     final isOwnMessage =
-        _currentUserId != null &&
-        _asInt(message['senderId']) == _currentUserId;
+        _currentUserId != null && _asInt(message['senderId']) == _currentUserId;
     final scope = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -226,10 +257,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                 children: [
                   Expanded(
                     child: AppText(
-                      appLanguageText(
-                        'Delete 1 message?',
-                        'Delete 1 message?',
-                      ),
+                      appLanguageText('Delete 1 message?', 'Delete 1 message?'),
                       style: TextStyle(
                         color: AppColors.ink,
                         fontSize: 20,
@@ -325,9 +353,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
         _show('Message deleted for everyone.');
       } else {
         _controller.setMessages(
-          _messages
-              .where((item) => _asInt(item['id']) != messageId)
-              .toList(),
+          _messages.where((item) => _asInt(item['id']) != messageId).toList(),
         );
         _show('Message deleted for you.');
       }
@@ -529,7 +555,9 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                         padding: const EdgeInsets.only(top: 4),
                         child: AppText(
                           'Select at least one recipient to continue.',
-                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                           localize: true,
                         ),
                       ),
@@ -823,6 +851,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
               ],
             )
           : RefreshIndicator(
+              key: _messagesRefreshKey,
               onRefresh: _load,
               color: _messageOrange,
               backgroundColor: AppColors.surface,
@@ -858,6 +887,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                     showArchived: _showArchived,
                     showBlocked: _showBlocked,
                     currentUserId: _currentUserId,
+                    scrollController: _conversationScrollController,
                   );
                   final chat = _selectedConversation == null
                       ? const Center(
@@ -879,6 +909,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
                           onPickImage: _pickImage,
                           onRemovePendingImage: _removePendingImage,
                           onSend: _send,
+                          scrollController: _chatScrollController,
                         );
                   return wide
                       ? Row(
@@ -904,6 +935,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
       unreadMessageCount: _unreadMessageCount,
       merchantMode: isMerchant,
       hideMerchantVenues: isMerchant,
+      onDestinationReselected: _refreshAndScrollToTop,
       onDestinationSelected: (index) {
         if (index == 2) return;
         if (isMerchant) {

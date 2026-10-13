@@ -90,7 +90,7 @@ void main() {
       tester.getSize(panelFinder).width,
       tester.view.physicalSize.width / tester.view.devicePixelRatio,
     );
-    expect(panelDecoration.boxShadow, isNotEmpty);
+    expect(panelDecoration.boxShadow ?? const [], isEmpty);
     expect(
       panelDecoration.borderRadius,
       const BorderRadius.vertical(top: Radius.circular(18)),

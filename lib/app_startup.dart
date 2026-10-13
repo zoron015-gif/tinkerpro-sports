@@ -124,13 +124,6 @@ class _StartupLoadingScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(32),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x14192B50),
-                      blurRadius: 28,
-                      offset: Offset(0, 12),
-                    ),
-                  ],
                 ),
                 child: Image.asset(
                   'assets/tinker_logo.png',

@@ -173,13 +173,6 @@ class MessagesBookingTicket extends StatelessWidget {
                 : AppColors.border,
             width: isBookingRequest || approved ? 1.5 : 1,
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14192B50),
-              blurRadius: 14,
-              offset: Offset(0, 5),
-            ),
-          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(

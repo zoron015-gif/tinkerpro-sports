@@ -66,6 +66,18 @@ class _VenueAnalytics {
   final int reviewCount;
 }
 
+class _MerchantAnalyticsUiState {
+  final refreshKey = GlobalKey<RefreshIndicatorState>();
+  final scrollController = ScrollController();
+}
+
+final _merchantAnalyticsUiStates = Expando<_MerchantAnalyticsUiState>();
+
+_MerchantAnalyticsUiState _merchantAnalyticsUiStateFor(
+  _MerchantDashboardPageState state,
+) =>
+    _merchantAnalyticsUiStates[state] ??= _MerchantAnalyticsUiState();
+
 extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _bookingBusinessType(Map<String, dynamic> booking) =>
       '${booking['businessType'] ?? booking['business_type'] ?? ''}'.trim();
@@ -153,11 +165,13 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   );
 
   Widget _merchantAnalyticsDashboard() => RefreshIndicator(
+    key: _merchantAnalyticsUiStateFor(this).refreshKey,
     onRefresh: () async {
       await _loadBusinesses();
       await _loadBookings();
     },
     child: ListView(
+      controller: _merchantAnalyticsUiStateFor(this).scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
@@ -290,13 +304,6 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _merchantLine),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A192B50),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -144,6 +144,13 @@ class _BookingGalleryState extends State<_BookingGallery> {
 class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   late final AuthApi _api;
   late Future<List<Booking>> _bookings;
+  final List<ScrollController> _bookingScrollControllers = List.generate(
+    3,
+    (_) => ScrollController(),
+  );
+  final List<GlobalKey<RefreshIndicatorState>> _bookingRefreshKeys = List
+      .generate(3, (_) => GlobalKey<RefreshIndicatorState>());
+  int _selectedBookingTab = 0;
   int _unreadBookingCount = 0;
   int _unreadMessageCount = 0;
   String? _messageCountError;
@@ -155,6 +162,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     super.initState();
     _api = widget.api ?? AuthApi();
     _bookings = _loadBookings();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _bookingScrollControllers) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<List<Booking>> _loadBookings() async {
@@ -212,6 +227,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       _bookings = _loadBookings();
     });
     await _bookings;
+  }
+
+  Future<void> _refreshAndScrollToTop() async {
+    final refresh = _bookingRefreshKeys[_selectedBookingTab].currentState
+        ?.show();
+    if (refresh != null) {
+      await refresh;
+    } else {
+      await _refresh();
+    }
+    if (!mounted) return;
+    final controller = _bookingScrollControllers[_selectedBookingTab];
+    if (controller.hasClients) {
+      await controller.animateTo(
+        0,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   Future<void> _dismissBookingStatusBanner() async {
@@ -375,6 +409,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     unselectedLabelColor: AppColors.muted,
                     indicatorColor: AppColors.accent,
                     indicatorWeight: 3,
+                    onTap: (index) =>
+                        setState(() => _selectedBookingTab = index),
                     tabs: [
                       Tab(
                         child: AppText(
@@ -403,14 +439,20 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                       _bookingTab(
                         pending,
                         emptyMessage: 'No pending bookings.',
+                        controller: _bookingScrollControllers[0],
+                        refreshKey: _bookingRefreshKeys[0],
                       ),
                       _bookingTab(
                         approved,
                         emptyMessage: 'No approved bookings.',
+                        controller: _bookingScrollControllers[1],
+                        refreshKey: _bookingRefreshKeys[1],
                       ),
                       _bookingTab(
                         completed,
                         emptyMessage: 'No completed bookings.',
+                        controller: _bookingScrollControllers[2],
+                        refreshKey: _bookingRefreshKeys[2],
                       ),
                     ],
                   ),
@@ -424,6 +466,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         selectedIndex: 3,
         unreadMessageCount: _unreadMessageCount,
         unreadBookingCount: _unreadBookingCount,
+        onDestinationReselected: _refreshAndScrollToTop,
         onDestinationSelected: (index) {
           if (index == 3) return;
           if (index == 0) {
@@ -549,11 +592,18 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
-  Widget _bookingTab(List<Booking> bookings, {required String emptyMessage}) {
+  Widget _bookingTab(
+    List<Booking> bookings, {
+    required String emptyMessage,
+    required ScrollController controller,
+    required GlobalKey<RefreshIndicatorState> refreshKey,
+  }) {
     return RefreshIndicator(
+      key: refreshKey,
       onRefresh: _refresh,
       child: bookings.isEmpty
           ? ListView(
+              controller: controller,
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 const SizedBox(height: 180),
@@ -561,6 +611,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               ],
             )
           : ListView.separated(
+              controller: controller,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: bookings.length,
@@ -611,13 +662,6 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D192B50),
-            blurRadius: 18,
-            offset: Offset(0, 6),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -910,7 +954,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: AppText(
-          isCancelled ? 'Delete cancelled booking?' : 'Delete completed booking?',
+          isCancelled
+              ? 'Delete cancelled booking?'
+              : 'Delete completed booking?',
           localize: true,
         ),
         content: AppText(
@@ -947,10 +993,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           400,
         );
       }
-      await _api.deleteCustomerBooking(
-        token: token,
-        bookingId: bookingId,
-      );
+      await _api.deleteCustomerBooking(token: token, bookingId: bookingId);
       if (!mounted) return;
       await _refresh();
       if (!mounted) return;
@@ -958,20 +1001,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: AppText(
-            'Booking permanently deleted.',
-            localize: true,
-          ),
+          content: AppText('Booking permanently deleted.', localize: true),
         ),
       );
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: AppText(
-            'Could not delete booking: $error',
-            localize: true,
-          ),
+          content: AppText('Could not delete booking: $error', localize: true),
         ),
       );
     }
@@ -1681,6 +1718,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
     } on Exception catch (error) {
       if (mounted) {
         setState(() => _error = 'Could not select the photo: $error');
+      }
     }
   }
   }
