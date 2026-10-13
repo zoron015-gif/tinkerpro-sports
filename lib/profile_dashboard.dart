@@ -637,16 +637,6 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                     onTap: () => Navigator.pop(dialogContext, 'activity'),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.swap_horiz_rounded),
-                    title: AppText(
-                      appLanguageText(
-                        'Switch to Host Portal',
-                        'Lumipat sa Portal ng Host',
-                      ),
-                    ),
-                    onTap: () => Navigator.pop(dialogContext, 'switch'),
-                  ),
-                  ListTile(
                     leading: const Icon(
                       Icons.logout_rounded,
                       color: Colors.red,
@@ -750,8 +740,6 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AppSettingsPage()),
         );
-      case 'switch':
-        _message(context, 'Host portal is opening soon.');
       case 'logout':
         await _logout(context);
       case 'help':

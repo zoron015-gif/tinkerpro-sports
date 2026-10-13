@@ -21,7 +21,7 @@ class AppPreferences extends ChangeNotifier {
   String? _activeAccount;
   String? _loadedAccount;
   bool _hasLoaded = false;
-  Future<void> _loadQueue = Future<void>.value();
+  final Map<String?, Future<void>> _loadInFlight = <String?, Future<void>>{};
 
   bool get darkMode => _darkMode;
   AppPalette get palette => _palette;
@@ -32,11 +32,19 @@ class AppPreferences extends ChangeNotifier {
 
   Future<void> load({String? accountEmail}) {
     final account = _normalizeAccount(accountEmail);
-    final operation = _loadQueue.then<void>(
-      (_) => _loadAccount(account),
-      onError: (Object error) => _loadAccount(account),
-    );
-    _loadQueue = operation;
+    if (_hasLoaded && _loadedAccount == account) {
+      return Future<void>.value();
+    }
+
+    final ongoing = _loadInFlight[account];
+    if (ongoing != null) {
+      return ongoing;
+    }
+
+    final operation = _loadAccount(account).whenComplete(() {
+      _loadInFlight.remove(account);
+    });
+    _loadInFlight[account] = operation;
     return operation;
   }
 
