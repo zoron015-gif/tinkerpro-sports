@@ -141,9 +141,14 @@ function normalizeBusinessType(value) {
   if (typeof value !== 'string') return null;
   return {
     sports: 'sports',
+    sport: 'sports',
     fitness: 'fitness & wellness',
+    wellness: 'fitness & wellness',
     'fitness & wellness': 'fitness & wellness',
+    'fitness wellness': 'fitness & wellness',
+    fitness_wellness: 'fitness & wellness',
     event: 'event',
+    events: 'event',
   }[value.trim().toLowerCase()] ?? null;
 }
 
@@ -1036,7 +1041,8 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
       [req.auth.sub, ...readConversationIds, req.auth.sub],
     );
     const [rows] = await pool.execute(
-      `SELECT m.id, m.sender_id AS senderId, m.body, m.created_at AS createdAt,
+      `SELECT m.id, m.conversation_id AS conversationId,
+              m.sender_id AS senderId, m.body, m.created_at AS createdAt,
               m.removed_at AS removedAt,
               CASE WHEN m.removed_at IS NULL THEN NULL
                    ELSE CONCAT_WS(' ', remover.first_name, remover.last_name)
@@ -1051,13 +1057,13 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
        FROM messages m
        JOIN users u ON u.id = m.sender_id
        LEFT JOIN users remover ON remover.id = m.removed_by
-       WHERE m.conversation_id = ?
+       WHERE m.conversation_id IN (${readConversationPlaceholders})
          AND NOT EXISTS (
            SELECT 1 FROM message_user_deletions mud
            WHERE mud.message_id = m.id AND mud.user_id = ?
          )
-       ORDER BY m.created_at ASC`,
-      [req.auth.sub, conversationId, req.auth.sub],
+       ORDER BY m.created_at ASC, m.id ASC`,
+      [req.auth.sub, ...readConversationIds, req.auth.sub],
     );
     for (const message of rows) {
       if (typeof message.attachmentJson === 'string') {
@@ -1070,6 +1076,52 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
         message.attachment = message.attachmentJson || null;
       }
       delete message.attachmentJson;
+    }
+    const bookingTicketIds = [
+      ...new Set(
+        rows
+          .map((message) => message.attachment)
+          .filter(
+            (attachment) =>
+              attachment &&
+              ['booking', 'booking_ticket', 'booking_payment_ticket'].includes(
+                attachment.type,
+              ),
+          )
+          .map((attachment) => positiveIntegerId(attachment.bookingId))
+          .filter((id) => id !== null),
+      ),
+    ];
+    if (bookingTicketIds.length > 0) {
+      const placeholders = bookingTicketIds.map(() => '?').join(', ');
+      const [ticketVenues] = await pool.execute(
+        `SELECT b.id AS bookingId, v.name AS venueName
+         FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.id IN (${placeholders})`,
+        bookingTicketIds,
+      );
+      const venueNames = new Map(
+        ticketVenues.map((booking) => [
+          String(booking.bookingId),
+          booking.venueName,
+        ]),
+      );
+      for (const message of rows) {
+        const attachment = message.attachment;
+        if (
+          !attachment ||
+          !['booking', 'booking_ticket', 'booking_payment_ticket'].includes(
+            attachment.type,
+          )
+        ) {
+          continue;
+        }
+        const bookingId = positiveIntegerId(attachment.bookingId);
+        const venueName =
+          bookingId === null ? null : venueNames.get(String(bookingId));
+        if (venueName) attachment.venueName = venueName;
+      }
     }
     return res.json({ messages: rows });
   } catch (error) {
@@ -2144,25 +2196,30 @@ function dateOnly(value) {
     : String(value).slice(0, 10);
 }
 
-function fitnessPlanEndDate(startDate, planType) {
+function fitnessPlanEndDate(startDate, planType, durationDays = null) {
   const start = new Date(`${dateOnly(startDate)}T00:00:00.000Z`);
-  const months = planType === 'monthly' ? 1 : planType === 'yearly' ? 12 : 0;
-  if (months === 0) return start.toISOString().slice(0, 10);
-  const targetMonth = new Date(Date.UTC(
-    start.getUTCFullYear(),
-    start.getUTCMonth() + months,
-    1,
-  ));
-  const lastDay = new Date(Date.UTC(
-    targetMonth.getUTCFullYear(),
-    targetMonth.getUTCMonth() + 1,
-    0,
-  )).getUTCDate();
-  return new Date(Date.UTC(
-    targetMonth.getUTCFullYear(),
-    targetMonth.getUTCMonth(),
-    Math.min(start.getUTCDate(), lastDay),
-  )).toISOString().slice(0, 10);
+  const days = Number.isSafeInteger(Number(durationDays)) && Number(durationDays) > 0
+    ? Number(durationDays)
+    : planType === 'monthly'
+    ? 30
+    : planType === 'yearly'
+    ? 365
+    : 1;
+  start.setUTCDate(start.getUTCDate() + days - 1);
+  return start.toISOString().slice(0, 10);
+}
+
+function fitnessPlanDurationDays(planType, category) {
+  if (planType === 'monthly') return 30;
+  if (planType === 'yearly') {
+    const freeMonths = category?.yearlyDiscountType === 'freeMonths'
+      ? Number(category.yearlyDiscountValue)
+      : 0;
+    return 365 + (Number.isSafeInteger(freeMonths) && freeMonths > 0
+      ? freeMonths * 30
+      : 0);
+  }
+  return planType === 'session' ? 1 : null;
 }
 
 function fitnessAvailabilityIncludesDate(availability, date) {
@@ -2189,6 +2246,24 @@ function fitnessAvailabilityIncludesDate(availability, date) {
 
 function validTime(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value);
+}
+
+function fitnessVenueHours(value) {
+  const match = String(value ?? '').match(
+    /^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$/i,
+  );
+  if (!match) return null;
+  const toMinutes = (hourText, minuteText, period) => {
+    const hour = Number(hourText);
+    const minute = Number(minuteText ?? 0);
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    return (hour % 12 + (period.toUpperCase() === 'PM' ? 12 : 0)) * 60 +
+      minute;
+  };
+  const opening = toMinutes(match[1], match[2], match[3]);
+  const closing = toMinutes(match[4], match[5], match[6]);
+  if (opening === null || closing === null || closing <= opening) return null;
+  return { opening, closing };
 }
 
 function normalizeSportsSlots(value, totalSlots) {
@@ -2479,6 +2554,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_plan_duration_days AS fitnessPlanDurationDays,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
               b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
@@ -2797,6 +2873,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     }
     const [venues] = await connection.execute(
       `SELECT b.id, b.merchant_id, b.name, b.category, b.business_type AS businessType,
+              b.opening_hours AS hours,
               b.price_per_hour, b.event_fee AS eventFee,
               b.slot_count AS slotCount, b.sports_slots_json AS sportsSlots,
               b.included_players, b.additional_player_fee, b.enabled,
@@ -2810,7 +2887,13 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       await connection.rollback();
       return res.status(404).json({ error: 'The venue is unavailable.' });
     }
-    const businessType = String(venue.businessType).trim().toLowerCase();
+    const businessType = normalizeBusinessType(String(venue.businessType));
+    if (!businessType) {
+      await connection.rollback();
+      return res.status(400).json({
+        error: 'This venue has an unsupported booking category.',
+      });
+    }
     const isFitness = businessType === 'fitness & wellness';
     const isEvent = businessType === 'event';
     let selectedEventType = null;
@@ -2819,20 +2902,51 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
     let fitnessCoach = null;
     let fitnessPlanPrice = 0;
     let fitnessCoachPrice = 0;
+    let fitnessDurationDays = null;
     let selectedSportType = sportType || venue.category || '';
     let fullStudio = true;
     let slotNumber = null;
     let slotNumbers = [];
     if (isFitness) {
-      if (durationHours !== 1 || players !== 1) {
+      if (players !== 1) {
         await connection.rollback();
         return res.status(400).json({
-          error: 'Fitness first visits must reserve one hour for one attendee.',
+          error: 'Fitness first visits must be for one attendee.',
         });
       }
       if (!['session', 'monthly', 'yearly'].includes(fitnessPlanType)) {
         await connection.rollback();
         return res.status(400).json({ error: 'Choose a valid Fitness plan.' });
+      }
+      if (fitnessPlanType === 'session') {
+        const hours = fitnessVenueHours(venue.hours);
+        const startMatch = startTime.match(/^([01]\d|2[0-3]):([0-5]\d)/);
+        const startMinutes = startMatch
+          ? Number(startMatch[1]) * 60 + Number(startMatch[2])
+          : null;
+        const fullSessionDuration = hours
+          ? (hours.closing - hours.opening) / 60
+          : null;
+        if (hours === null || fullSessionDuration === null) {
+          await connection.rollback();
+          return res.status(400).json({
+            error: 'This venue must provide valid same-day opening and closing hours before a full-day session can be booked.',
+          });
+        }
+        if (
+          startMinutes !== hours.opening ||
+          Math.abs(durationHours - fullSessionDuration) > 0.001
+        ) {
+          await connection.rollback();
+          return res.status(400).json({
+            error: 'A session plan must reserve the full venue schedule from opening through closing.',
+          });
+        }
+      } else if (durationHours !== 1) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: 'Monthly and yearly Fitness plans reserve a one-hour first visit.',
+        });
       }
       const [fitnessRows] = await connection.execute(
         `SELECT fitness_categories_json AS fitnessCategories,
@@ -2877,6 +2991,10 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
             1 - Number(fitnessCategory.yearlyDiscountValue) / 100;
         }
       }
+      fitnessDurationDays = fitnessPlanDurationDays(
+        fitnessPlanType,
+        fitnessCategory,
+      );
       if (fitnessCoachName) {
         if (fitnessCoachDurationMonths < 1) {
           await connection.rollback();
@@ -3040,10 +3158,15 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         price_per_hour, total_amount, downpayment_amount,
         extra_player_charge, event_type, fitness_plan_type, fitness_category,
         fitness_coach_name, fitness_plan_price, fitness_coach_price,
-        fitness_coach_duration_months,
+        fitness_coach_duration_months, fitness_plan_duration_days,
         booking_token_hash, payment_status, idempotency_key,
         idempotency_request_hash, status, slot_numbers_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+       VALUES (
+         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         ?, ?,
+         'pending', ?
+       )`,
       [req.auth.sub, venueId, bookingDate, startTime, durationHours, players,
        paymentMethod, selectedSportType, slotNumber, fullStudio ? 1 : 0,
        pricePerHour, total, downpayment, extraPlayerCharge,
@@ -3054,6 +3177,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
        isFitness ? fitnessPlanPrice : null,
        isFitness ? fitnessCoachPrice : null,
        isFitness && fitnessCoach ? fitnessCoachDurationMonths : null,
+       fitnessDurationDays,
        hashBookingToken(bookingToken),
        'unpaid',
        idempotencyKey, idempotencyRequestHash,
@@ -3078,6 +3202,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         JSON.stringify({
           type: 'booking',
           bookingId: result.insertId,
+          venueName: venue.name,
           transactionId: bookingTransactionId(result.insertId),
           businessType: venue.businessType,
           status: 'pending',
@@ -3227,19 +3352,24 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
       if (typeof businessType !== 'string') {
         return res.status(400).json({ error: 'Invalid business type filter.' });
       }
-      const normalizedBusinessType = businessType.trim().toLowerCase();
-      const businessTypeAliases = {
-        sports: 'sports',
-        fitness: 'fitness & wellness',
-        'fitness & wellness': 'fitness & wellness',
-        event: 'event',
-      };
-      const businessTypeValue = businessTypeAliases[normalizedBusinessType];
+      const businessTypeValue = normalizeBusinessType(businessType);
       if (!businessTypeValue) {
         return res.status(400).json({ error: 'Invalid business type filter.' });
       }
-      businessTypeFilter = ' AND LOWER(v.business_type) = ?';
-      params.push(businessTypeValue);
+      const aliases = {
+        sports: ['sports', 'sport'],
+        event: ['event', 'events'],
+        'fitness & wellness': [
+          'fitness & wellness',
+          'fitness',
+          'wellness',
+          'fitness wellness',
+          'fitness_wellness',
+        ],
+      }[businessTypeValue];
+      businessTypeFilter =
+        ` AND LOWER(TRIM(v.business_type)) IN (${aliases.map(() => '?').join(', ')})`;
+      params.push(...aliases);
     }
     const [bookings] = await pool.execute(
       `SELECT b.id, b.venue_id AS venueId, v.name AS venueName, v.address,
@@ -3264,6 +3394,7 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_plan_duration_days AS fitnessPlanDurationDays,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
               b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
@@ -3433,6 +3564,7 @@ async function customerFitnessBookingForAttendance(bookingId, customerId) {
   const [bookings] = await pool.execute(
     `SELECT b.id, b.booking_date AS bookingDate, v.availability,
             b.fitness_plan_type AS fitnessPlanType,
+            b.fitness_plan_duration_days AS fitnessPlanDurationDays,
             v.business_type AS businessType
      FROM bookings b
      JOIN merchant_businesses v ON v.id = b.venue_id
@@ -3451,6 +3583,7 @@ async function customerFitnessBookingForAttendance(bookingId, customerId) {
     endDate: fitnessPlanEndDate(
       booking.bookingDate,
       booking.fitnessPlanType,
+      booking.fitnessPlanDurationDays,
     ),
   };
 }
@@ -3688,6 +3821,7 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.slot_numbers_json AS slotNumbers,
               b.event_type AS eventType,
               b.fitness_plan_type AS fitnessPlanType,
+              b.fitness_plan_duration_days AS fitnessPlanDurationDays,
               b.fitness_category AS fitnessCategory,
               b.fitness_coach_name AS fitnessCoachName,
               b.fitness_coach_duration_months AS fitnessCoachDurationMonths,
@@ -4238,12 +4372,23 @@ async function customerNewsFeed(req, res, next) {
   if (req.query.businessType !== undefined && !businessType) {
     return res.status(400).json({ error: 'Invalid business type filter.' });
   }
+  const businessTypeValues = businessType
+    ? {
+        sports: ['sports', 'sport'],
+        event: ['event', 'events'],
+        'fitness & wellness': [
+          'fitness & wellness',
+          'fitness',
+          'wellness',
+          'fitness wellness',
+          'fitness_wellness',
+        ],
+      }[businessType]
+    : [];
   const businessTypeFilter = businessType
-    ? ' AND LOWER(b.business_type) = ?'
+    ? ` AND LOWER(TRIM(b.business_type)) IN (${businessTypeValues.map(() => '?').join(', ')})`
     : '';
-  const params = businessType
-    ? [req.auth.sub, businessType]
-    : [req.auth.sub];
+  const params = [req.auth.sub, ...businessTypeValues];
   try {
     const [rows] = await pool.execute(
       `SELECT n.*, b.name AS business_name, b.business_type,
@@ -4563,8 +4708,8 @@ app.use((error, req, res, next) => {
 });
 
 function startServer() {
-  const server = app.listen(port, () => {
-    console.log(`TinkerPro Sports API listening on http://localhost:${port}`);
+  const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`TinkerPro Sports API listening on http://0.0.0.0:${port}`);
   });
   const completionInterval = setInterval(() => {
     completeDueBookings().catch((error) => {

@@ -16,9 +16,32 @@ void main() {
       ['session', 'monthly', 'yearly'],
     );
     expect(FitnessBookingPricing.planPrice(category, 'yearly'), 9600);
+    expect(FitnessBookingPricing.planDurationDays(category, 'monthly'), 30);
+    expect(FitnessBookingPricing.planDurationDays(category, 'yearly'), 425);
+    expect(
+      FitnessBookingPricing.planDurationLabel(category, 'yearly'),
+      '425 days',
+    );
     expect(
       FitnessBookingPricing.yearlyOfferLabel(category, 'yearly'),
       'Yearly offer: 2 free months',
+    );
+  });
+
+  test('yearly duration adds only valid free-month offers', () {
+    expect(
+      FitnessBookingPricing.planDurationDays({
+        'yearlyDiscountType': 'percentage',
+        'yearlyDiscountValue': 2,
+      }, 'yearly'),
+      365,
+    );
+    expect(
+      FitnessBookingPricing.planDurationDays({
+        'yearlyDiscountType': 'freeMonths',
+        'yearlyDiscountValue': 3,
+      }, 'yearly'),
+      455,
     );
   });
 

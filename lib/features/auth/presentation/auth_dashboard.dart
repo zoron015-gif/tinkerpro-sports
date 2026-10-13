@@ -271,10 +271,25 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
         if (!mounted) return;
         Navigator.of(context).pop(true);
       }
+    } on AuthApiException catch (error) {
+      if (mounted) _showMessage(error.userMessage);
     } on FirebaseAuthException catch (error) {
-      if (mounted) _showMessage(error.message ?? 'Google sign-in failed.');
+      if (mounted) {
+        final message =
+            error.message ?? 'Google sign-in failed in local developer mode.';
+        _showMessage(message.contains('network') || message.contains('connection')
+            ? 'Google sign-in could not reach the local backend. Check that your API is running on the same Wi‑Fi/LAN and the app is pointed to the correct local URL.'
+            : message);
+      }
     } on Exception catch (error) {
-      if (mounted) _showMessage('Google sign-in failed: $error');
+      if (mounted) {
+        final raw = error.toString();
+        _showMessage(raw.toLowerCase().contains('connection') ||
+                raw.toLowerCase().contains('failed host lookup') ||
+                raw.toLowerCase().contains('socket')
+            ? 'Google sign-in could not reach the local backend. Check that your API is running on the same Wi‑Fi/LAN and the app is pointed to the correct local URL.'
+            : 'Google sign-in failed: $error');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

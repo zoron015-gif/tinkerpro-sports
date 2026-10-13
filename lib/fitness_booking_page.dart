@@ -4,10 +4,63 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_session.dart';
+import 'booking_cancellation_notice.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
 import 'fitness_booking_pricing.dart';
+import 'booking_schedule_conflict.dart';
 import 'app_preferences.dart';
+
+class _FitnessVenueHours {
+  const _FitnessVenueHours(this.openingMinute, this.closingMinute);
+
+  final int openingMinute;
+  final int closingMinute;
+
+  int get durationMinutes => closingMinute - openingMinute;
+
+  TimeOfDay get openingTime =>
+      TimeOfDay(hour: openingMinute ~/ 60, minute: openingMinute % 60);
+
+  TimeOfDay get closingTime =>
+      TimeOfDay(hour: closingMinute ~/ 60, minute: closingMinute % 60);
+
+  static _FitnessVenueHours? parse(String value) {
+    final match = RegExp(
+      r'^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (match == null) return null;
+
+    int? toMinutes(int hour, String? minuteText, String period) {
+      final minute = int.tryParse(minuteText ?? '0');
+      if (hour < 1 || hour > 12 || minute == null || minute > 59) {
+        return null;
+      }
+      final normalizedHour =
+          hour % 12 + (period.toUpperCase() == 'PM' ? 12 : 0);
+      return normalizedHour * 60 + minute;
+    }
+
+    final opening = toMinutes(
+      int.parse(match.group(1)!),
+      match.group(2),
+      match.group(3)!,
+    );
+    final closing = toMinutes(
+      int.parse(match.group(4)!),
+      match.group(5),
+      match.group(6)!,
+    );
+    if (opening == null ||
+        closing == null ||
+        closing <= opening ||
+        closing - opening > 24 * 60) {
+      return null;
+    }
+    return _FitnessVenueHours(opening, closing);
+  }
+}
 
 class FitnessBookingPage extends StatefulWidget {
   const FitnessBookingPage({
@@ -42,7 +95,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   TimeOfDay? _time;
   String? _timeError;
   final _firstVisitFieldKey = GlobalKey();
-  String _payment = 'online';
+  String _payment = 'cash_on_arrival';
   final String _bookingIdempotencyKey = newBookingIdempotencyKey();
   String? _token;
   List<Map<String, dynamic>> _busyTimes = [];
@@ -157,11 +210,43 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
 
   int get _businessId => int.tryParse('${widget.business['id'] ?? ''}') ?? 0;
 
+  bool get _isSessionPlan => _plan == 'session';
+
+  _FitnessVenueHours? get _sessionHours =>
+      _FitnessVenueHours.parse('${widget.business['hours'] ?? ''}');
+
+  TimeOfDay? get _firstVisitStartTime =>
+      _isSessionPlan ? _sessionHours?.openingTime : _time;
+
+  double get _firstVisitDurationHours =>
+      _isSessionPlan ? (_sessionHours?.durationMinutes ?? 0) / 60 : 1;
+
+  String _durationLabel(int minutes) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    return [
+      if (hours > 0) '$hours ${hours == 1 ? 'hour' : 'hours'}',
+      if (remainingMinutes > 0)
+        '$remainingMinutes ${remainingMinutes == 1 ? 'minute' : 'minutes'}',
+    ].join(' ');
+  }
+
+  String _firstVisitScheduleLabel(BuildContext context) {
+    final date = _dateString(_date);
+    if (_isSessionPlan) {
+      final hours = _sessionHours;
+      return hours == null
+          ? date
+          : '$date · ${hours.openingTime.format(context)}–${hours.closingTime.format(context)}';
+    }
+    return _time == null ? date : '$date · ${_time!.format(context)}';
+  }
+
   bool get _timeUnavailable {
-    final time = _time;
+    final time = _firstVisitStartTime;
     if (time == null) return false;
     final selectedStart = time.hour * 60 + time.minute;
-    final selectedEnd = selectedStart + 60;
+    final selectedEnd = selectedStart + (_firstVisitDurationHours * 60).round();
     for (final booking in _busyTimes) {
       final pieces = '${booking['startTime'] ?? ''}'.split(':');
       if (pieces.length < 2) continue;
@@ -207,7 +292,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
 
   Future<void> _submit() async {
     final token = _token;
-    final time = _time;
+    final time = _firstVisitStartTime;
     if (token == null || token.isEmpty) {
       _message('Please sign in to book a fitness session.');
       return;
@@ -224,6 +309,12 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     }
     if (_plan == null) {
       _message('Please choose a plan to see its price and availability.');
+      return;
+    }
+    if (_isSessionPlan && _sessionHours == null) {
+      _message(
+        'This venue has not provided valid same-day opening and closing hours for a full-day session. Please contact the venue.',
+      );
       return;
     }
     if (time == null) {
@@ -270,6 +361,16 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
         time.hour,
         time.minute,
       );
+      final scheduleAvailable = await confirmBookingScheduleConflict(
+        context: context,
+        api: widget.api,
+        token: token,
+        venueId: _businessId,
+        venueName: '${widget.business['name'] ?? 'Fitness venue'}',
+        startsAt: bookingStart,
+        durationHours: _firstVisitDurationHours,
+      );
+      if (!scheduleAvailable || !mounted) return;
       final timeUntilBooking = bookingStart.difference(DateTime.now());
       final startsWithin24Hours =
           !timeUntilBooking.isNegative &&
@@ -284,28 +385,17 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
             children: [
               AppText(
                 '${widget.business['name'] ?? 'Fitness venue'}\n'
-                '$_category · ${_plan!.toUpperCase()}\n'
-                '${_dateString(_date)} at ${time.format(context)}\n'
+                '$_category · ${_planTitle(_plan!)}\n'
+                'Plan duration: ${FitnessBookingPricing.planDurationLabel(_selectedCategory, _plan) ?? 'Not available'}\n'
+                '${_dateString(_date)} · ${_isSessionPlan ? '${time.format(context)}–${_sessionHours!.closingTime.format(context)}' : time.format(context)}\n'
                 '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
                 '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
-                '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
+                '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time plan total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
                 localize: true,
               ),
               if (startsWithin24Hours) ...[
                 const SizedBox(height: 12),
-                AppText(
-                  'This booking starts within 24 hours. You may cancel it '
-                  'at any time. If cancelled at least 6 hours before it starts, '
-                  'an online payment refund will be requested. If cancelled '
-                  'less than 6 hours before it starts or after it has started, '
-                  'the payment will not be voided or refunded. Cash already '
-                  'collected must be returned manually.',
-                  localize: true,
-                  style: TextStyle(
-                    color: AppColors.errorText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                const BookingCancellationNotice(),
               ],
             ],
           ),
@@ -331,7 +421,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
         startTime:
             '${time.hour.toString().padLeft(2, '0')}:'
             '${time.minute.toString().padLeft(2, '0')}:00',
-        durationHours: 1,
+        durationHours: _firstVisitDurationHours,
         players: 1,
         paymentMethod: payment,
         sportType: _category!,
@@ -648,64 +738,83 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                 ),
               ],
               const SizedBox(height: 6),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final coachLabelWidth = (constraints.maxWidth - 160).clamp(
-                    72.0,
-                    240.0,
-                  );
-                  return DropdownButtonFormField<String?>(
-                    initialValue: _coachName,
-                    decoration: _decoration(
-                      prefixIcon: const Icon(Icons.person_outline_rounded),
-                      labelText: appLanguageText(
-                        'Coach (optional)',
-                        'Coach (optional)',
+              if (_coaches.isEmpty)
+                Container(
+                  key: const ValueKey('fitness-no-coaches-notice'),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const AppText(
+                    'No coaches are currently listed for this venue. You can continue without a coach.',
+                    localize: true,
+                  ),
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final coachLabelWidth = (constraints.maxWidth - 160).clamp(
+                      72.0,
+                      240.0,
+                    );
+                    return DropdownButtonFormField<String?>(
+                      initialValue: _coachName,
+                      decoration: _decoration(
+                        prefixIcon: const Icon(Icons.person_outline_rounded),
+                        labelText: appLanguageText(
+                          'Coach (optional)',
+                          'Coach (optional)',
+                        ),
                       ),
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: AppText('No coach', localize: true),
-                      ),
-                      ..._coaches.map((coach) {
-                        final coachName = '${coach['name'] ?? ''}';
-                        final monthly =
-                            double.tryParse('${coach['monthlyPrice']}') ?? 0;
-                        final profileImage = _profileImage(
-                          coach['profileImageUrl'],
-                        );
-                        return DropdownMenuItem<String?>(
-                          value: coachName,
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 15,
-                                backgroundImage: profileImage,
-                                child: profileImage == null
-                                    ? const Icon(Icons.person, size: 18)
-                                    : null,
-                              ),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                width: coachLabelWidth,
-                                child: AppText(
-                                  '$coachName · ? '
-                                  '${monthly.toStringAsFixed(2)}/month',
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                  localize: true,
-                                ),
-                              ),
-                            ],
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: AppText(
+                            'Continue without a coach',
+                            localize: true,
                           ),
-                        );
-                      }),
-                    ],
-                    onChanged: (value) => setState(() => _coachName = value),
-                  );
-                },
-              ),
+                        ),
+                        ..._coaches.map((coach) {
+                          final coachName = '${coach['name'] ?? ''}';
+                          final monthly =
+                              double.tryParse('${coach['monthlyPrice']}') ?? 0;
+                          final profileImage = _profileImage(
+                            coach['profileImageUrl'],
+                          );
+                          return DropdownMenuItem<String?>(
+                            value: coachName,
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 15,
+                                  backgroundImage: profileImage,
+                                  child: profileImage == null
+                                      ? const Icon(Icons.person, size: 18)
+                                      : null,
+                                ),
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  width: coachLabelWidth,
+                                  child: AppText(
+                                    '$coachName · ? '
+                                    '${monthly.toStringAsFixed(2)}/month',
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    localize: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) => setState(() => _coachName = value),
+                    );
+                  },
+                ),
               if (_coachName != null) ...[
                 const SizedBox(height: 6),
                 _coachDurationSelector(),
@@ -728,22 +837,37 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                 key: _firstVisitFieldKey,
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _chooseDate,
-                      style: _choiceStyle(),
-                      icon: const Icon(Icons.calendar_month_rounded),
-                      label: AppText(_dateString(_date)),
+                    child: _firstVisitField(
+                      key: const ValueKey('fitness-booking-date-field'),
+                      label: 'Date',
+                      value: _dateString(_date),
+                      icon: Icons.calendar_month_rounded,
+                      onTap: _chooseDate,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _chooseTime,
-                      style: _timeChoiceStyle(),
-                      key: const ValueKey('fitness-booking-first-visit-time'),
-                      icon: const Icon(Icons.schedule_rounded),
-                      label: AppText(_time?.format(context) ?? 'Choose time'),
-                    ),
+                    child: _isSessionPlan
+                        ? _firstVisitField(
+                            key: const ValueKey(
+                              'fitness-booking-session-hours-field',
+                            ),
+                            label: 'Session hours',
+                            value: _sessionHours == null
+                                ? 'Venue hours unavailable'
+                                : '${_sessionHours!.openingTime.format(context)}–${_sessionHours!.closingTime.format(context)}',
+                            icon: Icons.schedule_rounded,
+                          )
+                        : _firstVisitField(
+                            key: const ValueKey(
+                              'fitness-booking-first-visit-time',
+                            ),
+                            label: 'Start time',
+                            value: _time?.format(context) ?? 'Choose time',
+                            icon: Icons.schedule_rounded,
+                            onTap: _chooseTime,
+                            error: _timeError != null,
+                          ),
                   ),
                 ],
               ),
@@ -813,7 +937,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     ? 'Pay a 50% cash downpayment at the venue: '
                           '\u{20B1} ${coaDownpayment.toStringAsFixed(2)}. '
                           'Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.'
-                    : 'Pay securely online once for the selected term: '
+                    : 'One-time payment for the selected plan: '
                           '\u{20B1} ${_total.toStringAsFixed(2)}.',
                 style: TextStyle(color: AppColors.muted),
               ),
@@ -828,15 +952,31 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   '(${_coachDurationLabel(_coachDurationMonths)})',
                   _coachPrice(),
                 ),
-              _summaryRow('First visit duration', 1, suffix: ' hour'),
+              _summaryRow(
+                _isSessionPlan ? 'Session duration' : 'Plan duration',
+                0,
+                suffix: _isSessionPlan
+                    ? _sessionHours == null
+                          ? 'Venue hours unavailable'
+                          : '${_durationLabel(_sessionHours!.durationMinutes)} · venue opening hours'
+                    : FitnessBookingPricing.planDurationLabel(
+                            _selectedCategory,
+                            _plan,
+                          ) ??
+                          'Duration unavailable',
+              ),
+              if (!_isSessionPlan)
+                _summaryRow(
+                  'First-visit reservation',
+                  0,
+                  suffix: '1 hour',
+                ),
               _summaryRow(
                 'First visit',
                 0,
-                suffix: _time == null
-                    ? _dateString(_date)
-                    : '${_dateString(_date)} · ${_time!.format(context)}',
+                suffix: _firstVisitScheduleLabel(context),
               ),
-              _summaryRow('One-time total', _total, strong: true),
+              _summaryRow('One-time plan total', _total, strong: true),
               if (_payment == 'cash_on_arrival') ...[
                 _summaryRow('Cash downpayment (50%)', coaDownpayment),
                 _summaryRow('Remaining cash balance', coaRemaining),
@@ -849,6 +989,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                       _submitting ||
                           _loadingAvailability ||
                           _timeUnavailable ||
+                          (_isSessionPlan && _sessionHours == null) ||
                           _total <= 0
                       ? null
                       : _submit,
@@ -934,6 +1075,12 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   );
 
   Widget _availabilityNote() {
+    if (_isSessionPlan && _sessionHours == null) {
+      return const AppText(
+        'This venue has not provided valid opening and closing hours. A full-day session cannot be booked until the venue updates its hours.',
+        localize: true,
+      );
+    }
     if (_loadingAvailability) {
       return const Row(
         children: [
@@ -949,12 +1096,21 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     }
     if (_timeUnavailable) {
       return AppText(
-        'This time overlaps a booking. Choose another visit time.',
+        _isSessionPlan
+            ? 'This full-day session overlaps an existing booking. Choose another date.'
+            : 'This time overlaps a booking. Choose another visit time.',
         style: TextStyle(
           color: AppColors.errorText,
           fontWeight: FontWeight.w600,
         ),
         localize: true,
+      );
+    }
+    if (_isSessionPlan) {
+      final hours = _sessionHours!;
+      return AppText(
+        'This full-day session reserves the venue from ${hours.openingTime.format(context)} to ${hours.closingTime.format(context)}.',
+        style: TextStyle(color: AppColors.muted),
       );
     }
     return AppText(
@@ -1034,20 +1190,34 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     ),
   );
 
-  ButtonStyle _choiceStyle() => OutlinedButton.styleFrom(
-    foregroundColor: _ink,
-    backgroundColor: AppColors.surface,
-    alignment: Alignment.centerLeft,
-    padding: AppSpacing.buttonPadding,
-    side: BorderSide(color: AppColors.border, width: 1.5),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-  );
-
-  ButtonStyle _timeChoiceStyle() => _choiceStyle().copyWith(
-    side: WidgetStatePropertyAll(
-      BorderSide(
-        color: _timeError == null ? AppColors.border : AppColors.errorText,
-        width: _timeError == null ? 1.5 : 2,
+  Widget _firstVisitField({
+    Key? key,
+    required String label,
+    required String value,
+    required IconData icon,
+    VoidCallback? onTap,
+    bool error = false,
+  }) => SizedBox(
+    key: key,
+    height: 60,
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: InputDecorator(
+          decoration: _decoration(
+            prefixIcon: Icon(icon),
+            labelText: label,
+            error: error,
+          ),
+          child: AppText(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: _ink, fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
     ),
   );
@@ -1055,6 +1225,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
   InputDecoration _decoration({
     required Icon prefixIcon,
     required String labelText,
+    bool error = false,
   }) => InputDecoration(
     prefixIcon: prefixIcon,
     labelText: appLanguageText(labelText, labelText),
@@ -1063,11 +1234,17 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(13),
-      borderSide: BorderSide(color: AppColors.border),
+      borderSide: BorderSide(
+        color: error ? AppColors.errorText : AppColors.border,
+        width: error ? 2 : 1,
+      ),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(13),
-      borderSide: BorderSide(color: AppColors.border),
+      borderSide: BorderSide(
+        color: error ? AppColors.errorText : AppColors.border,
+        width: error ? 2 : 1,
+      ),
     ),
   );
 }

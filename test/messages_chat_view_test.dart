@@ -42,6 +42,52 @@ void main() {
     expect(find.text('2:05 PM'), findsOneWidget);
   });
 
+  testWidgets(
+    'starts at the latest message and scrolls back to older messages',
+    (tester) async {
+      final composer = TextEditingController();
+      final scrollController = ScrollController();
+      addTearDown(composer.dispose);
+      addTearDown(scrollController.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MessagesChatView(
+              messages: List.generate(
+                30,
+                (index) => {
+                  'id': index + 1,
+                  'senderId': 8,
+                  'body': index == 0 ? 'Oldest message' : 'Message $index',
+                },
+              ),
+              currentUserId: 7,
+              blocked: false,
+              composer: composer,
+              pendingImageData: null,
+              sending: false,
+              onDeleteMessage: (_) {},
+              onPickImage: () {},
+              onRemovePendingImage: () {},
+              onSend: () async {},
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Message 29'), findsOneWidget);
+      expect(find.text('Oldest message'), findsNothing);
+      expect(scrollController.offset, 0);
+
+      scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Oldest message'), findsOneWidget);
+    },
+  );
+
   testWidgets('omits the sent time when a message timestamp is invalid', (
     tester,
   ) async {

@@ -209,7 +209,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     _feedSport = _categoryAllLabel;
     _businesses = _venueCatalog.customerBusinesses(
       includeDisabledEvents:
-          widget.businessType.trim().toLowerCase() == 'event',
+          BusinessTypeParser.parse(widget.businessType) == BusinessType.event,
     );
     _posts = _loadFeed();
     _loadSavedKeys();
@@ -224,7 +224,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         401,
       );
     }
-    final isEventFeed = widget.businessType.trim().toLowerCase() == 'event';
+    final isEventFeed =
+        BusinessTypeParser.parse(widget.businessType) == BusinessType.event;
     final feedPosts = isEventFeed
         ? <Map<String, dynamic>>[]
         : (await _api.venues.newsFeed(
@@ -273,7 +274,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
               !_isMerchantDisabled(post);
           final eventTypes = _stringList(post['eventTypes']);
           final isEvent =
-              '${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event';
+              BusinessTypeParser.parse(post['businessType']) ==
+              BusinessType.event;
           return {
             ...post,
             if (isEvent && eventTypes.isNotEmpty)
@@ -285,15 +287,15 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         })
         .where((post) => _matchesBusinessType(post['businessType']))
         .toList();
-    if (widget.businessType.trim().toLowerCase() == 'event') {
+    if (isEventFeed) {
       final listedBusinessIds = posts
           .map((post) => int.tryParse('${post['businessId'] ?? ''}'))
           .whereType<int>()
           .toSet();
       for (final businessModel in businesses) {
         final business = businessModel.toViewData();
-        if ('${business['businessType'] ?? ''}'.trim().toLowerCase() !=
-            'event') {
+        if (BusinessTypeParser.parse(business['businessType']) !=
+            BusinessType.event) {
           continue;
         }
         final businessId = int.tryParse('${business['id'] ?? ''}');
@@ -370,24 +372,15 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   bool _matchesBusinessType(Object? value) {
-    final type = '$value'.trim().toLowerCase();
     final selectedType = BusinessTypeParser.parse(widget.businessType);
-    if (selectedType == BusinessType.sports) {
-      return type == 'sports';
-    }
-    if (selectedType == BusinessType.fitness) {
-      return type == 'fitness' ||
-          type == 'wellness' ||
-          type.contains('fitness') ||
-          type.contains('wellness');
-    }
-    return type == widget.businessType.trim().toLowerCase();
+    return selectedType != BusinessType.unknown &&
+        BusinessTypeParser.parse(value) == selectedType;
   }
 
   Future<void> _reload() async {
     _businesses = _venueCatalog.customerBusinesses(
       includeDisabledEvents:
-          widget.businessType.trim().toLowerCase() == 'event',
+          BusinessTypeParser.parse(widget.businessType) == BusinessType.event,
     );
     final refreshed = _loadFeed();
     setState(() {
@@ -471,9 +464,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (_) => ReserveDashboardPage(
-                initialSelection: widget.businessType.toLowerCase() == 'fitness'
-                    ? 'Fitness & Wellness'
-                    : widget.businessType,
+                initialSelection:
+                    BusinessTypeParser.parse(widget.businessType).value.isEmpty
+                    ? widget.businessType
+                    : BusinessTypeParser.parse(widget.businessType).value,
                 onLogout: widget.onLogout,
               ),
             ),
@@ -564,7 +558,17 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                         }
                         if (snapshot.hasError) {
                           return _message(
-                            'Could not load the news feed: ${snapshot.error}',
+                            'We couldn’t load the latest updates. Please check your connection and try again.',
+                            action: TextButton.icon(
+                              key: const ValueKey('news-feed-retry'),
+                              onPressed: () {
+                                setState(() {
+                                  _posts = _loadFeed();
+                                });
+                              },
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const AppText('Try again', localize: true),
+                            ),
                           );
                         }
                         final posts = _filteredPosts(snapshot.data ?? const []);
@@ -981,7 +985,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
 
   List<String> _categoryFilterOptions(Map<String, dynamic> post) {
     final eventTypes = _stringList(post['eventTypes']);
-    if ('${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event' &&
+    if (BusinessTypeParser.parse(post['businessType']) ==
+            BusinessType.event &&
         eventTypes.isNotEmpty) {
       return eventTypes;
     }
@@ -1154,11 +1159,22 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         return Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: AppText(
-              'Could not load ${widget.venueNoun == 'courts' ? 'court' : 'venue'} locations: ${snapshot.error}',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _newsMuted, fontSize: 12),
-              localize: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppText(
+                  'We couldn’t load venue locations right now. Please check your connection and try again.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _newsMuted, fontSize: 13),
+                  localize: true,
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _reload,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const AppText('Try again', localize: true),
+                ),
+              ],
             ),
           ),
         );
@@ -3156,8 +3172,21 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         }
         return;
       }
-      final type =
-          '${publishedBusiness['businessType'] ?? post['businessType'] ?? post['type'] ?? ''}';
+      final selectedType = BusinessTypeParser.parse(widget.businessType);
+      final businessType = BusinessTypeParser.parse(
+        publishedBusiness['businessType'] ?? post['businessType'] ?? post['type'],
+      );
+      if (selectedType == BusinessType.unknown || businessType != selectedType) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: AppText(
+              'This venue does not belong to the selected booking category.',
+              localize: true,
+            ),
+          ),
+        );
+        return;
+      }
       final venue = _toSportsVenue(
         {
           ...post,
@@ -3172,14 +3201,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           'heartCount': post['heartCount'],
           'business': publishedBusiness,
         },
-        fitness:
-            type.toLowerCase().contains('fitness') ||
-            type.toLowerCase().contains('wellness'),
-        event: type.toLowerCase().contains('event'),
+        fitness: businessType == BusinessType.fitness,
+        event: businessType == BusinessType.event,
       );
       if (!mounted) return;
 
-      if (type.toLowerCase().contains('event')) {
+      if (businessType == BusinessType.event) {
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => SportsVenueDetailPage(
@@ -3205,8 +3232,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         return;
       }
 
-      if (type.toLowerCase().contains('fitness') ||
-          type.toLowerCase().contains('wellness')) {
+      if (businessType == BusinessType.fitness) {
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => SportsVenueDetailPage(
@@ -3232,7 +3258,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
         return;
       }
 
-      if (!type.toLowerCase().contains('sport')) {
+      if (businessType != BusinessType.sports) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -3729,7 +3755,8 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           businessId: businessId,
           businessName: '${post['businessName'] ?? ''}',
           isEvent:
-              '${post['businessType'] ?? ''}'.trim().toLowerCase() == 'event',
+              BusinessTypeParser.parse(post['businessType']) ==
+              BusinessType.event,
           onSubmitted: (average, reviewCount, ratedUsers) {
             setState(() {
               post['averageRating'] = average;

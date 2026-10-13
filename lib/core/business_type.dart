@@ -15,10 +15,12 @@ class BusinessTypeParser {
   static BusinessType parse(Object? value) {
     final normalized = '${value ?? ''}'.trim().toLowerCase();
     return switch (normalized) {
-      'sports' => BusinessType.sports,
-      'event' => BusinessType.event,
+      'sports' || 'sport' => BusinessType.sports,
+      'event' || 'events' => BusinessType.event,
       'fitness' ||
+      'wellness' ||
       'fitness & wellness' ||
+      'fitness wellness' ||
       'fitness_wellness' => BusinessType.fitness,
       _ => BusinessType.unknown,
     };

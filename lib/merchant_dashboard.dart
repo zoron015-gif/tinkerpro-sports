@@ -125,6 +125,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   final ScrollController _homeScrollController = ScrollController();
   final ScrollController _managementScrollController = ScrollController();
   Timer? _payoutRefreshTimer;
+  Future<void>? _bookingsRequest;
 
   String _analyticsPeriod = 'Daily';
   String _analyticsView = 'Sales report';
@@ -576,106 +577,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _merchantPage,
-      appBar: AppBar(
-        toolbarHeight: 56,
-        titleSpacing: 16,
-        leadingWidth: 56,
-        titleTextStyle: AppTypography.pageTitle,
-        title: _merchantTab == 1
-            ? Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: AppText(
-                            'Add business',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.pageTitle,
-                            localize: true,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _merchantSectionNotice(
-                          key: 'merchant-add-info',
-                          title: 'Add business',
-                          message: 'Complete a News Card for each business before its Booking Card is published.',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  FilledButton.icon(
-                    onPressed: () =>
-                        _merchantAddPageKey.currentState?.openAddBusinessForm(),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const AppText('Add', localize: true),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _merchantOrange,
-                      foregroundColor: AppColors.onAccent,
-                      minimumSize: const Size(0, 38),
-                      padding: AppSpacing.buttonPadding,
-                      visualDensity: VisualDensity.compact,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : _merchantTab == 3
-            ? Row(
-                children: [
-                  AppText(
-                    'Bookings & payments',
-                    style: AppTypography.pageTitle,
-                    localize: true,
-                  ),
-                  _merchantSectionNotice(
-                    key: 'merchant-payouts-info',
-                    title: 'Bookings & payments',
-                    message: 'Manage booking requests and track your earnings.',
-                  ),
-                ],
-              )
-            : AppText(switch (_merchantTab) {
-                0 => 'Merchant Dashboard',
-                1 => 'Add business',
-                3 => 'Management',
-                _ => 'Merchant Dashboard',
-              }),
-        backgroundColor: _merchantPage,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: _merchantInk,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-      ),
+      appBar: _MerchantDashboardHeader(state: this),
       bottomNavigationBar: _merchantBottomNavigation(),
       body: _loading
           ? const _MerchantDashboardLoadingSkeleton()
-          : _merchantContent(),
+          : _MerchantDashboardContent(state: this),
     );
-  }
-
-  Widget _merchantContent() {
-    if (_merchantTab == 1) {
-      return MerchantAddPage(
-        key: _merchantAddPageKey,
-        initialBusinessType: _businessTypeValue,
-        businesses: _businesses,
-        onBusinessesChanged: _loadBusinesses,
-      );
-    }
-    if (_merchantTab == 3) {
-      return _merchantPayouts();
-    }
-    if (_merchantTab == 2 || _merchantTab == 4) {
-      return const SizedBox.shrink();
-    }
-    if (_merchantTab == 0) return _merchantAnalyticsDashboard();
-    return _merchantHome();
   }
 
   Widget _merchantPayouts() => RefreshIndicator(
@@ -695,18 +602,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           style: _managementTabsStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(
-              value: 0,
-              label: AppText('Booking', localize: true),
-            ),
-            ButtonSegment(
-              value: 1,
-              label: AppText('Customer', localize: true),
-            ),
-            ButtonSegment(
-              value: 2,
-              label: AppText('Payment', localize: true),
-            ),
+            ButtonSegment(value: 0, label: AppText('Booking', localize: true)),
+            ButtonSegment(value: 1, label: AppText('Customer', localize: true)),
+            ButtonSegment(value: 2, label: AppText('Payment', localize: true)),
           ],
           selected: {_payoutTab},
           onSelectionChanged: (selection) {
@@ -815,14 +713,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           style: _managementTabsStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(
-              value: 0,
-              label: AppText('Requests', localize: true),
-            ),
-            ButtonSegment(
-              value: 1,
-              label: AppText('Active', localize: true),
-            ),
+            ButtonSegment(value: 0, label: AppText('Requests', localize: true)),
+            ButtonSegment(value: 1, label: AppText('Active', localize: true)),
             ButtonSegment(
               value: 2,
               label: AppText('Completed', localize: true),
@@ -835,11 +727,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         ),
         const SizedBox(height: 8),
         if (bookings.isEmpty)
-          _emptyPayoutCard(
-            emptyMessage.$1,
-            emptyMessage.$2,
-            emptyMessage.$3,
-          )
+          _emptyPayoutCard(emptyMessage.$1, emptyMessage.$2, emptyMessage.$3)
         else
           for (final booking in bookings) ...[
             _customerManagementBookingCard(
@@ -865,9 +753,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final bookings = switch (_customerArrivalTab) {
       0 => arrivalBookings.where(_hasCheckedIn).toList(),
       1 => arrivalBookings.where(_isNoShowBooking).toList(),
-      _ => arrivalBookings
-          .where((booking) => !_hasCheckedIn(booking) && !_isNoShowBooking(booking))
-          .toList(),
+      _ =>
+        arrivalBookings
+            .where(
+              (booking) =>
+                  !_hasCheckedIn(booking) && !_isNoShowBooking(booking),
+            )
+            .toList(),
     };
     final emptyMessage = switch (_customerArrivalTab) {
       0 => (
@@ -900,14 +792,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               value: 2,
               label: AppText('Awaiting arrival', localize: true),
             ),
-            ButtonSegment(
-              value: 0,
-              label: AppText('Arrived', localize: true),
-            ),
-            ButtonSegment(
-              value: 1,
-              label: AppText('No-show', localize: true),
-            ),
+            ButtonSegment(value: 0, label: AppText('Arrived', localize: true)),
+            ButtonSegment(value: 1, label: AppText('No-show', localize: true)),
           ],
           selected: {_customerArrivalTab},
           onSelectionChanged: (selection) {
@@ -916,11 +802,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         ),
         const SizedBox(height: 8),
         if (bookings.isEmpty)
-          _emptyPayoutCard(
-            emptyMessage.$1,
-            emptyMessage.$2,
-            emptyMessage.$3,
-          ),
+          _emptyPayoutCard(emptyMessage.$1, emptyMessage.$2, emptyMessage.$3),
         for (final booking in bookings) ...[
           _customerManagementBookingCard(
             booking,
@@ -972,9 +854,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               label: const AppText('Show venue QR', localize: true),
               style: FilledButton.styleFrom(
                 backgroundColor: _merchantNavy,
-                foregroundColor: AppColors.contrastingForeground(
-                  _merchantNavy,
-                ),
+                foregroundColor: AppColors.contrastingForeground(_merchantNavy),
                 minimumSize: const Size.fromHeight(44),
               ),
             ),
@@ -1022,7 +902,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         orElse: () => <String, dynamic>{},
       );
       if (venue.isEmpty) {
-        _showMessage('That venue is no longer available. Refresh and try again.');
+        _showMessage(
+          'That venue is no longer available. Refresh and try again.',
+        );
         return;
       }
       await showDialog<void>(
@@ -1063,18 +945,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           style: _analyticsFilterStyle,
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(
-              value: 0,
-              label: AppText('Payments', localize: true),
-            ),
-            ButtonSegment(
-              value: 1,
-              label: AppText('Earnings', localize: true),
-            ),
-            ButtonSegment(
-              value: 2,
-              label: AppText('Refunds', localize: true),
-            ),
+            ButtonSegment(value: 0, label: AppText('Payments', localize: true)),
+            ButtonSegment(value: 1, label: AppText('Earnings', localize: true)),
+            ButtonSegment(value: 2, label: AppText('Refunds', localize: true)),
           ],
           selected: {_paymentManagementTab},
           onSelectionChanged: (selection) {
@@ -1122,8 +995,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final balanceDue = bookings.fold<double>(0, (sum, booking) {
       final amount = _bookingAmount(booking['total']);
       final amountReceived = _bookingAmountReceived(booking);
-      return sum +
-          (amount - amountReceived).clamp(0, amount).toDouble();
+      return sum + (amount - amountReceived).clamp(0, amount).toDouble();
     });
     return Card(
       key: const ValueKey('merchant-payment-overview'),
@@ -1268,8 +1140,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         .toDouble();
     final outstanding = bookings.fold<double>(0, (sum, booking) {
       if (BookingStatusParser.isCancelled(booking['status'])) return sum;
-      final due = _bookingAmount(booking['total']) -
-          _bookingAmountReceived(booking);
+      final due =
+          _bookingAmount(booking['total']) - _bookingAmountReceived(booking);
       return sum + due.clamp(0, double.infinity).toDouble();
     });
     final onlineCollected = bookings
@@ -1413,8 +1285,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   );
 
   Widget _paymentRefundBookingCard(Map<String, dynamic> booking) {
-    final refundStatus =
-        '${booking['paymentRefundStatus'] ?? 'not_requested'}';
+    final refundStatus = '${booking['paymentRefundStatus'] ?? 'not_requested'}';
     return Card(
       elevation: 0,
       color: AppColors.surface,
@@ -1433,13 +1304,22 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               localize: true,
             ),
             const SizedBox(height: 5),
-            _payoutManagementInfoRow('Booking', '#${booking['id']} · ${booking['venueName'] ?? 'Venue'}'),
+            _payoutManagementInfoRow(
+              'Booking',
+              '#${booking['id']} · ${booking['venueName'] ?? 'Venue'}',
+            ),
             _payoutManagementInfoRow(
               'Payment received',
               '\u{20B1} ${_bookingAmountReceived(booking).toStringAsFixed(2)}',
             ),
-            _payoutManagementInfoRow('Payment method', _payoutPaymentLabel(booking['paymentMethod'])),
-            _payoutManagementInfoRow('Refund status', _paymentRefundLabel(refundStatus)),
+            _payoutManagementInfoRow(
+              'Payment method',
+              _payoutPaymentLabel(booking['paymentMethod']),
+            ),
+            _payoutManagementInfoRow(
+              'Refund status',
+              _paymentRefundLabel(refundStatus),
+            ),
             if ('${booking['paymentReference'] ?? ''}'.isNotEmpty)
               _payoutManagementInfoRow(
                 'Payment reference',
@@ -1544,18 +1424,15 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   onPressed: () => _showPayoutBookingDetails(booking),
                   icon: const Icon(Icons.visibility_outlined),
                   label: AppText(
-                    pending
-                        ? 'View booking · approve/decline'
-                        : 'View booking',
+                    pending ? 'View booking · approve/decline' : 'View booking',
                     localize: true,
                   ),
                 ),
                 if (showDelete)
                   OutlinedButton.icon(
                     key: ValueKey('merchant-booking-delete-${booking['id']}'),
-                    onPressed: () => _deleteCompletedBooking(
-                      (booking['id'] as num).toInt(),
-                    ),
+                    onPressed: () =>
+                        _deleteCompletedBooking((booking['id'] as num).toInt()),
                     icon: const Icon(Icons.delete_outline_rounded),
                     label: const AppText('Delete', localize: true),
                   ),
@@ -1648,7 +1525,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: .10),
                     borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: statusColor.withValues(alpha: .3)),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: .3),
+                    ),
                   ),
                   child: AppText(
                     paymentStatusLabel,
@@ -1700,11 +1579,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                       ],
                     ),
                   ),
-                  Container(
-                    width: 1,
-                    height: 38,
-                    color: AppColors.border,
-                  ),
+                  Container(width: 1, height: 38, color: AppColors.border),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1727,7 +1602,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: dueAmount > 0 ? _merchantOrange : AppColors.success,
+                            color: dueAmount > 0
+                                ? _merchantOrange
+                                : AppColors.success,
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1763,7 +1640,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               ),
             ] else
               _payoutManagementInfoRow(
-                paymentStatus == 'partial' ? 'Cash downpayment received' : 'Balance',
+                paymentStatus == 'partial'
+                    ? 'Cash downpayment received'
+                    : 'Balance',
                 paymentStatus == 'partial'
                     ? '\u{20B1} ${received.toStringAsFixed(2)}'
                     : '\u{20B1} ${balance.toStringAsFixed(2)}',
@@ -1788,38 +1667,34 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               runSpacing: 6,
               children: [
                 OutlinedButton.icon(
-                key: ValueKey('merchant-payment-view-${booking['id']}'),
-                onPressed: () =>
-                    _showPayoutBookingDetails(booking, paymentOnly: true),
-                icon: const Icon(Icons.visibility_outlined),
-                label: const AppText('View payment', localize: true),
+                  key: ValueKey('merchant-payment-view-${booking['id']}'),
+                  onPressed: () =>
+                      _showPayoutBookingDetails(booking, paymentOnly: true),
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: const AppText('View payment', localize: true),
                 ),
                 if (isCashOnArrival &&
-                    (paymentStatus == 'unpaid' ||
-                        paymentStatus == 'partial') &&
+                    (paymentStatus == 'unpaid' || paymentStatus == 'partial') &&
                     !isCancelled)
                   OutlinedButton.icon(
-                      key: ValueKey('merchant-payment-toggle-${booking['id']}'),
-                      onPressed: () => _setCashOnArrivalPaymentStatus(
-                        booking,
-                        paymentStatus == 'unpaid' ? 'partial' : 'paid',
-                      ),
-                      icon: const Icon(Icons.check_circle_outline_rounded),
-                      label: AppText(
-                        paymentStatus == 'unpaid'
-                            ? 'Mark cash downpayment received'
-                            : 'Mark remaining balance paid',
-                        localize: true,
-                      ),
+                    key: ValueKey('merchant-payment-toggle-${booking['id']}'),
+                    onPressed: () => _setCashOnArrivalPaymentStatus(
+                      booking,
+                      paymentStatus == 'unpaid' ? 'partial' : 'paid',
                     ),
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                    label: AppText(
+                      paymentStatus == 'unpaid'
+                          ? 'Mark cash downpayment received'
+                          : 'Mark remaining balance paid',
+                      localize: true,
+                    ),
+                  ),
                 if (_isMerchantDeletableBooking(booking))
                   OutlinedButton.icon(
-                    key: ValueKey(
-                      'merchant-payment-delete-${booking['id']}',
-                    ),
-                    onPressed: () => _deleteCompletedBooking(
-                      (booking['id'] as num).toInt(),
-                    ),
+                    key: ValueKey('merchant-payment-delete-${booking['id']}'),
+                    onPressed: () =>
+                        _deleteCompletedBooking((booking['id'] as num).toInt()),
                     icon: const Icon(Icons.delete_outline_rounded),
                     label: const AppText('Delete', localize: true),
                   ),
@@ -1910,8 +1785,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _payoutSearchBar() => TextField(
     key: const ValueKey('merchant-payout-search'),
     controller: _payoutSearchController,
-    onChanged: (value) =>
-        setState(() => _payoutSearchQuery = value.trim().toLowerCase()),
+    onChanged: (value) => setState(
+      () => _payoutSearchQuery = value.trim().toLowerCase(),
+    ),
     textInputAction: TextInputAction.search,
     decoration: InputDecoration(
       hintText: appLanguageText('Search bookings', 'Search bookings'),
@@ -1996,7 +1872,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         ),
       ],
       onChanged: (value) {
-        if (value != null) setState(() => _payoutBookingType = value);
+        if (value != null) {
+          setState(() => _payoutBookingType = value);
+        }
       },
     );
   }
@@ -2036,13 +1914,13 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   bool _isPendingBooking(Map<String, dynamic> booking) =>
       BookingStatusParser.isPending(booking['status']);
 
-  bool _isApprovedBooking(Map<String, dynamic> booking) =>
-      BookingStatusParser.isApproved(booking['status']);
-
   bool _isFinishedBooking(Map<String, dynamic> booking) =>
       BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
       BookingStatusParser.parse(booking['status']) == BookingStatus.done;
+
+  bool _isApprovedBooking(Map<String, dynamic> booking) =>
+      BookingStatusParser.isApproved(booking['status']);
 
   bool _isMerchantDeletableBooking(Map<String, dynamic> booking) =>
       '${booking['status'] ?? ''}'.trim().toLowerCase() == 'finished';
@@ -2056,9 +1934,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       !_hasCheckedIn(booking) && _isFinishedBooking(booking);
 
   Future<void> _showPayoutBookingDetails(
-    Map<String, dynamic> booking,
-    {bool paymentOnly = false}
-  ) async {
+    Map<String, dynamic> booking, {
+    bool paymentOnly = false,
+  }) async {
     final total = _bookingAmount(booking['total']);
     final received = _bookingAmountReceived(booking);
     final downpayment = _bookingAmount(booking['downpayment']);
@@ -2096,65 +1974,68 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                 style: TextStyle(color: _merchantMuted),
                 localize: true,
               ),
-              if (!paymentOnly) _payoutDetailsSection('Customer information', [
-                _payoutDetailRow('Customer', booking['customerName']),
-                _payoutDetailRow('Email', booking['customerEmail']),
-                _payoutDetailRow('Customer ID', booking['customerId']),
-              ]),
-              if (!paymentOnly) _payoutDetailsSection('Venue information', [
-                _payoutDetailRow('Venue', booking['venueName']),
-                _payoutDetailRow('Business type', booking['businessType']),
-                _payoutDetailRow('Address', booking['address']),
-                _payoutDetailRow('Facility', booking['facilityType']),
-                _payoutDetailRow('Venue details', booking['details']),
-              ]),
-              if (!paymentOnly) _payoutDetailsSection('Booking information', [
-                _payoutDetailRow('Reference', 'BK-${booking['id']}'),
-                _payoutDetailRow('Date', booking['date']),
-                _payoutDetailRow(
-                  'Start time',
-                  _formatPayoutTime(booking['startTime']),
-                ),
-                _payoutDetailRow(
-                  fitnessPlanType.isNotEmpty
-                      ? 'First visit session'
-                      : 'Duration',
-                  '${booking['durationHours'] ?? '—'} hour(s)',
-                ),
-                _payoutDetailRow(playersLabel, booking['players']),
-                _payoutDetailRow(
-                  'Booking type',
-                  _bookingServiceLabel(booking),
-                ),
-                if (fitnessPlanType.isEmpty && !isEvent)
+              if (!paymentOnly)
+                _payoutDetailsSection('Customer information', [
+                  _payoutDetailRow('Customer', booking['customerName']),
+                  _payoutDetailRow('Email', booking['customerEmail']),
+                  _payoutDetailRow('Customer ID', booking['customerId']),
+                ]),
+              if (!paymentOnly)
+                _payoutDetailsSection('Venue information', [
+                  _payoutDetailRow('Venue', booking['venueName']),
+                  _payoutDetailRow('Business type', booking['businessType']),
+                  _payoutDetailRow('Address', booking['address']),
+                  _payoutDetailRow('Facility', booking['facilityType']),
+                  _payoutDetailRow('Venue details', booking['details']),
+                ]),
+              if (!paymentOnly)
+                _payoutDetailsSection('Booking information', [
+                  _payoutDetailRow('Reference', 'BK-${booking['id']}'),
+                  _payoutDetailRow('Date', booking['date']),
                   _payoutDetailRow(
-                    'Booked area',
-                    booking['occupiesFullStudio'] == true ||
-                            booking['occupiesFullStudio'] == 1
-                        ? 'Whole studio'
-                        : _bookingSlotLabel(booking),
+                    'Start time',
+                    _formatPayoutTime(booking['startTime']),
                   ),
-                if (booking['eventType'] != null)
-                  _payoutDetailRow('Event type', booking['eventType']),
-                if (fitnessPlanType.isNotEmpty) ...[
-                  _payoutDetailRow('Fitness plan', fitnessPlanType),
                   _payoutDetailRow(
-                    'Plan duration',
-                    _fitnessPlanDuration(fitnessPlanType),
+                    fitnessPlanType.isNotEmpty
+                        ? 'First visit session'
+                        : 'Duration',
+                    '${booking['durationHours'] ?? '—'} hour(s)',
                   ),
-                ],
-                if (booking['fitnessCategory'] != null)
+                  _payoutDetailRow(playersLabel, booking['players']),
                   _payoutDetailRow(
-                    'Fitness category',
-                    booking['fitnessCategory'],
+                    'Booking type',
+                    _bookingServiceLabel(booking),
                   ),
-                if (booking['fitnessCoachName'] != null)
-                  _payoutDetailRow(
-                    'Coach',
-                    '${booking['fitnessCoachName']}'
-                    '${booking['fitnessCoachDurationMonths'] == null ? '' : ' · ${booking['fitnessCoachDurationMonths']} month(s)'}',
-                  ),
-              ]),
+                  if (fitnessPlanType.isEmpty && !isEvent)
+                    _payoutDetailRow(
+                      'Booked area',
+                      booking['occupiesFullStudio'] == true ||
+                              booking['occupiesFullStudio'] == 1
+                          ? 'Whole studio'
+                          : _bookingSlotLabel(booking),
+                    ),
+                  if (booking['eventType'] != null)
+                    _payoutDetailRow('Event type', booking['eventType']),
+                  if (fitnessPlanType.isNotEmpty) ...[
+                    _payoutDetailRow('Fitness plan', fitnessPlanType),
+                    _payoutDetailRow(
+                      'Plan duration',
+                      _fitnessPlanDuration(fitnessPlanType),
+                    ),
+                  ],
+                  if (booking['fitnessCategory'] != null)
+                    _payoutDetailRow(
+                      'Fitness category',
+                      booking['fitnessCategory'],
+                    ),
+                  if (booking['fitnessCoachName'] != null)
+                    _payoutDetailRow(
+                      'Coach',
+                      '${booking['fitnessCoachName']}'
+                          '${booking['fitnessCoachDurationMonths'] == null ? '' : ' · ${booking['fitnessCoachDurationMonths']} month(s)'}',
+                    ),
+                ]),
               if (!paymentOnly)
                 _payoutDetailsSection('Arrival history', [
                   _payoutDetailRow(
@@ -2264,7 +2145,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                               key: ValueKey(
                                 'merchant-booking-approve-${booking['id']}',
                               ),
-                              onPressed: booking['paymentMethod'] == 'online' &&
+                              onPressed:
+                                  booking['paymentMethod'] == 'online' &&
                                       booking['paymentStatus'] != 'paid'
                                   ? null
                                   : () {
@@ -3208,7 +3090,21 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     }
   }
 
-  Future<void> _loadBookings() async {
+  Future<void> _loadBookings() {
+    final activeRequest = _bookingsRequest;
+    if (activeRequest != null) return activeRequest;
+
+    late final Future<void> request;
+    request = _fetchBookings().whenComplete(() {
+      if (identical(_bookingsRequest, request)) {
+        _bookingsRequest = null;
+      }
+    });
+    _bookingsRequest = request;
+    return request;
+  }
+
+  Future<void> _fetchBookings() async {
     try {
       final session = await AppSession.load();
       final token = session.apiToken;
@@ -3863,6 +3759,128 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               : null
         : null,
   );
+}
+
+class _MerchantDashboardHeader extends StatelessWidget
+    implements PreferredSizeWidget {
+  const _MerchantDashboardHeader({required this.state});
+
+  final _MerchantDashboardPageState state;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(56);
+
+  @override
+  Widget build(BuildContext context) => AppBar(
+    toolbarHeight: 56,
+    titleSpacing: 16,
+    leadingWidth: 56,
+    titleTextStyle: AppTypography.pageTitle,
+    title: _headerTitle,
+    backgroundColor: _merchantPage,
+    surfaceTintColor: Colors.transparent,
+    foregroundColor: _merchantInk,
+    elevation: 0,
+    scrolledUnderElevation: 0,
+  );
+
+  Widget get _headerTitle {
+    switch (state._merchantTab) {
+      case 1:
+        return Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: AppText(
+                      'Add business',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.pageTitle,
+                      localize: true,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  state._merchantSectionNotice(
+                    key: 'merchant-add-info',
+                    title: 'Add business',
+                    message:
+                        'Complete a News Card for each business before its Booking Card is published.',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            FilledButton.icon(
+              onPressed: () =>
+                  state._merchantAddPageKey.currentState?.openAddBusinessForm(),
+              icon: const Icon(Icons.add, size: 16),
+              label: const AppText('Add', localize: true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _merchantOrange,
+                foregroundColor: AppColors.onAccent,
+                minimumSize: const Size(0, 38),
+                padding: AppSpacing.buttonPadding,
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        );
+      case 3:
+        return Row(
+          children: [
+            AppText(
+              'Bookings & payments',
+              style: AppTypography.pageTitle,
+              localize: true,
+            ),
+            state._merchantSectionNotice(
+              key: 'merchant-payouts-info',
+              title: 'Bookings & payments',
+              message: 'Manage booking requests and track your earnings.',
+            ),
+          ],
+        );
+      default:
+        return AppText(switch (state._merchantTab) {
+          0 => 'Merchant Dashboard',
+          1 => 'Add business',
+          3 => 'Management',
+          _ => 'Merchant Dashboard',
+        });
+    }
+  }
+}
+
+class _MerchantDashboardContent extends StatelessWidget {
+  const _MerchantDashboardContent({required this.state});
+
+  final _MerchantDashboardPageState state;
+
+  @override
+  Widget build(BuildContext context) {
+    if (state._merchantTab == 1) {
+      return MerchantAddPage(
+        key: state._merchantAddPageKey,
+        initialBusinessType: state._businessTypeValue,
+        businesses: state._businesses,
+        onBusinessesChanged: state._loadBusinesses,
+      );
+    }
+    if (state._merchantTab == 3) {
+      return state._merchantPayouts();
+    }
+    if (state._merchantTab == 2 || state._merchantTab == 4) {
+      return const SizedBox.shrink();
+    }
+    if (state._merchantTab == 0) return state._merchantAnalyticsDashboard();
+    return state._merchantHome();
+  }
 }
 
 class _MerchantCheckInQrDialog extends StatefulWidget {

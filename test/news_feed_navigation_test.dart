@@ -138,6 +138,43 @@ void main() {
     await verifyLoadingSkeleton(savedOnly: true);
   });
 
+  testWidgets('news feed connection failures show friendly retry guidance', (
+    tester,
+  ) async {
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/news-feed') {
+          return http.Response(
+            jsonEncode({'error': 'The local API at http://192.168.1.21:3000 timed out'}),
+            408,
+          );
+        }
+        if (request.url.path == '/api/businesses') {
+          return http.Response(
+            jsonEncode({'businesses': []}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: NewsFeedPage(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'We couldn’t load the latest updates. Please check your connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('192.168.1.21'), findsNothing);
+    expect(find.textContaining('timed out'), findsNothing);
+    expect(find.byKey(const ValueKey('news-feed-retry')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('News Feed filters open from the right and show active count', (
     tester,
   ) async {
@@ -1517,7 +1554,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Book Fitness'), findsOneWidget);
     expect(find.text('FITNESS CONFIGURATION'), findsOneWidget);
-    expect(find.textContaining('Session · \u{20B1} 500.00'), findsOneWidget);
+    expect(
+      find.textContaining('Full-day session · \u{20B1} 500.00'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('See all slides in from the right and reverses in equal time', (

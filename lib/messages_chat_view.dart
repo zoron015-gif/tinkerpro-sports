@@ -50,10 +50,11 @@ class MessagesChatView extends StatelessWidget {
                 )
               : ListView.builder(
                   controller: scrollController,
+                  reverse: true,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final message = messages[index];
+                    final message = messages[messages.length - 1 - index];
                     final mine = asInt(message['senderId']) == currentUserId;
                     final attachment = attachmentValue(message);
                     final body = messageBody(message);
@@ -64,9 +65,12 @@ class MessagesChatView extends StatelessWidget {
                         message['senderName'] ??
                             message['removedByName'] ??
                             [
-                              message['senderFirstName'],
-                              message['senderLastName'],
-                            ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' '),
+                                  message['senderFirstName'],
+                                  message['senderLastName'],
+                                ]
+                                .whereType<String>()
+                                .where((part) => part.trim().isNotEmpty)
+                                .join(' '),
                         'Someone',
                       ).trim();
                       final removedLabel = mine
@@ -91,8 +95,7 @@ class MessagesChatView extends StatelessWidget {
                               : Alignment.centerLeft,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth:
-                                  MediaQuery.sizeOf(context).width * .76,
+                              maxWidth: MediaQuery.sizeOf(context).width * .76,
                             ),
                             child: Card(
                               key: ValueKey('message-bubble-${message['id']}'),
@@ -114,8 +117,7 @@ class MessagesChatView extends StatelessWidget {
                                         fontStyle: FontStyle.italic,
                                       ),
                                     ),
-                                    if (_messageTime(message)
-                                        case final time?)
+                                    if (_messageTime(message) case final time?)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 6),
                                         child: Text(
@@ -178,7 +180,9 @@ class MessagesChatView extends StatelessWidget {
                                 padding: const EdgeInsets.only(top: 8),
                                 child: AppText(
                                   body,
-                                  key: ValueKey('message-body-${message['id']}'),
+                                  key: ValueKey(
+                                    'message-body-${message['id']}',
+                                  ),
                                   style: TextStyle(color: AppColors.ink),
                                 ),
                               ),

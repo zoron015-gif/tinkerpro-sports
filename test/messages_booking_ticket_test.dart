@@ -199,6 +199,56 @@ void main() {
     expect(find.text('TINKERPRO  ·  COURT PASS'), findsNothing);
   });
 
+  testWidgets('booking request displays its actual Event venue name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 504,
+            'businessType': 'Event',
+            'eventType': 'Wedding',
+            'status': 'pending',
+            'venueName': 'exc wall',
+            'bookingDate': '2026-11-04',
+            'startTime': '19:00:00',
+            'durationHours': 5,
+            'players': 500,
+            'total': 20000,
+            'downpayment': 10000,
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('TINKERPRO  ·  EVENT PASS'), findsOneWidget);
+    expect(find.text('exc wall'), findsOneWidget);
+    expect(find.text('Wedding'), findsOneWidget);
+    expect(find.text('Sports venue'), findsNothing);
+  });
+
+  testWidgets('missing venue name is not shown as a fake Sports venue', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 505,
+            'businessType': 'Event',
+            'status': 'pending',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('Venue name unavailable'), findsOneWidget);
+    expect(find.text('Sports venue'), findsNothing);
+  });
+
   testWidgets('booking ticket header remains readable in dark mode', (
     tester,
   ) async {

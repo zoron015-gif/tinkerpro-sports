@@ -1364,6 +1364,43 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': 'コーチなし',
     'zh': '无教练',
   },
+  'No coaches are currently listed for this venue. You can continue without a coach.':
+      {
+        'fil': 'Walang nakalistang coach sa venue na ito. Maaari kang magpatuloy nang walang coach.',
+        'ko': '이 장소에는 등록된 코치가 없습니다. 코치 없이 계속할 수 있습니다.',
+        'ja': 'この施設には現在コーチが登録されていません。コーチなしで続行できます。',
+        'zh': '此场馆目前没有登记教练。您可以不选择教练继续。',
+      },
+  'Full-day session': {
+    'fil': 'Pang-araw na session',
+    'ko': '종일 세션',
+    'ja': '終日セッション',
+    'zh': '全天时段',
+  },
+  'Session duration': {
+    'fil': 'Tagal ng session',
+    'ko': '세션 시간',
+    'ja': 'セッション時間',
+    'zh': '时段时长',
+  },
+  'One-time plan total': {
+    'fil': 'Kabuuang isang beses na bayad sa plan',
+    'ko': '플랜 1회 결제 총액',
+    'ja': 'プランの一括支払総額',
+    'zh': '计划一次性总额',
+  },
+  'Continue without a coach': {
+    'fil': 'Magpatuloy nang walang coach',
+    'ko': '코치 없이 계속',
+    'ja': 'コーチなしで続行',
+    'zh': '不选教练，继续',
+  },
+  'Session hours': {
+    'fil': 'Oras ng session',
+    'ko': '세션 운영 시간',
+    'ja': 'セッション営業時間',
+    'zh': '时段营业时间',
+  },
   'No discount': {
     'fil': 'Walang diskuwento',
     'ko': '할인 없음',

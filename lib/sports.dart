@@ -15,7 +15,10 @@ import 'saved_icons.dart';
 import 'messages_dashboard.dart';
 import 'reviews.dart';
 import 'app_design_system.dart';
+import 'booking_cancellation_notice.dart';
+import 'booking_schedule_conflict.dart';
 import 'app_preferences.dart';
+import 'core/business_type.dart';
 
 typedef SportsVenue = ({
   int id,
@@ -1080,11 +1083,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       final venues = <SportsVenue>[];
       for (final venueBusiness in rows) {
         final business = venueBusiness.toViewData();
-        final businessType =
-            '${business['businessType'] ?? business['business_type'] ?? ''}'
-                .trim()
-                .toLowerCase();
-        if (businessType != 'sports' && businessType != 'sport') continue;
+        final businessType = BusinessTypeParser.parse(
+          business['businessType'] ?? business['business_type'],
+        );
+        if (businessType != BusinessType.sports) continue;
         venues.add(_sportsVenue(business));
       }
       setState(
@@ -1354,7 +1356,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     var selectedSlotCount = 1;
     var hours = 1;
     var players = 1;
-    var payment = 'online';
+    var payment = 'cash_on_arrival';
     DateTime bookingDate = DateTime.now();
     TimeOfDay bookingTime = TimeOfDay.now();
     var occupiedBookings = <Map<String, dynamic>>[];
@@ -1438,7 +1440,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               rate * hours * selectedSlotList.length + extraPlayerCharge;
           final cashOnArrival = double.parse((total * 0.5).toStringAsFixed(2));
           final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
-          final selectedSlotBooked = !selectionMatchesRequestedCount;
+          final selectedSlotBooked =
+              selectedSlotList.isNotEmpty && !selectedSlotsAvailable;
           final bookingStartsAt = DateTime(
             bookingDate.year,
             bookingDate.month,
@@ -1951,7 +1954,10 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             venueId: venue.id,
                           ),
                           icon: const Icon(Icons.list_alt_rounded, size: 18),
-                          label: const AppText('View list', localize: true),
+                          label: const AppText(
+                            'View booked slots',
+                            localize: true,
+                          ),
                           style: TextButton.styleFrom(
                             foregroundColor: AppColors.accentForeground,
                             padding: const EdgeInsets.symmetric(
@@ -2398,7 +2404,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const AppText(
-                              'Already booked slots',
+                              'Booked time slots',
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
@@ -3042,6 +3048,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         );
         return;
       }
+      final scheduleAvailable = await confirmBookingScheduleConflict(
+        context: modalContext,
+        api: _api,
+        token: token,
+        venueId: venue.id,
+        venueName: venue.name,
+        startsAt: bookingStart,
+        durationHours: hours.toDouble(),
+      );
+      if (!scheduleAvailable || !mounted || !modalContext.mounted) return;
       final confirmed = await _confirmBookingDetails(
         venue: venue,
         bookingDate: bookingDate,
@@ -3242,19 +3258,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
               ],
               if (startsWithin24Hours) ...[
                 const SizedBox(height: 12),
-                AppText(
-                  'This booking starts within 24 hours. You may cancel it '
-                  'at any time. If cancelled at least 6 hours before it starts, '
-                  'an online payment refund will be requested. If cancelled '
-                  'less than 6 hours before it starts or after it has started, '
-                  'the payment will not be voided or refunded. Cash already '
-                  'collected must be returned manually.',
-                  localize: true,
-                  style: TextStyle(
-                    color: AppColors.errorText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                const BookingCancellationNotice(),
               ],
             ],
           ),

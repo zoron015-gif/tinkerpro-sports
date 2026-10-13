@@ -82,6 +82,9 @@ void main() {
     Map<String, dynamic>? checkoutPayload;
     final api = AuthApi(
       client: MockClient((request) async {
+        if (request.method == 'GET' && request.url.path == '/api/bookings') {
+          return http.Response(jsonEncode({'bookings': []}), 200);
+        }
         if (request.url.path == '/api/payments/paymongo/config') {
           return http.Response(
             jsonEncode({'onlinePaymentsEnabled': true}),
@@ -187,7 +190,7 @@ void main() {
     expect(find.text('Includes private garden access.'), findsOneWidget);
     expect(
       find.text('Cash on Arrival is fixed at 50% of the event fee.'),
-      findsNothing,
+      findsOneWidget,
     );
     final cashOption = find.text('COA');
     await tester.ensureVisible(cashOption);
@@ -224,9 +227,16 @@ void main() {
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
     expect(find.text('Confirm event booking'), findsOneWidget);
+    expect(find.text('Cancellation and refund information'), findsOneWidget);
     expect(find.textContaining('starts within 24 hours'), findsOneWidget);
     expect(
-      find.textContaining('payment will not be voided or refunded'),
+      find.textContaining(
+        'Cancel at least 6 hours before the start time to request a refund',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('your online payment is non-refundable'),
       findsOneWidget,
     );
     await tester.tap(find.text('Confirm booking'));
@@ -258,13 +268,21 @@ void main() {
       var bookingRequests = 0;
       final api = AuthApi(
         client: MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/api/bookings') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
           if (request.url.path == '/api/payments/paymongo/config') {
             return http.Response(
               jsonEncode({'onlinePaymentsEnabled': false}),
               200,
             );
           }
-          if (request.url.path == '/api/bookings') {
+          if (request.method == 'GET' &&
+              request.url.path == '/api/bookings') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
+          if (request.method == 'POST' &&
+              request.url.path == '/api/bookings') {
             bookingRequests++;
             return http.Response(
               jsonEncode({
@@ -305,7 +323,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(submitButton);
       expect(find.text('Online'), findsOneWidget);
+      expect(
+        find.textContaining('Continue · \u{20B1} 5000.00'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Online'));
+      await tester.pumpAndSettle();
       await tester.tap(submitButton);
       await tester.pumpAndSettle();
       expect(find.text('Choose online payment'), findsOneWidget);

@@ -20,6 +20,22 @@ import 'models/booking.dart';
 import 'skeleton_loader.dart';
 import 'app_preferences.dart';
 
+String _bookingErrorMessage(Object error, String action) {
+  if (error is AuthApiException) {
+    if (error.statusCode == 401) {
+      return 'Your session has expired. Please sign in again to $action.';
+    }
+    if (error.statusCode == 0 || error.statusCode == 408) {
+      return 'We couldn’t connect to the booking service. Check your connection and try again.';
+    }
+    if (error.statusCode >= 500) {
+      return 'We couldn’t $action right now. Please try again shortly.';
+    }
+    return error.message;
+  }
+  return 'We couldn’t $action right now. Please try again.';
+}
+
 class CustomerBookingsPage extends StatefulWidget {
   const CustomerBookingsPage({
     super.key,
@@ -148,8 +164,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     3,
     (_) => ScrollController(),
   );
-  final List<GlobalKey<RefreshIndicatorState>> _bookingRefreshKeys = List
-      .generate(3, (_) => GlobalKey<RefreshIndicatorState>());
+  final List<GlobalKey<RefreshIndicatorState>> _bookingRefreshKeys =
+      List.generate(3, (_) => GlobalKey<RefreshIndicatorState>());
   int _selectedBookingTab = 0;
   int _unreadBookingCount = 0;
   int _unreadMessageCount = 0;
@@ -215,7 +231,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       );
       _messageCountError = null;
     } on Exception catch (error) {
-      _messageCountError = 'Unread message count could not be updated: $error';
+      _messageCountError =
+          error is AuthApiException &&
+              (error.statusCode == 0 || error.statusCode == 408)
+          ? 'We couldn’t check for new messages. Check your connection and try again.'
+          : 'Your unread message count is temporarily unavailable.';
     }
     return bookings;
   }
@@ -333,7 +353,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     ),
                     const SizedBox(height: 12),
                     AppText(
-                      'Could not load bookings: ${snapshot.error}',
+                      'We couldn’t load your bookings right now. Please check your connection and try again.',
                       textAlign: TextAlign.center,
                       localize: true,
                     ),
@@ -1008,7 +1028,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: AppText('Could not delete booking: $error', localize: true),
+          content: AppText(
+            _bookingErrorMessage(error, 'delete this booking'),
+            localize: true,
+          ),
         ),
       );
     }
@@ -1072,7 +1095,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: AppText('Could not cancel booking: $error', localize: true),
+          content: AppText(
+            _bookingErrorMessage(error, 'cancel this booking'),
+            localize: true,
+          ),
         ),
       );
     }
@@ -1715,9 +1741,11 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         _imageData = 'data:$mime;base64,${base64Encode(bytes)}';
         _error = null;
       });
-    } on Exception catch (error) {
+    } on Exception {
       if (mounted) {
-        setState(() => _error = 'Could not select the photo: $error');
+        setState(
+          () => _error = 'We couldn’t open your photos. Please try again.',
+        );
       }
     }
   }
@@ -1761,7 +1789,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = '$error';
+        _error = _bookingErrorMessage(error, 'submit your review');
       });
     }
   }

@@ -519,14 +519,22 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         headerBackgroundColor: primaryColor,
         headerForegroundColor: onPrimary,
+        dayBackgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return accentColor;
+          return null;
+        }),
         dayForegroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.disabled)) {
             return scheme.onSurfaceVariant.withValues(alpha: .55);
           }
-          if (states.contains(WidgetState.selected)) return onPrimary;
+          if (states.contains(WidgetState.selected)) return onAccent;
           return scheme.onSurface;
         }),
-        todayForegroundColor: WidgetStatePropertyAll(accentForeground),
+        todayForegroundColor: WidgetStateProperty.resolveWith((states) {
+          return states.contains(WidgetState.selected)
+              ? onAccent
+              : accentForeground;
+        }),
         todayBorder: BorderSide(color: accentForeground),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.dialog),

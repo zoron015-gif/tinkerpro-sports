@@ -234,8 +234,15 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
   Future<void> _deleteMessage(Map<String, dynamic> message) async {
     final token = _token;
     final conversationId = _selectedConversation;
+    final messageConversationId =
+        _asInt(message['conversationId']) ?? conversationId;
     final messageId = _asInt(message['id']);
-    if (token == null || conversationId == null || messageId == null) return;
+    if (token == null ||
+        conversationId == null ||
+        messageConversationId == null ||
+        messageId == null) {
+      return;
+    }
 
     final isOwnMessage =
         _currentUserId != null && _asInt(message['senderId']) == _currentUserId;
@@ -310,7 +317,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
     try {
       await _messagesService.deleteMessage(
         token: token,
-        conversationId: conversationId,
+        conversationId: messageConversationId,
         messageId: messageId,
         scope: scope,
       );

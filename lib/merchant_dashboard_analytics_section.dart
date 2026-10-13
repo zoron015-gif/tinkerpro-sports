@@ -75,8 +75,7 @@ final _merchantAnalyticsUiStates = Expando<_MerchantAnalyticsUiState>();
 
 _MerchantAnalyticsUiState _merchantAnalyticsUiStateFor(
   _MerchantDashboardPageState state,
-) =>
-    _merchantAnalyticsUiStates[state] ??= _MerchantAnalyticsUiState();
+) => _merchantAnalyticsUiStates[state] ??= _MerchantAnalyticsUiState();
 
 extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _bookingBusinessType(Map<String, dynamic> booking) =>
@@ -571,14 +570,6 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _weekdayLabel(int weekday) =>
       const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
 
-  bool _isPendingBooking(Map<String, dynamic> booking) =>
-      BookingStatusParser.isPending(booking['status']);
-
-  bool _isFinishedBooking(Map<String, dynamic> booking) =>
-      BookingStatusParser.parse(booking['status']) == BookingStatus.finished ||
-      BookingStatusParser.parse(booking['status']) == BookingStatus.completed ||
-      BookingStatusParser.parse(booking['status']) == BookingStatus.done;
-
   bool _isConfirmedBooking(Map<String, dynamic> booking) =>
       BookingStatusParser.isConfirmed(booking['status']);
 
@@ -611,11 +602,17 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   double get _periodSales => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(0, (total, booking) => total + _bookingAmount(booking['total']));
+      .fold(
+        0,
+        (total, booking) => total + _bookingAmount(booking['total']),
+      );
 
   double get _periodCollected => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(0, (total, booking) => total + _bookingAmountReceived(booking));
+      .fold(
+        0,
+        (total, booking) => total + _bookingAmountReceived(booking),
+      );
 
   int get _periodCustomers => _periodBookings
       .map((booking) => booking['customerId'] ?? booking['customerName'])

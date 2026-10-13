@@ -6,6 +6,39 @@ import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
 
 void main() {
+  test('API connection errors use human-readable text without LAN details', () {
+    const timeout = AuthApiException(
+      'The local API at http://192.168.1.21:3000 timed out.',
+      408,
+    );
+
+    expect(
+      timeout.toString(),
+      'The service is taking longer than expected to respond. Please try again in a moment.',
+    );
+    expect(timeout.toString(), isNot(contains('192.168.1.21')));
+    expect(
+      const AuthApiException('Please choose a valid date.', 400).toString(),
+      'Please choose a valid date.',
+    );
+  });
+
+  test('login uses the configured local LAN API address', () async {
+    late http.Request receivedRequest;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        receivedRequest = request;
+        return http.Response(jsonEncode({'user': {}, 'token': 'test'}), 200);
+      }),
+    );
+
+    await api.login(email: 'client@example.com', password: 'password123');
+
+    expect(receivedRequest.url.host, '192.168.1.21');
+    expect(receivedRequest.url.port, 3000);
+    expect(receivedRequest.url.path, '/api/auth/login');
+  });
+
   test(
     'message API attaches the session token as a Bearer credential',
     () async {
@@ -47,32 +80,35 @@ void main() {
     expect(jsonDecode(receivedRequest.body), {'scope': 'me'});
   });
 
-  test('message deletion rejects an unsupported scope before requesting', () async {
-    var requested = false;
-    final api = AuthApi(
-      client: MockClient((_) async {
-        requested = true;
-        return http.Response('{}', 200);
-      }),
-    );
+  test(
+    'message deletion rejects an unsupported scope before requesting',
+    () async {
+      var requested = false;
+      final api = AuthApi(
+        client: MockClient((_) async {
+          requested = true;
+          return http.Response('{}', 200);
+        }),
+      );
 
-    await expectLater(
-      api.deleteConversationMessage(
-        token: 'test-session-token',
-        conversationId: 12,
-        messageId: 34,
-        scope: 'all',
-      ),
-      throwsA(
-        isA<AuthApiException>().having(
-          (error) => error.statusCode,
-          'statusCode',
-          400,
+      await expectLater(
+        api.deleteConversationMessage(
+          token: 'test-session-token',
+          conversationId: 12,
+          messageId: 34,
+          scope: 'all',
         ),
-      ),
-    );
-    expect(requested, isFalse);
-  });
+        throwsA(
+          isA<AuthApiException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+      expect(requested, isFalse);
+    },
+  );
 
   test(
     'missing messaging endpoints explain that the backend needs a restart',

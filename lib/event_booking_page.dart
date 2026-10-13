@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'app_session.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
+import 'booking_cancellation_notice.dart';
+import 'booking_schedule_conflict.dart';
 import 'app_preferences.dart';
 
 class EventBookingPage extends StatefulWidget {
@@ -41,7 +43,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
   String? _guestCountError;
   final _eventTypeFieldKey = GlobalKey();
   final _guestCountFieldKey = GlobalKey();
-  String _paymentMethod = 'online';
+  String _paymentMethod = 'cash_on_arrival';
   final String _bookingIdempotencyKey = newBookingIdempotencyKey();
   bool _submitting = false;
 
@@ -250,6 +252,16 @@ class _EventBookingPageState extends State<EventBookingPage> {
         _startTime.hour,
         _startTime.minute,
       );
+      final scheduleAvailable = await confirmBookingScheduleConflict(
+        context: context,
+        api: _api,
+        token: token,
+        venueId: _number(widget.business['id']),
+        venueName: _venueName,
+        startsAt: bookingStart,
+        durationHours: _durationHours.toDouble(),
+      );
+      if (!scheduleAvailable || !mounted) return;
       final timeUntilBooking = bookingStart.difference(DateTime.now());
       final startsWithin24Hours =
           !timeUntilBooking.isNegative &&
@@ -284,19 +296,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 ),
                 if (startsWithin24Hours) ...[
                   const SizedBox(height: 12),
-                  AppText(
-                    'This booking starts within 24 hours. You may cancel it '
-                    'at any time. If cancelled at least 6 hours before it starts, '
-                    'an online payment refund will be requested. If cancelled '
-                    'less than 6 hours before it starts or after it has started, '
-                    'the payment will not be voided or refunded. Cash already '
-                    'collected must be returned manually.',
-                    localize: true,
-                    style: TextStyle(
-                      color: AppColors.errorText,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  const BookingCancellationNotice(),
                 ],
                 if (_paymentMethod == 'cash_on_arrival')
                   _confirmationRow(

@@ -301,6 +301,7 @@ async function ensureBookingsSchema() {
       extra_player_charge DECIMAL(10, 2) NOT NULL DEFAULT 0,
       event_type VARCHAR(100) NULL,
       fitness_plan_type ENUM('session', 'monthly', 'yearly') NULL,
+      fitness_plan_duration_days INT UNSIGNED NULL,
       fitness_category VARCHAR(100) NULL,
       fitness_coach_name VARCHAR(100) NULL,
       fitness_plan_price DECIMAL(10, 2) NULL,
@@ -342,6 +343,7 @@ async function ensureBookingsSchema() {
     ['extra_player_charge', 'DECIMAL(10, 2) NOT NULL DEFAULT 0'],
     ['event_type', 'VARCHAR(100) NULL'],
     ['fitness_plan_type', "ENUM('session', 'monthly', 'yearly') NULL"],
+    ['fitness_plan_duration_days', 'INT UNSIGNED NULL'],
     ['fitness_category', 'VARCHAR(100) NULL'],
     ['fitness_coach_name', 'VARCHAR(100) NULL'],
     ['fitness_plan_price', 'DECIMAL(10, 2) NULL'],
@@ -759,6 +761,18 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [9, 'multi-slot-booking'],
+      );
+    }
+    if (!appliedVersions.has(10)) {
+      await ensureTableColumn(
+        'bookings',
+        'fitness_plan_duration_days',
+        'INT UNSIGNED NULL',
+      );
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [10, 'fitness-plan-duration-days'],
       );
     }
   } finally {

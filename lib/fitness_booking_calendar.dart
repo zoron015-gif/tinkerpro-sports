@@ -2,36 +2,43 @@ import './app_design_system.dart';
 import 'package:flutter/material.dart';
 import 'app_preferences.dart';
 
-DateTime fitnessPlanEndDate(DateTime startDate, String planType) {
+DateTime fitnessPlanEndDate(
+  DateTime startDate,
+  String planType, {
+  int? durationDays,
+}) {
   final start = DateUtils.dateOnly(startDate);
-  final months = switch (planType.trim().toLowerCase()) {
-    'monthly' || 'month' => 1,
-    'yearly' || 'annual' || 'annually' || 'year' => 12,
-    _ => 0,
-  };
-  if (months == 0) return start;
-
-  final targetMonth = DateTime(start.year, start.month + months, 1);
-  final lastDay = DateTime(targetMonth.year, targetMonth.month + 1, 0).day;
-  return DateTime(
-    targetMonth.year,
-    targetMonth.month,
-    start.day.clamp(1, lastDay),
-  );
+  final days = durationDays ??
+      switch (planType.trim().toLowerCase()) {
+        'monthly' || 'month' => 30,
+        'yearly' || 'annual' || 'annually' || 'year' => 365,
+        _ => 1,
+      };
+  if (days < 1) return start;
+  return start.add(Duration(days: days - 1));
 }
 
-String fitnessPlanDurationLabel(String planType) =>
-    switch (planType.trim().toLowerCase()) {
-      'monthly' || 'month' => '1 month',
-      'yearly' || 'annual' || 'annually' || 'year' => '1 year',
-      'session' || '' => '1 session',
-      _ => planType,
-    };
+String fitnessPlanDurationLabel(
+  String planType, {
+  int? durationDays,
+}) =>
+    durationDays != null
+        ? '$durationDays ${durationDays == 1 ? 'day' : 'days'}'
+        : switch (planType.trim().toLowerCase()) {
+            'monthly' || 'month' => '30 days',
+            'yearly' || 'annual' || 'annually' || 'year' => '365 days',
+            'session' || '' => '1 session',
+            _ => planType,
+          };
 
 DateTime? fitnessBookingEndDate(Map<String, dynamic> booking) {
   final start = DateTime.tryParse('${booking['date'] ?? ''}');
   if (start == null) return null;
-  return fitnessPlanEndDate(start, '${booking['fitnessPlanType'] ?? ''}');
+  return fitnessPlanEndDate(
+    start,
+    '${booking['fitnessPlanType'] ?? ''}',
+    durationDays: int.tryParse('${booking['fitnessPlanDurationDays'] ?? ''}'),
+  );
 }
 
 bool isFitnessBookingActive(Map<String, dynamic> booking, {DateTime? onDate}) {

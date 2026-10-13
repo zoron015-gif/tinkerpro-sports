@@ -19,12 +19,15 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://<host-reachable-from-device>:3000
 ```
 
-The API listens on port 3000 by default. The app's compiled-in API URL is
-`http://192.168.1.50:3000`; override it with `API_BASE_URL` as above if your
-computer's LAN address changes. For the Android emulator, the host machine is
-usually reachable at `10.0.2.2`, so use
-`http://10.0.2.2:3000`. A physical device needs the computer's reachable LAN
-address, and both devices must be able to reach each other.
+The API listens on port 3000 by default. The development API URL defaults to
+`http://192.168.1.21:3000` for this LAN. This is a local developer address,
+not a public/live server. If the computer's LAN address changes, override it
+with `API_BASE_URL` as above. For the Android emulator, the host machine is
+usually reachable at `10.0.2.2`, so use `http://10.0.2.2:3000`. A physical
+device needs the computer's reachable LAN address, and both devices must be
+connected to the same Wi-Fi/LAN and able to reach each other. Restart/rebuild
+the Flutter app after changing `API_BASE_URL`, since it is a compile-time
+setting.
 
 Firebase platform options are included in `lib/firebase_options.dart`. Google
 sign-in also depends on the matching Firebase/OAuth configuration and backend

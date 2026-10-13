@@ -324,7 +324,9 @@ class VenueCatalogRepository {
     final businesses = await _api.venues.businesses();
     return businesses
         .where((business) {
-          final isEvent = business.businessType.trim().toLowerCase() == 'event';
+          final isEvent =
+              BusinessTypeParser.parse(business.businessType) ==
+              BusinessType.event;
           return (includeDisabledEvents && isEvent) || business.enabled;
         })
         .toList(growable: false);

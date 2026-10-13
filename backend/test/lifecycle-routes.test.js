@@ -154,7 +154,12 @@ function makeConnection() {
         return response([{}]);
       }
       if (sql.includes('INSERT INTO bookings')) {
-        const recordKey = `${params[0]}:${params[23]}`;
+        assert.equal(
+          (sql.match(/\?/g) || []).length,
+          params.length,
+          'booking insert placeholder count must match its bound values',
+        );
+        const recordKey = `${params[0]}:${params[24]}`;
         if (db.idempotencyRecords.has(recordKey)) {
           const error = new Error(
             'Duplicate entry for uq_bookings_customer_idempotency',
@@ -165,7 +170,7 @@ function makeConnection() {
         db.idempotencyRecords.set(recordKey, {
           customerId: params[0],
           bookingId: 601,
-          requestHash: params[24],
+          requestHash: params[25],
           responseJson: null,
           responseStatus: null,
         });
@@ -259,6 +264,8 @@ function resetDatabase() {
     resetToken: null,
     availabilityRows: [],
     availabilityError: null,
+    messageRows: [],
+    ticketVenueNames: new Map(),
     customerBookings: [],
     dueBookings: [],
     checkInBookings: [],
@@ -270,6 +277,7 @@ function resetDatabase() {
       image_url: 'https://example.test/test-court.jpg',
       businessType: 'Sports',
       category: 'Basketball',
+      hours: '9:00 AM - 5:00 PM',
       price_per_hour: 120,
       slot_count: 5,
       sports_slots_json: [
@@ -570,6 +578,26 @@ before(async () => {
       ) {
         return response([{ senderId: db.messageOwnerId }]);
       }
+      if (
+        sql.includes('SELECT m.id, m.conversation_id AS conversationId') &&
+        sql.includes('FROM messages m')
+      ) {
+        return response(db.messageRows);
+      }
+      if (
+        sql.includes('SELECT b.id AS bookingId, v.name AS venueName') &&
+        sql.includes('FROM bookings b') &&
+        sql.includes('merchant_businesses v')
+      ) {
+        return response(
+          params
+            .map((id) => ({
+              bookingId: id,
+              venueName: db.ticketVenueNames.get(Number(id)),
+            }))
+            .filter((booking) => booking.venueName),
+        );
+      }
       if (sql.includes('SELECT 1 FROM conversation_members')) {
         return response([{}]);
       }
@@ -865,7 +893,7 @@ test('message history hides messages deleted only by the current user', async ()
 
   assert.equal(response.status, 200);
   const historyQuery = db.calls.find(({ sql }) =>
-    sql.includes('SELECT m.id, m.sender_id AS senderId'),
+    sql.includes('SELECT m.id, m.conversation_id AS conversationId'),
   );
   assert.ok(historyQuery);
   assert.match(historyQuery.sql, /message_user_deletions/);
@@ -905,6 +933,71 @@ test('opening a direct conversation marks its merged duplicate chats as read', a
     sql.includes('INSERT IGNORE INTO message_reads (message_id, user_id)'),
   );
   assert.deepEqual(readInsert.params, ['42', 601, 602, '42']);
+});
+
+test('message history keeps older messages visible across duplicate booking chats', async () => {
+  db.messageReadScope = {
+    type: 'direct',
+    archivedAt: null,
+    peerId: 88,
+  };
+  db.duplicateDirectConversationIds = [601, 602];
+  db.messageRows = [
+    {
+      id: 900,
+      conversationId: 601,
+      senderId: '42',
+      body: 'Earlier message to the venue.',
+      attachmentJson: null,
+    },
+    {
+      id: 901,
+      conversationId: 602,
+      senderId: '42',
+      body: 'New booking request.',
+      attachmentJson: JSON.stringify({
+        type: 'booking',
+        bookingId: 702,
+        venueName: 'Sports venue',
+      }),
+    },
+  ];
+  db.ticketVenueNames.set(702, 'Test Court');
+
+  const response = await request('/api/messages/conversations/602');
+
+  assert.equal(response.status, 200);
+  const { messages } = await response.json();
+  assert.deepEqual(
+    messages.map(({ id, conversationId, body }) => ({
+      id,
+      conversationId,
+      body,
+    })),
+    [
+      {
+        id: 900,
+        conversationId: 601,
+        body: 'Earlier message to the venue.',
+      },
+      {
+        id: 901,
+        conversationId: 602,
+        body: 'New booking request.',
+      },
+    ],
+  );
+  assert.deepEqual(messages[1].attachment, {
+    type: 'booking',
+    bookingId: 702,
+    venueName: 'Test Court',
+  });
+  const historyQuery = db.calls.find(({ sql }) =>
+    sql.includes('SELECT m.id, m.conversation_id AS conversationId'),
+  );
+  assert.ok(historyQuery);
+  assert.match(historyQuery.sql, /m\.conversation_id IN \(\?, \?\)/);
+  assert.deepEqual(historyQuery.params, ['42', 602, 601, '42']);
 });
 
 test('booking numeric fields reject booleans and blank numeric strings', async () => {
@@ -1262,8 +1355,15 @@ test('customer booking responses include fitness class details', async () => {
     sql.includes('LEFT JOIN booking_check_ins'),
   );
   assert.ok(bookingQuery);
-  assert.match(bookingQuery.sql, /LOWER\(v\.business_type\) = \?/);
-  assert.deepEqual(bookingQuery.params, ['42', 'fitness & wellness']);
+  assert.match(bookingQuery.sql, /LOWER\(TRIM\(v\.business_type\)\) IN/);
+  assert.deepEqual(bookingQuery.params, [
+    '42',
+    'fitness & wellness',
+    'fitness',
+    'wellness',
+    'fitness wellness',
+    'fitness_wellness',
+  ]);
 });
 
 test('customer booking business type filter rejects unsupported values', async () => {
@@ -1277,6 +1377,29 @@ test('customer booking business type filter rejects unsupported values', async (
     db.calls.some(({ sql }) => sql.includes('LEFT JOIN fitness_business_details')),
     false,
   );
+});
+
+test('legacy Fitness venue names are routed through Fitness booking validation', async () => {
+  db.venue.businessType = 'Fitness';
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 1,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Yoga',
+      fitnessPlanType: 'monthly',
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const { booking } = await response.json();
+  assert.equal(booking.fitnessCategory, 'Yoga');
+  assert.equal(booking.fitnessPlanType, 'monthly');
+  assert.equal(booking.total, 1200);
 });
 
 test('fitness businesses persist category plans and optional coaches', async () => {
@@ -1459,8 +1582,15 @@ test('customer feed can restrict results to one booking type', async () => {
     sql.includes('heart_count') && sql.includes('hearted_by_me'),
   );
   assert.ok(feedQuery);
-  assert.match(feedQuery.sql, /LOWER\(b\.business_type\) = \?/);
-  assert.deepEqual(feedQuery.params, ['42', 'fitness & wellness']);
+  assert.match(feedQuery.sql, /LOWER\(TRIM\(b\.business_type\)\) IN/);
+  assert.deepEqual(feedQuery.params, [
+    '42',
+    'fitness & wellness',
+    'fitness',
+    'wellness',
+    'fitness wellness',
+    'fitness_wellness',
+  ]);
 });
 
 test('customer feed rejects unsupported booking type filters', async () => {
@@ -1803,10 +1933,17 @@ test('booking success calculates add-on charges and downpayment', async () => {
   assert.equal(typeof booking.bookingToken, 'string');
   assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/i);
   assert.ok(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')));
+  const requestTicket = db.calls.find(
+    ({ sql, params }) =>
+      sql.includes('INSERT INTO messages') &&
+      String(params[2]).startsWith('New booking request #'),
+  );
+  assert.ok(requestTicket);
+  assert.equal(JSON.parse(requestTicket.params[3]).venueName, 'Test Court');
   const bookingInsert = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO bookings'),
   );
-  assert.equal(bookingInsert.params[22], 'unpaid');
+  assert.equal(bookingInsert.params[23], 'unpaid');
   const activityInsert = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO user_activity_logs'),
   );
@@ -2146,9 +2283,9 @@ test('Fitness booking rejects a category or coach not configured by the venue', 
   assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
 });
 
-test('Fitness first visits cannot be used to reserve extra hours or attendees', async () => {
+test('Fitness session plans must reserve the full venue opening hours', async () => {
   db.venue.businessType = 'Fitness & Wellness';
-  const response = await request('/api/bookings', {
+  const partialSession = await request('/api/bookings', {
     method: 'POST',
     body: {
       venueId: 7,
@@ -2161,8 +2298,27 @@ test('Fitness first visits cannot be used to reserve extra hours or attendees', 
       fitnessPlanType: 'session',
     },
   });
-  assert.equal(response.status, 400);
+  assert.equal(partialSession.status, 400);
   assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+
+  const fullSession = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 8,
+      players: 1,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Yoga',
+      fitnessPlanType: 'session',
+    },
+  });
+  assert.equal(fullSession.status, 201);
+  const { booking } = await fullSession.json();
+  assert.equal(booking.startTime, '09:00');
+  assert.equal(booking.durationHours, 8);
+  assert.equal(booking.fitnessPlanType, 'session');
 });
 
 test('bookings on separate small slots can overlap and use the selected sport rate', async () => {
@@ -2216,7 +2372,7 @@ test('multi-slot bookings reserve every selected slot and charge each slot once'
   assert.equal(booking.includedPlayers, 4);
   assert.equal(booking.total, 365);
   const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
-  assert.equal(insert.params[25], '[2,3]');
+  assert.equal(insert.params[26], '[2,3]');
 });
 
 test('four booked slots multiply included player capacity before charging extras', async () => {
@@ -2346,6 +2502,7 @@ test('merchant approval issues a booking ticket', async () => {
   const ticket = JSON.parse(ticketMessage.params[3]);
   assert.equal(ticket.transactionId, body.transactionId);
   assert.equal(ticket.ticketCode, body.ticketCode);
+  assert.equal(ticket.venueName, 'Test Court');
   const approvalUpdate = db.calls.find(({ sql }) =>
     sql.includes("SET b.status = 'approved'"),
   );

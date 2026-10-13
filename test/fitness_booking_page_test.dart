@@ -61,7 +61,10 @@ void main() {
     );
     expect((summary.decoration! as BoxDecoration).color, AppColors.darkSurface);
     final action = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Pay · \u{20B1} 500.00'),
+      find.widgetWithText(
+        FilledButton,
+        'Continue · \u{20B1} 250.00 downpayment',
+      ),
     );
     expect(action.style!.backgroundColor!.resolve({}), AppPalette.blue.color);
     expect(
@@ -81,6 +84,9 @@ void main() {
       });
       final api = AuthApi(
         client: MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/api/bookings') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
           if (request.url.path == '/api/bookings/availability') {
             return http.Response(jsonEncode({'bookings': []}), 200);
           }
@@ -139,15 +145,30 @@ void main() {
       final venueTitle = tester.widget<Text>(find.text('Test Fitness'));
       expect(venueTitle.style?.fontSize, 19);
       expect(venueTitle.style?.fontWeight, FontWeight.w900);
-      expect(find.textContaining('Session · \u{20B1} 500.00'), findsOneWidget);
+      expect(
+        find.textContaining('Full-day session · \u{20B1} 500.00'),
+        findsOneWidget,
+      );
       expect(find.textContaining('Monthly · \u{20B1} 1200.00'), findsOneWidget);
       expect(find.textContaining('Yearly · \u{20B1} 10800.00'), findsOneWidget);
-      expect(find.textContaining('Pay · \u{20B1} 500.00'), findsOneWidget);
+      expect(
+        find.textContaining('Continue · \u{20B1} 250.00 downpayment'),
+        findsOneWidget,
+      );
+      final monthlyPlan = find.textContaining('Monthly · \u{20B1} 1200.00');
+      await tester.ensureVisible(monthlyPlan);
+      await tester.tap(monthlyPlan);
+      await tester.pumpAndSettle();
+      expect(find.text('Plan duration'), findsOneWidget);
+      expect(find.text('30 days'), findsOneWidget);
+      expect(find.text('First-visit reservation'), findsOneWidget);
+      expect(find.text('1 hour'), findsOneWidget);
       final yearlyPlan = find.textContaining('Yearly · \u{20B1} 10800.00');
       await tester.ensureVisible(yearlyPlan);
       await tester.tap(yearlyPlan);
       await tester.pumpAndSettle();
       expect(find.text('Yearly offer: 10% off'), findsOneWidget);
+      expect(find.text('365 days'), findsOneWidget);
       expect(find.text('\u{20B1} 10800.00'), findsWidgets);
       final coachDropdown = find.byWidgetPredicate(
         (widget) =>
@@ -207,6 +228,9 @@ void main() {
       });
       final api = AuthApi(
         client: MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/api/bookings') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
           if (request.url.path == '/api/bookings/availability') {
             return http.Response(jsonEncode({'bookings': []}), 200);
           }
@@ -226,7 +250,7 @@ void main() {
                 'id': 7,
                 'name': 'Test Fitness',
                 'fitnessCategories': [
-                  {'category': 'Yoga', 'sessionPrice': 500},
+                  {'category': 'Yoga', 'monthlyPrice': 500},
                 ],
               },
             ),
@@ -237,7 +261,7 @@ void main() {
 
       final submitButton = find.widgetWithText(
         FilledButton,
-        'Pay · \u{20B1} 500.00',
+        'Continue · \u{20B1} 250.00 downpayment',
       );
       await tester.ensureVisible(submitButton);
       await tester.tap(submitButton);
@@ -251,14 +275,114 @@ void main() {
         find.byKey(const ValueKey('fitness-booking-first-visit-error')),
         findsOneWidget,
       );
-      final timeButton = tester.widget<OutlinedButton>(
+      final timeField = tester.widget<SizedBox>(
         find.byKey(const ValueKey('fitness-booking-first-visit-time')),
       );
-      expect(timeButton.style!.side!.resolve({})!.color, AppColors.errorText);
+      final timeDecoration = tester.widget<InputDecorator>(
+        find.descendant(
+          of: find.byKey(const ValueKey('fitness-booking-first-visit-time')),
+          matching: find.byType(InputDecorator),
+        ),
+      );
+      expect(timeField.height, 60);
+      expect(
+        (timeDecoration.decoration.enabledBorder! as OutlineInputBorder)
+            .borderSide
+            .color,
+        AppColors.errorText,
+      );
       expect(
         find.text('Please choose a time for your first visit.'),
         findsNothing,
       );
+    },
+  );
+
+  testWidgets(
+    'full-day session reserves venue hours and explains unavailable coaches',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      FlutterSecureStorage.setMockInitialValues({
+        'session_api_token': 'test-token',
+      });
+      Map<String, dynamic>? submittedBooking;
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/api/bookings') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
+          if (request.url.path == '/api/bookings/availability') {
+            return http.Response(jsonEncode({'bookings': []}), 200);
+          }
+          if (request.url.path == '/api/bookings' && request.method == 'POST') {
+            submittedBooking = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'booking': {'id': 42},
+              }),
+              201,
+            );
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            404,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FitnessBookingPage(
+              api: api,
+              business: {
+                'id': 7,
+                'name': 'Test Fitness',
+                'hours': '9:00 AM - 5:00 PM',
+                'fitnessCategories': [
+                  {'category': 'Yoga', 'sessionPrice': 500},
+                ],
+                'fitnessCoaches': [],
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Session duration'), findsOneWidget);
+      expect(find.text('8 hours · venue opening hours'), findsOneWidget);
+      expect(find.textContaining('9:00 AM–5:00 PM'), findsNWidgets(2));
+      expect(find.text('One-time plan total'), findsOneWidget);
+      expect(
+        find.text(
+          'No coaches are currently listed for this venue. You can continue without a coach.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('fitness-booking-first-visit-time')),
+        findsNothing,
+      );
+
+      await tester.ensureVisible(find.text('COA'));
+      await tester.tap(find.text('COA'));
+      await tester.pumpAndSettle();
+      final continueButton = find.widgetWithText(
+        FilledButton,
+        'Continue · \u{20B1} 250.00 downpayment',
+      );
+      await tester.ensureVisible(continueButton);
+      await tester.tap(continueButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm booking'));
+      await tester.pumpAndSettle();
+
+      expect(submittedBooking?['startTime'], '09:00:00');
+      expect(submittedBooking?['durationHours'], 8);
+      expect(submittedBooking?['fitnessPlanType'], 'session');
     },
   );
 }

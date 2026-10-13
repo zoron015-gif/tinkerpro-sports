@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('opening a booking conversation displays its existing message', (
+  testWidgets('opening a new booking thread preserves earlier messages', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
@@ -52,8 +52,21 @@ void main() {
           return http.Response(
             jsonEncode({
               'messages': [
+                ...List.generate(
+                  24,
+                  (index) => {
+                    'id': 500 + index,
+                    'conversationId': 54,
+                    'senderId': 7,
+                    'body': index == 0
+                        ? 'Earlier message to the venue.'
+                        : 'Older message $index',
+                    'createdAt': '2026-10-06T08:00:00Z',
+                  },
+                ),
                 {
-                  'id': 501,
+                  'id': 524,
+                  'conversationId': 55,
                   'senderId': 42,
                   'body': 'New booking request #504 submitted.',
                   'createdAt': '2026-10-07T08:00:00Z',
@@ -113,6 +126,7 @@ void main() {
     expect(find.text('BOOKING REQUEST'), findsOneWidget);
     expect(find.text('TP-TXN-00000504'), findsOneWidget);
     expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
+    expect(find.text('Earlier message to the venue.'), findsNothing);
   });
 
   testWidgets('long-press delete-for-everyone shows the removal notice', (

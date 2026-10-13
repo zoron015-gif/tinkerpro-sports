@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'core/api_response.dart';
 import 'features/venues/domain/venue_models.dart';
 import 'models/booking.dart';
+import 'core/business_type.dart';
 
 export 'features/activity_log/domain/activity_log_entry.dart';
 export 'features/venues/domain/venue_models.dart';
@@ -25,7 +26,7 @@ String newBookingIdempotencyKey() => List.generate(
 
 const apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.50:3000',
+  defaultValue: 'http://192.168.1.21:3000',
 );
 
 final _requestIdPattern = RegExp(
@@ -48,10 +49,10 @@ class AuthApiException implements Exception {
 
   String get userMessage {
     if (statusCode == 0) {
-      return 'Could not connect to the server. Check your connection and try again.';
+      return 'We couldn’t connect to the service. Check your internet or Wi-Fi connection and try again.';
     }
     if (statusCode == 408) {
-      return 'The server took too long to respond. Please try again.';
+      return 'The service is taking longer than expected to respond. Please try again in a moment.';
     }
     if (statusCode >= 500) {
       return 'Something went wrong on our end. Please try again.';
@@ -60,7 +61,7 @@ class AuthApiException implements Exception {
   }
 
   @override
-  String toString() => message;
+  String toString() => userMessage;
 }
 
 class AuthApi {
@@ -300,12 +301,12 @@ class AuthApi {
                 .timeout(const Duration(seconds: 15));
     } on TimeoutException {
       throw const AuthApiException(
-        'The server took too long to respond. Check that the backend is running and try again.',
+        'The local API took too long to respond. Check that the backend is running and reachable over your Wi-Fi/LAN, then try again.',
         408,
       );
     } on Exception {
       throw const AuthApiException(
-        'Could not connect to the server. Check that the backend is running and the API URL is correct.',
+        'Could not reach the local API. Check that the backend is running and that this device can reach the API address over Wi-Fi/LAN.',
         0,
       );
     }

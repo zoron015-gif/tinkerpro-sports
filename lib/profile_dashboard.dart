@@ -164,13 +164,23 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             }
           } on Exception catch (error) {
             if (mounted) {
-              _message(context, 'Could not check match alerts: $error');
+              _message(
+                context,
+                _profileErrorMessage(error, 'check your match alerts'),
+              );
             }
           }
         }
       }
     } on Exception catch (error) {
-      if (mounted) _message(context, 'Could not load profile: $error');
+      if (mounted) {
+        _message(
+          context,
+          _profileErrorMessage(error, 'load your profile and bookings'),
+          actionLabel: 'Try again',
+          onAction: _loadProfile,
+        );
+      }
     }
   }
 
@@ -551,7 +561,12 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         _message(context, 'Profile updated.');
       }
     } on Exception catch (error) {
-      if (mounted) _message(context, 'Could not update profile: $error');
+      if (mounted) {
+        _message(
+          context,
+          _profileErrorMessage(error, 'update your profile'),
+        );
+      }
     }
   }
 
@@ -1361,7 +1376,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       );
     } on Exception catch (error) {
       if (mounted) {
-        _message(context, 'Could not update match alerts: $error');
+        _message(
+          context,
+          _profileErrorMessage(error, 'update your match alerts'),
+        );
       }
     } finally {
       if (mounted) {
@@ -1382,7 +1400,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       }
     } on Exception catch (error) {
       if (mounted) {
-        _message(context, 'Could not open notification settings: $error');
+        _message(
+          context,
+          _profileErrorMessage(error, 'open notification settings'),
+        );
       }
     }
   }
@@ -3288,10 +3309,38 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
     }
   }
 
-  void _message(BuildContext context, String message) {
+  String _profileErrorMessage(Object error, String action) {
+    if (error is AuthApiException) {
+      if (error.statusCode == 401) {
+        return 'Your session has expired. Please sign in again to $action.';
+      }
+      if (error.statusCode == 0 || error.statusCode == 408) {
+        return error.userMessage;
+      }
+      if (error.statusCode >= 500) {
+        return 'We couldn’t $action right now. Please try again shortly.';
+      }
+      return error.message;
+    }
+    return 'We couldn’t $action right now. Please try again.';
+  }
+
+  void _message(
+    BuildContext context,
+    String message, {
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: AppText(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: AppText(message),
+          action: actionLabel != null && onAction != null
+              ? SnackBarAction(label: actionLabel, onPressed: onAction)
+              : null,
+        ),
+      );
   }
 
   Future<void> _openQrScanner() async {
@@ -3366,7 +3415,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         context,
         error is AuthApiException
             ? error.userMessage
-            : 'Could not record check-in: $error',
+            : 'We couldn’t record your check-in. Please try again.',
       );
     }
   }

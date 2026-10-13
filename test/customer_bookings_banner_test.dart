@@ -59,7 +59,9 @@ void main() {
     );
   });
 
-  testWidgets('failed booking load offers retry', (tester) async {
+  testWidgets('failed booking load shows friendly guidance and offers retry', (
+    tester,
+  ) async {
     var bookingRequests = 0;
     final api = AuthApi(
       client: MockClient((request) async {
@@ -67,8 +69,10 @@ void main() {
           bookingRequests++;
           if (bookingRequests == 1) {
             return http.Response(
-              jsonEncode({'error': 'Temporary service issue'}),
-              503,
+              jsonEncode({
+                'error': 'The local API at http://192.168.1.21:3000 took too long to respond.',
+              }),
+              408,
             );
           }
           return http.Response(jsonEncode({'bookings': []}), 200);
@@ -82,7 +86,14 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Could not load bookings'), findsOneWidget);
+    expect(
+      find.text(
+        'We couldn’t load your bookings right now. Please check your connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('192.168.1.21'), findsNothing);
+    expect(find.textContaining('timed out'), findsNothing);
     expect(
       find.byKey(const ValueKey('customer-bookings-retry')),
       findsOneWidget,

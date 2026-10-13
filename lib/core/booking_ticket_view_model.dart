@@ -120,7 +120,7 @@ class BookingTicketViewModel {
       approvalStatus: approvalStatus,
       paymentStatus: paymentStatus,
       bookingId: bookingId,
-      venueName: venueName.isEmpty ? 'Sports venue' : venueName,
+      venueName: venueName.isEmpty ? 'Venue name unavailable' : venueName,
       sportType: sportType,
       fitnessPlanType: '${data['fitnessPlanType'] ?? ''}'.trim(),
       fitnessCategory: fitnessCategory,
