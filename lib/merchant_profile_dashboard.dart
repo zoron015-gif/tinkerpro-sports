@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'features/activity_log/presentation/activity_log_routes.dart';
@@ -7,6 +9,7 @@ import 'auth_api.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
 import 'app_settings_page.dart';
+import 'booking_notifications.dart';
 import 'profile_image_preview.dart';
 import 'core/booking_status.dart';
 
@@ -19,6 +22,8 @@ enum _MerchantProfileSetting {
   editProfile,
   activityLog,
   appPreferences,
+  helpCenter,
+  termsOfService,
   logOut,
 }
 
@@ -61,6 +66,8 @@ class _MerchantProfileDashboardPageState
   final _profileRefreshKey = GlobalKey<RefreshIndicatorState>();
   final _profileScrollController = ScrollController();
   String _performancePeriod = 'Today';
+  bool _matchNotificationsEnabled = false;
+  bool _updatingMatchNotificationSetting = false;
 
   @override
   void initState() {
@@ -68,8 +75,9 @@ class _MerchantProfileDashboardPageState
     _api = widget.api ?? AuthApi();
     _owner = widget.owner;
     _profileImage = widget.profileImage;
-    _bookings = widget.bookings;
+_bookings = widget.bookings;
     _businesses = widget.businesses;
+    _loadMatchNotificationSetting();
   }
 
   @override
@@ -196,6 +204,157 @@ class _MerchantProfileDashboardPageState
 
   int _count(dynamic value) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+
+  Future<void> _loadMatchNotificationSetting() async {
+    try {
+      final session = await AppSession.load();
+      if (!mounted) return;
+      setState(() => _matchNotificationsEnabled = session.matchNotificationsEnabled);
+      final notifications = BookingNotifications.instance;
+      if (!_matchNotificationsEnabled || !notifications.isSupported) return;
+
+      final allowed = await notifications.notificationsAllowed();
+      if (!mounted) return;
+      if (!allowed) {
+        await session.setMatchNotificationsEnabled(false);
+        if (!mounted) return;
+        setState(() => _matchNotificationsEnabled = false);
+      } else {
+        await notifications.synchronizeApprovedBookings(
+          accountKey: session.accountEmail ?? _merchantEmail,
+          bookings: widget.bookings,
+        );
+      }
+    } on Exception catch (error) {
+      if (mounted) _showMessage('Could not check match alerts: $error');
+    }
+  }
+
+  Future<void> _setMatchNotificationsEnabled(
+    bool enabled, {
+    required BuildContext settingsContext,
+    required StateSetter setSettingsState,
+  }) async {
+    if (_updatingMatchNotificationSetting) return;
+    setState(() => _updatingMatchNotificationSetting = true);
+    if (settingsContext.mounted) {
+      setSettingsState(() => _updatingMatchNotificationSetting = true);
+    }
+    try {
+      final session = await AppSession.load();
+      final notifications = BookingNotifications.instance;
+      if (enabled) {
+        final granted = await notifications.requestPermissions();
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: const AppText(
+                    'Allow notifications and exact alarms to receive match alerts.',
+                    localize: true,
+                  ),
+                  action: SnackBarAction(
+                    label: 'Settings',
+                    onPressed: () => unawaited(_openNotificationSettings()),
+                  ),
+                ),
+              );
+          }
+          return;
+        }
+        await notifications.synchronizeApprovedBookings(
+          accountKey: session.accountEmail ?? _merchantEmail,
+          bookings: widget.bookings,
+        );
+      } else {
+        await notifications.disableForAccount(
+          session.accountEmail ?? _merchantEmail,
+        );
+      }
+      await session.setMatchNotificationsEnabled(enabled);
+      if (!mounted) return;
+      setState(() => _matchNotificationsEnabled = enabled);
+      if (settingsContext.mounted) {
+        setSettingsState(() => _matchNotificationsEnabled = enabled);
+      }
+      _showMessage(
+        enabled
+            ? 'Match start and end alerts are enabled.'
+            : 'Match start and end alerts are turned off.',
+      );
+    } on Exception catch (error) {
+      if (mounted) _showMessage('Could not update match alerts: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _updatingMatchNotificationSetting = false);
+        if (settingsContext.mounted) {
+          setSettingsState(() => _updatingMatchNotificationSetting = false);
+        }
+      }
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    try {
+      final opened = await BookingNotifications.instance
+          .openSystemNotificationSettings();
+      if (opened != true && mounted) {
+        _showMessage('Could not open notification settings.');
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        _showMessage('Could not open notification settings: $error');
+      }
+    }
+  }
+
+  Widget _matchNotificationControl({
+    required BuildContext settingsContext,
+    required StateSetter setSettingsState,
+  }) => Container(
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _profileLine),
+    ),
+    child: SwitchListTile.adaptive(
+      key: const ValueKey('merchant-match-notifications-switch'),
+      value: _matchNotificationsEnabled,
+      onChanged: _updatingMatchNotificationSetting
+          ? null
+          : (enabled) => _setMatchNotificationsEnabled(
+              enabled,
+              settingsContext: settingsContext,
+              setSettingsState: setSettingsState,
+            ),
+      activeThumbColor: AppColors.accent,
+      secondary: Icon(
+        Icons.notifications_active_outlined,
+        color: _profileAccent,
+      ),
+      title: AppText(
+        'Match notifications',
+        style: TextStyle(
+          color: _profileInk,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+        localize: true,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+    ),
+  );
+
+  String get _merchantEmail =>
+      (_owner['email'] as String?) ?? 'Merchant account';
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: AppText(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -351,6 +510,14 @@ class _MerchantProfileDashboardPageState
                   ),
                   Divider(height: 1, color: _profileLine),
                   const SizedBox(height: 6),
+                  if (BookingNotifications.instance.isSupported)
+                    StatefulBuilder(
+                      builder: (context, setSettingsState) =>
+                          _matchNotificationControl(
+                            settingsContext: context,
+                            setSettingsState: setSettingsState,
+                          ),
+                    ),
                   ListTile(
                     key: const ValueKey('merchant-settings-appearance'),
                     leading: const Icon(Icons.palette_outlined),
@@ -387,23 +554,6 @@ class _MerchantProfileDashboardPageState
                       _MerchantProfileSetting.activityLog,
                     ),
                   ),
-                  const Spacer(),
-                  Divider(height: 1, color: _profileLine),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppText(
-                        appLanguageText('ACCOUNT', 'ACCOUNT'),
-                        style: TextStyle(
-                          color: _profileMuted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .8,
-                        ),
-                      ),
-                    ),
-                  ),
                   ListTile(
                     key: const ValueKey('merchant-settings-logout'),
                     leading: const Icon(
@@ -417,6 +567,51 @@ class _MerchantProfileDashboardPageState
                     onTap: () => Navigator.pop(
                       dialogContext,
                       _MerchantProfileSetting.logOut,
+                    ),
+                  ),
+                  const Spacer(),
+                  Divider(height: 1, color: _profileLine),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppText(
+                        appLanguageText('SUPPORT', 'TULONG'),
+                        style: TextStyle(
+                          color: _profileMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    key: const ValueKey('merchant-settings-help-center'),
+                    leading: Icon(
+                      Icons.help_outline_rounded,
+                      color: _profileAccent,
+                    ),
+                    title: AppText(
+                      appLanguageText('Help Center', 'Sentro ng Tulong'),
+                    ),
+                    onTap: () => Navigator.pop(
+                      dialogContext,
+                      _MerchantProfileSetting.helpCenter,
+                    ),
+                  ),
+                  ListTile(
+                    key: const ValueKey('merchant-settings-terms-of-service'),
+                    leading: Icon(
+                      Icons.description_outlined,
+                      color: _profileAccent,
+                    ),
+                    title: AppText(
+                      appLanguageText('Terms of Service', 'Mga Tuntunin'),
+                    ),
+                    onTap: () => Navigator.pop(
+                      dialogContext,
+                      _MerchantProfileSetting.termsOfService,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -459,6 +654,28 @@ class _MerchantProfileDashboardPageState
       case _MerchantProfileSetting.appPreferences:
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AppSettingsPage()),
+        );
+        return;
+      case _MerchantProfileSetting.helpCenter:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const _MerchantSupportDetailPage(
+              title: 'Help Center',
+              icon: Icons.help_outline_rounded,
+              message: 'Help articles and contact options will be available here soon.',
+            ),
+          ),
+        );
+        return;
+      case _MerchantProfileSetting.termsOfService:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const _MerchantSupportDetailPage(
+              title: 'Terms of Service',
+              icon: Icons.description_outlined,
+              message: 'The official Terms of Service will be available here soon.',
+            ),
+          ),
         );
         return;
       case _MerchantProfileSetting.logOut:
@@ -1027,4 +1244,45 @@ class _MerchantProfileDashboardPageState
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
+}
+
+class _MerchantSupportDetailPage extends StatelessWidget {
+  const _MerchantSupportDetailPage({
+    required this.title,
+    required this.icon,
+    required this.message,
+  });
+
+  final String title;
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.page,
+    appBar: AppBar(
+      backgroundColor: AppColors.page,
+      surfaceTintColor: Colors.transparent,
+      foregroundColor: AppColors.ink,
+      title: AppText(title, localize: true),
+    ),
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: AppColors.accentForeground, size: 36),
+            const SizedBox(height: 16),
+            AppText(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted, fontSize: 14),
+              localize: true,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

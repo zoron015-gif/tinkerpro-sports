@@ -1749,7 +1749,6 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
       }
     }
   }
-
   void _removeImage() {
     setState(() {
       _imageBytes = null;
