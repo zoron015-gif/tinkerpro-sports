@@ -6,7 +6,6 @@ import 'features/activity_log/presentation/activity_log_routes.dart';
 import 'app_session.dart';
 import 'app_bottom_navigation.dart';
 import 'auth_api.dart';
-import 'app_session.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
 import 'app_settings_page.dart';
@@ -127,7 +126,6 @@ _bookings = widget.bookings;
         );
       }
     }
-  }
   }
 
   bool _isConfirmedBooking(Map<String, dynamic> booking) =>
