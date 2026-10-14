@@ -133,7 +133,7 @@ void main() {
                         'ownerName': 'Mara Santos',
                         'address': 'Cebu City',
                         'facilityType': 'Indoor garden hall',
-                        'hours': '7:00 AM - 10:00 PM',
+                        'hours': '8:00 AM - 12:00 AM',
                         'availability': 'Monday, Wednesday, Friday',
                         'tags': ['Parking', 'Pet-friendly', 'Restroom'],
                         'eventTypes': ['Wedding', 'Birthday'],
@@ -192,6 +192,8 @@ void main() {
       find.text('Cash on Arrival is fixed at 50% of the event fee.'),
       findsOneWidget,
     );
+    expect(find.text('Event duration'), findsNothing);
+    expect(find.text('Duration'), findsNothing);
     final cashOption = find.text('COA');
     await tester.ensureVisible(cashOption);
     await tester.pumpAndSettle();
@@ -205,6 +207,9 @@ void main() {
     );
     expect(find.text('Event total'), findsOneWidget);
     expect(find.text('Cash downpayment due at venue'), findsOneWidget);
+    await tester.ensureVisible(find.text('Schedule'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('8:00 AM - 12:00 AM'), findsWidgets);
     final submitButton = find.byKey(const ValueKey('event-booking-submit'));
     await tester.ensureVisible(submitButton);
     await tester.pumpAndSettle();
@@ -247,8 +252,8 @@ void main() {
     expect(submittedBooking!['eventType'], 'Wedding');
     expect(submittedBooking!['players'], 100);
     expect(submittedBooking!['paymentMethod'], 'cash_on_arrival');
-    expect(submittedBooking!['durationHours'], 4);
-    expect(submittedBooking!['startTime'], matches(r'^\d{2}:\d{2}:00$'));
+    expect(submittedBooking!['durationHours'], 16);
+    expect(submittedBooking!['startTime'], '08:00:00');
     expect(checkoutPayload, isNull);
     expect(submittedIdempotencyKey, matches(RegExp(r'^[0-9a-f]{32}$')));
     expect(find.text('Open booking'), findsOneWidget);
@@ -277,12 +282,10 @@ void main() {
               200,
             );
           }
-          if (request.method == 'GET' &&
-              request.url.path == '/api/bookings') {
+          if (request.method == 'GET' && request.url.path == '/api/bookings') {
             return http.Response(jsonEncode({'bookings': []}), 200);
           }
-          if (request.method == 'POST' &&
-              request.url.path == '/api/bookings') {
+          if (request.method == 'POST' && request.url.path == '/api/bookings') {
             bookingRequests++;
             return http.Response(
               jsonEncode({
@@ -303,6 +306,7 @@ void main() {
             business: {
               'id': 7,
               'name': 'Garden Venue',
+              'hours': '9:00 AM - 5:00 PM',
               'eventTypes': ['Wedding'],
               'attendanceMin': 50,
               'eventFee': 10000,

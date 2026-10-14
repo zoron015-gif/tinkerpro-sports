@@ -12,6 +12,7 @@ import 'app_settings_page.dart';
 import 'booking_notifications.dart';
 import 'profile_image_preview.dart';
 import 'core/booking_status.dart';
+import 'features/merchant_management/data/merchant_booking_repository.dart';
 
 Color get _profileInk => AppColors.ink;
 Color get _profileMuted => AppColors.muted;
@@ -38,6 +39,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
     required this.onLogout,
     required this.onEditProfile,
     this.api,
+    this.bookingRepository,
     this.onNavigate,
   });
 
@@ -49,6 +51,7 @@ class MerchantProfileDashboardPage extends StatefulWidget {
   final Future<void> Function(BuildContext context) onLogout;
   final Future<Map<String, dynamic>?> Function() onEditProfile;
   final AuthApi? api;
+  final MerchantBookingRepository? bookingRepository;
   final ValueChanged<int>? onNavigate;
 
   @override
@@ -61,6 +64,7 @@ class _MerchantProfileDashboardPageState
   late Map<String, dynamic> _owner;
   late ImageProvider<Object>? _profileImage;
   late final AuthApi _api;
+  late final MerchantBookingRepository _bookingRepository;
   late List<Map<String, dynamic>> _bookings;
   late List<Map<String, dynamic>> _businesses;
   final _profileRefreshKey = GlobalKey<RefreshIndicatorState>();
@@ -73,9 +77,12 @@ class _MerchantProfileDashboardPageState
   void initState() {
     super.initState();
     _api = widget.api ?? AuthApi();
+    _bookingRepository =
+        widget.bookingRepository ??
+        AuthApiMerchantBookingRepository(api: _api);
     _owner = widget.owner;
     _profileImage = widget.profileImage;
-_bookings = widget.bookings;
+    _bookings = widget.bookings;
     _businesses = widget.businesses;
     _loadMatchNotificationSetting();
   }
@@ -112,7 +119,7 @@ _bookings = widget.bookings;
       }
       final response = await _api.merchantProfile(token);
       final businesses = await _api.merchantBusinesses(token);
-      final bookings = await _api.merchantBookings(token);
+      final bookings = await _bookingRepository.loadBookings();
       if (!mounted) return;
       setState(() {
         _owner = response['profile'] as Map<String, dynamic>? ?? {};
@@ -209,7 +216,9 @@ _bookings = widget.bookings;
     try {
       final session = await AppSession.load();
       if (!mounted) return;
-      setState(() => _matchNotificationsEnabled = session.matchNotificationsEnabled);
+      setState(
+        () => _matchNotificationsEnabled = session.matchNotificationsEnabled,
+      );
       final notifications = BookingNotifications.instance;
       if (!_matchNotificationsEnabled || !notifications.isSupported) return;
 
@@ -313,12 +322,13 @@ _bookings = widget.bookings;
   Widget _matchNotificationControl({
     required BuildContext settingsContext,
     required StateSetter setSettingsState,
-  }) => Container(
-    decoration: BoxDecoration(
-      color: AppColors.surface,
+  }) => Material(
+    color: AppColors.surface,
+    shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _profileLine),
+      side: BorderSide(color: _profileLine),
     ),
+    clipBehavior: Clip.antiAlias,
     child: SwitchListTile.adaptive(
       key: const ValueKey('merchant-match-notifications-switch'),
       value: _matchNotificationsEnabled,
@@ -673,7 +683,8 @@ _bookings = widget.bookings;
             builder: (_) => const _MerchantSupportDetailPage(
               title: 'Terms of Service',
               icon: Icons.description_outlined,
-              message: 'The official Terms of Service will be available here soon.',
+              message:
+                  'The official Terms of Service will be available here soon.',
             ),
           ),
         );

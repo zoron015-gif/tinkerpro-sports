@@ -55,11 +55,11 @@ void main() {
     },
   ];
 
-  AuthApi api() => AuthApi(
+  AuthApi api({List<Map<String, dynamic>>? feedPosts}) => AuthApi(
     client: MockClient((request) async {
       if (request.url.path == '/api/news-feed') {
         return http.Response(
-          jsonEncode({'posts': venues}),
+          jsonEncode({'posts': feedPosts ?? venues}),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -205,6 +205,37 @@ void main() {
     final filterBadge = tester.widget<Badge>(find.byType(Badge).first);
     expect(filterBadge.isLabelVisible, isTrue);
     expect(find.byTooltip('Filter venues (1 active)'), findsOneWidget);
+  });
+
+  testWidgets('News Feed price filter includes venues above 700', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NewsFeedPage(
+          api: api(
+            feedPosts: [
+              {...venues.first, 'pricePerHour': 1200},
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('news-feed-open-filters')));
+    await tester.pumpAndSettle();
+    final priceSlider = find.byKey(
+      const ValueKey('news-feed-filter-price'),
+    );
+    await tester.scrollUntilVisible(
+      priceSlider,
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
+
+    expect(tester.widget<Slider>(priceSlider).max, 1200);
+    expect(tester.widget<Slider>(priceSlider).divisions, 24);
   });
 
   testWidgets('empty venue search offers a clear-search action', (tester) async {

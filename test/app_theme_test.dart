@@ -171,6 +171,19 @@ void main() {
     expect(theme.cardTheme.color, Colors.white);
     expect(theme.cardTheme.elevation, AppCardStyles.elevation);
     expect(theme.cardTheme.shadowColor, Colors.transparent);
+    expect(theme.dialogTheme.backgroundColor, AppColors.surface);
+    expect(theme.dialogTheme.elevation, 0);
+    expect(
+      (theme.dialogTheme.shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(AppRadii.dialog),
+    );
+    expect(theme.bottomSheetTheme.backgroundColor, AppColors.surface);
+    expect(theme.bottomSheetTheme.modalBackgroundColor, AppColors.surface);
+    expect(theme.bottomSheetTheme.showDragHandle, isTrue);
+    expect(
+      (theme.bottomSheetTheme.shape! as RoundedRectangleBorder).borderRadius,
+      const BorderRadius.vertical(top: Radius.circular(AppRadii.bottomSheet)),
+    );
     expect(theme.navigationBarTheme.elevation, 0);
     expect(theme.filledButtonTheme.style!.elevation!.resolve({}), 0);
     expect(theme.elevatedButtonTheme.style!.elevation!.resolve({}), 0);
@@ -186,6 +199,13 @@ void main() {
     );
     expect(configuredTheme.cardTheme.elevation, 0);
     expect(configuredTheme.cardTheme.shadowColor, Colors.transparent);
+    expect(configuredTheme.dialogTheme.backgroundColor, AppColors.darkSurface);
+    expect(configuredTheme.dialogTheme.elevation, 0);
+    expect(
+      configuredTheme.bottomSheetTheme.backgroundColor,
+      AppColors.darkSurface,
+    );
+    expect(configuredTheme.bottomSheetTheme.showDragHandle, isTrue);
     expect(configuredTheme.navigationBarTheme.elevation, 0);
     expect(configuredTheme.filledButtonTheme.style!.elevation!.resolve({}), 0);
     expect(

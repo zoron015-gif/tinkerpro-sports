@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'message_unread_count.dart';
 import 'saved_icons.dart';
 
 Color get _navigationInk => AppColors.ink;
@@ -66,6 +67,9 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
       final width = constraints.maxWidth;
       final compact = AppResponsive.isCompact(width);
       final veryNarrow = width < AppResponsive.narrowPhone;
+      final unreadMessageCount =
+          MessageUnreadCountScope.countOf(context) ??
+          widget.unreadMessageCount;
       final barHeight = compact ? 68.0 : 72.0;
       final labelSize = veryNarrow
           ? 9.0
@@ -125,8 +129,11 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-messages'),
-                    icon: Icon(Icons.send_outlined),
-                    selectedIcon: Icon(Icons.send_rounded),
+                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
+                    selectedIcon: _countBadge(
+                      Icons.send_rounded,
+                      unreadMessageCount,
+                    ),
                     label: label('Messages', 'Mga mensahe'),
                   ),
                   NavigationDestination(
@@ -163,10 +170,10 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: const ValueKey('news-feed-nav-messages'),
-                    icon: _countBadge(Icons.send_outlined, widget.unreadMessageCount),
+                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
                     selectedIcon: _countBadge(
                       Icons.send_rounded,
-                      widget.unreadMessageCount,
+                      unreadMessageCount,
                     ),
                     label: label('Messages', 'Mga mensahe'),
                   ),

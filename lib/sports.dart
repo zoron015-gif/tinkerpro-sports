@@ -16,8 +16,10 @@ import 'messages_dashboard.dart';
 import 'reviews.dart';
 import 'app_design_system.dart';
 import 'booking_cancellation_notice.dart';
-import 'booking_schedule_conflict.dart';
+import 'features/bookings/presentation/booking_schedule_conflict.dart';
 import 'app_preferences.dart';
+import 'features/bookings/data/http_booking_schedule_repository.dart';
+import 'features/bookings/application/booking_schedule_controller.dart';
 import 'core/business_type.dart';
 
 typedef SportsVenue = ({
@@ -1933,7 +1935,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                         )
                       else
                         AppText(
-                          'Booked schedule · ${occupiedBookings.length} booking${occupiedBookings.length == 1 ? '' : 's'}',
+                          'Schedule entries · ${occupiedBookings.length}',
                           style: TextStyle(
                             color: AppColors.errorText,
                             fontWeight: FontWeight.w800,
@@ -2404,7 +2406,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const AppText(
-                              'Booked time slots',
+                              'Booking schedule',
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
@@ -2719,9 +2721,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                                       ),
                                       DataCell(
                                         AppText(
-                                          'Booked',
+                                          _occupiedBookingStatus(booking),
                                           style: TextStyle(
-                                            color: AppColors.errorText,
+                                            color: _isApprovedBooking(booking)
+                                                ? AppColors.errorText
+                                                : AppColors.warning,
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -2759,6 +2763,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
 
+  bool _isApprovedBooking(Map<String, dynamic> booking) =>
+      '${booking['status'] ?? ''}'.trim().toLowerCase() == 'approved';
+
+  String _occupiedBookingStatus(Map<String, dynamic> booking) =>
+      _isApprovedBooking(booking) ? 'Booked' : 'Pending';
+
   bool _bookingSlotOverlaps(
     TimeOfDay selectedTime,
     int durationHours,
@@ -2769,6 +2779,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     final selectedStart = selectedTime.hour * 60 + selectedTime.minute;
     final selectedEnd = selectedStart + durationHours * 60;
     for (final booking in bookings) {
+      if (!_isApprovedBooking(booking)) continue;
       final rawStart = '${booking['startTime'] ?? ''}';
       final parts = rawStart.split(':');
       if (parts.length < 2) return true;
@@ -3048,10 +3059,16 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         );
         return;
       }
+      if (!mounted || !modalContext.mounted) return;
       final scheduleAvailable = await confirmBookingScheduleConflict(
         context: modalContext,
-        api: _api,
-        token: token,
+        controller: BookingScheduleController(
+          repository: HttpBookingScheduleRepository(
+            client: _api.httpClient,
+            authHeaders: _api.authHeadersForToken,
+            token: token,
+          ),
+        ),
         venueId: venue.id,
         venueName: venue.name,
         startsAt: bookingStart,

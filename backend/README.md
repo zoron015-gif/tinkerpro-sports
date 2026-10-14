@@ -68,6 +68,12 @@ reviews, using MySQL.
    editing an already-applied migration. The API itself does not execute schema
    DDL on startup.
 
+   All pending booking requests are reminded in the merchant activity log after
+   10 minutes and automatically cancelled after 15 minutes if they remain
+   unapproved, regardless of payment method or payment status. The request
+   message ticket is marked expired. Deadline processing never changes payment
+   or refund records.
+
    Account registration and sign-in requests are limited to 100 requests per
    client IP and 10 per normalized email every 15 minutes. Email verification and
    password recovery are limited to 8 requests per normalized email in the same

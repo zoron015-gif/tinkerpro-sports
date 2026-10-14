@@ -320,6 +320,7 @@ async function ensureBookingsSchema() {
       payment_reference VARCHAR(100) NULL,
       paid_at DATETIME NULL,
       status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
+      approval_reminded_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -773,6 +774,14 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [10, 'fitness-plan-duration-days'],
+      );
+    }
+    if (!appliedVersions.has(11)) {
+      await ensureTableColumn('bookings', 'approval_reminded_at', 'DATETIME NULL');
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [11, 'booking-approval-deadlines'],
       );
     }
   } finally {

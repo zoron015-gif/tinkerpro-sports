@@ -6,6 +6,7 @@ import 'app_session.dart';
 import 'auth_api.dart';
 import 'app_preferences.dart';
 import 'messages_ui.dart';
+import 'message_unread_count.dart';
 
 class MessageNotificationHost extends StatefulWidget {
   const MessageNotificationHost({
@@ -31,6 +32,7 @@ class MessageNotificationHost extends StatefulWidget {
 class _MessageNotificationHostState extends State<MessageNotificationHost>
     with WidgetsBindingObserver {
   late final AuthApi _api = widget.api ?? AuthApi();
+  final ValueNotifier<int> _unreadMessageCount = ValueNotifier<int>(-1);
   Timer? _pollingTimer;
   Timer? _dismissTimer;
   Map<int, _ConversationSnapshot> _snapshots = {};
@@ -67,6 +69,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
         _snapshots = {};
         _hasBaseline = false;
         _observedToken = null;
+        if (mounted) _unreadMessageCount.value = 0;
         return;
       }
       if (_observedToken != token) {
@@ -122,6 +125,12 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
 
       _snapshots = latestById;
       _hasBaseline = true;
+      if (mounted) {
+        _unreadMessageCount.value = latestById.values.fold<int>(
+          0,
+          (total, conversation) => total + conversation.unreadCount,
+        );
+      }
     } on Exception catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -151,12 +160,14 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    fit: StackFit.expand,
-    children: [
-      widget.child,
-      if (_notification case final notification?)
-        Positioned(
+  Widget build(BuildContext context) => MessageUnreadCountScope(
+    notifier: _unreadMessageCount,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (_notification case final notification?)
+          Positioned(
           top: 8,
           left: 16,
           right: 16,
@@ -242,8 +253,9 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
               ),
             ),
           ),
-        ),
-    ],
+          ),
+      ],
+    ),
   );
 
   @override
@@ -251,6 +263,7 @@ class _MessageNotificationHostState extends State<MessageNotificationHost>
     WidgetsBinding.instance.removeObserver(this);
     _pollingTimer?.cancel();
     _dismissTimer?.cancel();
+    _unreadMessageCount.dispose();
     super.dispose();
   }
 }

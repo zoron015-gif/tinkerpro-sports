@@ -245,3 +245,52 @@ test('migration 8 adds customer review photo storage', async () => {
     params[1] === 'venue-review-customer-photo',
   ));
 });
+
+test('migration 11 adds the booking approval reminder marker', async () => {
+  const poolCalls = [];
+  const connectionCalls = [];
+  const connection = {
+    async execute(sql, params) {
+      connectionCalls.push({ sql, params });
+      if (sql.includes('GET_LOCK')) return [[{ acquired: 1 }], []];
+      if (sql.includes('SELECT version FROM schema_migrations')) {
+        return [[
+          { version: 1 },
+          { version: 2 },
+          { version: 3 },
+          { version: 4 },
+          { version: 5 },
+          { version: 6 },
+          { version: 7 },
+          { version: 8 },
+          { version: 9 },
+          { version: 10 },
+        ], []];
+      }
+      return [[], []];
+    },
+    release() {},
+  };
+  const pool = {
+    async execute(sql, params) {
+      poolCalls.push({ sql, params });
+      return [[], []];
+    },
+    async getConnection() {
+      return connection;
+    },
+  };
+
+  await runSchemaMigrations(pool);
+
+  assert.ok(poolCalls.some(({ sql }) =>
+    sql.includes(
+      'ALTER TABLE `bookings` ADD COLUMN `approval_reminded_at` DATETIME NULL',
+    ),
+  ));
+  assert.ok(connectionCalls.some(({ sql, params }) =>
+    sql.includes('INSERT INTO schema_migrations (version, name)') &&
+    params[0] === 11 &&
+    params[1] === 'booking-approval-deadlines',
+  ));
+});

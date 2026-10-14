@@ -46,6 +46,25 @@ void main() {
     expect(button.style!.foregroundColor!.resolve({}), secondForeground);
   });
 
+  test('shared venue filters normalize event categories and fee ranges', () {
+    final event = {
+      'businessType': 'Event',
+      'category': 'Wedding, Corporate',
+      'eventTypes': ['Wedding', 'Corporate'],
+      'eventFee': 1250,
+    };
+
+    expect(venueFilterCategories(event), ['Wedding', 'Corporate']);
+    expect(
+      venueFilterPriceMaximum([
+        {'pricePerHour': 300},
+        event,
+      ]),
+      1300,
+    );
+    expect(venueFilterPrice(event), 1250);
+  });
+
   testWidgets(
     'search filters venues and the result list dismisses keyboard on scroll',
     (tester) async {
@@ -159,7 +178,7 @@ void main() {
                 'category': 'Tennis',
                 'address': 'Manila',
                 'facilityType': 'Outdoor',
-                'pricePerHour': 500,
+                'pricePerHour': 1200,
                 'tags': 'Store',
                 'hours': '9:00 AM - 5:00 PM',
               },
@@ -209,6 +228,14 @@ void main() {
       expect(
         find.byKey(const ValueKey('all-venues-filter-price')),
         findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Slider>(
+              find.byKey(const ValueKey('all-venues-filter-price')),
+            )
+            .max,
+        1200,
       );
       await tester.tap(find.byKey(const ValueKey('all-venues-filter-apply')));
       await tester.pumpAndSettle();

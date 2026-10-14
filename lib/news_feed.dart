@@ -191,7 +191,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   String _feedCourtType = 'All';
   String _feedAvailability = 'Any';
   String _feedPriceSort = 'Recommended';
-  double _feedMaxPrice = 700;
+  double? _feedMaxPrice;
   final Set<String> _feedAmenities = <String>{};
 
   String get _categoryAllLabel => widget.businessType.toLowerCase() == 'sports'
@@ -678,7 +678,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                         _feedCourtType = _facilityAllLabel;
                                         _feedAvailability = 'Any';
                                         _feedPriceSort = 'Recommended';
-                                        _feedMaxPrice = 700;
+                                        _feedMaxPrice = null;
                                         _feedAmenities.clear();
                                         _userPosition = null;
                                       });
@@ -886,15 +886,25 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
                                     key: const ValueKey(
                                       'news-feed-filter-price',
                                     ),
-                                    value: _feedMaxPrice,
+                                    value:
+                                        _feedMaxPrice ??
+                                        venueFilterPriceMaximum(posts),
                                     min: 0,
-                                    max: 700,
-                                    divisions: 14,
-                                    label: _feedMaxPrice >= 700
-                                        ? '700+'
-                                        : _feedMaxPrice.round().toString(),
+                                    max: venueFilterPriceMaximum(posts),
+                                    divisions:
+                                        (venueFilterPriceMaximum(posts) / 50)
+                                            .round(),
+                                    label: _feedMaxPrice == null
+                                        ? '${venueFilterPriceMaximum(posts).round()}+'
+                                        : _feedMaxPrice!.round().toString(),
                                     onChanged: (value) {
-                                      setState(() => _feedMaxPrice = value);
+                                      setState(
+                                        () => _feedMaxPrice =
+                                            value >=
+                                                venueFilterPriceMaximum(posts)
+                                            ? null
+                                            : value,
+                                      );
                                       setSheetState(() {});
                                     },
                                   ),
@@ -963,7 +973,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       (_feedCourtType == _facilityAllLabel ? 0 : 1) +
       (_feedAvailability == 'Any' ? 0 : 1) +
       (_feedPriceSort == 'Recommended' ? 0 : 1) +
-      (_feedMaxPrice >= 700 ? 0 : 1) +
+      (_feedMaxPrice == null ? 0 : 1) +
       _feedAmenities.length +
       (_userPosition == null ? 0 : 1);
 
@@ -983,21 +993,10 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
     return [allLabel, ...values];
   }
 
-  List<String> _categoryFilterOptions(Map<String, dynamic> post) {
-    final eventTypes = _stringList(post['eventTypes']);
-    if (BusinessTypeParser.parse(post['businessType']) ==
-            BusinessType.event &&
-        eventTypes.isNotEmpty) {
-      return eventTypes;
-    }
-    final category = '${post['category'] ?? ''}'.trim();
-    return category.isEmpty ? const [] : [category];
-  }
-
   List<String> _categoryOptions(List<Map<String, dynamic>> posts) {
     final values =
         posts
-            .expand(_categoryFilterOptions)
+            .expand(venueFilterCategories)
             .map((value) => value.trim())
             .where((value) => value.isNotEmpty)
             .toSet()
@@ -2242,7 +2241,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final address = '${post['address'] ?? ''}'.toLowerCase();
       final matchesArea =
           _feedArea == 'All areas' || address.contains(_feedArea.toLowerCase());
-      final categories = _categoryFilterOptions(post)
+      final categories = venueFilterCategories(post)
           .map((value) => value.toLowerCase())
           .toList();
       final matchesSport =
@@ -2251,11 +2250,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final facility = '${post['facilityType'] ?? ''}';
       final hours = '${post['hours'] ?? post['opening_hours'] ?? ''}';
       final availability = '${post['availability'] ?? ''}';
-      final price =
-          double.tryParse(
-            '${post['pricePerHour'] ?? post['price_per_hour'] ?? 0}',
-          ) ??
-          0;
+      final price = venueFilterPrice(post);
       final rawAmenities = '${post['tags'] ?? post['amenities'] ?? ''}'
           .toLowerCase();
       final matchesCourt =
@@ -2265,7 +2260,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
           _feedAvailability == 'Any' ||
           hours.toLowerCase().contains('open 24 hours') ||
           availability.toLowerCase().contains('open 24 hours');
-      final matchesPrice = _feedMaxPrice >= 700 || price <= _feedMaxPrice;
+      final matchesPrice = _feedMaxPrice == null || price <= _feedMaxPrice!;
       final matchesAmenities = _feedAmenities.every(
         (amenity) => rawAmenities.contains(amenity.toLowerCase()),
       );
@@ -2305,13 +2300,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
   }
 
   double _venuePrice(Map<String, dynamic> post) =>
-      _mapCoordinate(
-        post['pricePerHour'] ??
-            post['price_per_hour'] ??
-            post['eventFee'] ??
-            post['event_fee'],
-      ) ??
-      0;
+      venueFilterPrice(post);
 
   double _distanceFrom(Position position, Map<String, dynamic> post) {
     final latitude = _mapCoordinate(post['latitude'] ?? post['lat']);
@@ -2419,7 +2408,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       _feedCourtType = _facilityAllLabel;
       _feedAvailability = 'Any';
       _feedPriceSort = 'Recommended';
-      _feedMaxPrice = 700;
+      _feedMaxPrice = null;
       _feedAmenities.clear();
       _userPosition = null;
     });
@@ -3152,6 +3141,7 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       final availableBusinesses = locallyDisabled || businessId == null
           ? <VenueBusiness>[]
           : await _venueCatalog.customerBusinesses();
+      if (!mounted) return;
       final matchingBusinesses = availableBusinesses
           .where((item) => item.id == businessId)
           .toList();
@@ -3174,9 +3164,12 @@ class _NewsFeedPageState extends State<NewsFeedPage> {
       }
       final selectedType = BusinessTypeParser.parse(widget.businessType);
       final businessType = BusinessTypeParser.parse(
-        publishedBusiness['businessType'] ?? post['businessType'] ?? post['type'],
+        publishedBusiness['businessType'] ??
+            post['businessType'] ??
+            post['type'],
       );
-      if (selectedType == BusinessType.unknown || businessType != selectedType) {
+      if (selectedType == BusinessType.unknown ||
+          businessType != selectedType) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: AppText(

@@ -7,6 +7,10 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
+const { createCorsOriginPolicy } = require('./cors_policy');
+const {
+  createBookingApprovalDeadlineProcessor,
+} = require('./booking_approval_deadlines');
 const { sendPasswordResetCode, sendVerificationCode } = require('./mailer');
 const { createRateLimiter } = require('./rate_limit');
 const readCache = require('./read_cache');
@@ -198,7 +202,7 @@ app.use((req, res, next) => {
   auditContextStorage.run(context, next);
 });
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || true,
+  origin: createCorsOriginPolicy(),
   exposedHeaders: ['X-Request-Id'],
 }));
 app.use(express.json({
@@ -478,8 +482,11 @@ async function recordUserActivity(
   title,
   description,
   venueDetails = null,
+  { systemGenerated = false } = {},
 ) {
-  const auditContext = auditContextStorage.getStore() || {};
+  const auditContext = systemGenerated
+    ? {}
+    : auditContextStorage.getStore() || {};
   await executor.execute(
     `INSERT INTO user_activity_logs
        (user_id, activity_type, title, description, venue_id, venue_name,
@@ -503,6 +510,9 @@ async function recordUserActivity(
     ],
   );
 }
+
+const processBookingApprovalDeadlines =
+  createBookingApprovalDeadlineProcessor({ pool, recordUserActivity });
 
 function requireAuth(req, res, next) {
   const header = req.get('authorization') || '';
@@ -2248,7 +2258,7 @@ function validTime(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value);
 }
 
-function fitnessVenueHours(value) {
+function venueHours(value, { allowMidnightClosing = false } = {}) {
   const match = String(value ?? '').match(
     /^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$/i,
   );
@@ -2261,7 +2271,15 @@ function fitnessVenueHours(value) {
       minute;
   };
   const opening = toMinutes(match[1], match[2], match[3]);
-  const closing = toMinutes(match[4], match[5], match[6]);
+  let closing = toMinutes(match[4], match[5], match[6]);
+  if (
+    allowMidnightClosing &&
+    Number(match[4]) === 12 &&
+    Number(match[5] ?? 0) === 0 &&
+    match[6].toUpperCase() === 'AM'
+  ) {
+    closing = 24 * 60;
+  }
   if (opening === null || closing === null || closing <= opening) return null;
   return { opening, closing };
 }
@@ -2370,14 +2388,15 @@ app.get('/api/bookings/availability', requireAuth, requireRole('customer'), asyn
   }
   try {
     const [bookings] = await pool.execute(
-      `SELECT start_time AS startTime, duration_hours AS durationHours,
-              sport_type AS sportType, slot_number AS slotNumber,
-              slot_numbers_json AS slotNumbers,
-              occupies_full_studio AS occupiesFullStudio
-       FROM bookings
-       WHERE venue_id = ? AND booking_date = ?
-         AND status IN ('pending', 'approved')
-       ORDER BY start_time`,
+      `SELECT b.start_time AS startTime, b.duration_hours AS durationHours,
+              b.sport_type AS sportType, b.slot_number AS slotNumber,
+              b.slot_numbers_json AS slotNumbers,
+              b.occupies_full_studio AS occupiesFullStudio,
+              b.status AS status
+       FROM bookings b
+       WHERE b.venue_id = ? AND b.booking_date = ?
+         AND b.status IN ('pending', 'approved')
+       ORDER BY b.start_time`,
       [venueId, bookingDate],
     );
     for (const booking of bookings) {
@@ -2756,8 +2775,8 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
 app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
   const venueId = Number(req.body.venueId ?? req.body.businessId);
   const bookingDate = req.body.date;
-  const startTime = req.body.startTime;
-  const durationHours = Number(req.body.durationHours ?? req.body.duration);
+  let startTime = req.body.startTime;
+  let durationHours = Number(req.body.durationHours ?? req.body.duration);
   const players = Number(req.body.players);
   const paymentMethod = typeof req.body.paymentMethod === 'string'
     ? req.body.paymentMethod.trim().slice(0, 50) : '';
@@ -2919,7 +2938,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         return res.status(400).json({ error: 'Choose a valid Fitness plan.' });
       }
       if (fitnessPlanType === 'session') {
-        const hours = fitnessVenueHours(venue.hours);
+        const hours = venueHours(venue.hours);
         const startMatch = startTime.match(/^([01]\d|2[0-3]):([0-5]\d)/);
         const startMinutes = startMatch
           ? Number(startMatch[1]) * 60 + Number(startMatch[2])
@@ -3059,6 +3078,16 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           error: 'Guest count is outside this venue’s event capacity.',
         });
       }
+      const hours = venueHours(venue.hours, { allowMidnightClosing: true });
+      if (hours === null) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: 'This venue must provide valid same-day opening and closing hours before an event can be booked.',
+        });
+      }
+      startTime = `${String(Math.floor(hours.opening / 60)).padStart(2, '0')}:` +
+        `${String(hours.opening % 60).padStart(2, '0')}:00`;
+      durationHours = (hours.closing - hours.opening) / 60;
       selectedEventType = configuredEventType;
       selectedSportType = venue.category || 'Event';
       fullStudio = true;
@@ -3083,13 +3112,16 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         return res.status(400).json({ error: 'Choose a valid sport and available slot.' });
       }
     }
+    const occupancyStatuses = isFitness || isEvent
+      ? "status IN ('pending', 'approved')"
+      : "status = 'approved'";
     const [overlaps] = await connection.execute(
       `SELECT slot_number AS slotNumber,
               slot_numbers_json AS slotNumbers,
               occupies_full_studio AS occupiesFullStudio
        FROM bookings
        WHERE venue_id = ? AND booking_date = ?
-         AND status IN ('pending', 'approved')
+         AND ${occupancyStatuses}
          AND start_time < ADDTIME(?, SEC_TO_TIME(? * 3600))
          AND ADDTIME(start_time, SEC_TO_TIME(duration_hours * 3600)) > ?
        FOR UPDATE`,
@@ -3411,6 +3443,9 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.payment_reference AS paymentReference,
               ci.checked_in_at AS checkedInAt,
               b.status, b.created_at AS createdAt,
+              CASE WHEN b.status = 'pending'
+                   THEN DATE_ADD(b.created_at, INTERVAL 15 MINUTE)
+                   ELSE NULL END AS approvalExpiresAt,
               r.id AS reviewId, r.rating AS reviewRating
        FROM bookings b
        JOIN merchant_businesses v ON v.id = b.venue_id
@@ -3809,6 +3844,7 @@ app.post(
 
 app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
+    await processBookingApprovalDeadlines();
     await completeDueBookings();
     const [bookings] = await pool.execute(
       `SELECT b.id, b.customer_id AS customerId,
@@ -3837,7 +3873,10 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
               ci.checked_in_at AS checkedInAt,
-              b.status, b.created_at AS createdAt
+              b.status, b.created_at AS createdAt,
+              CASE WHEN b.status = 'pending'
+                   THEN DATE_ADD(b.created_at, INTERVAL 15 MINUTE)
+                   ELSE NULL END AS approvalExpiresAt
        FROM bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        JOIN users u ON u.id = b.customer_id
        LEFT JOIN booking_check_ins ci ON ci.booking_id = b.id
@@ -4023,6 +4062,9 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
        SET b.status = 'approved', b.ticket_token_hash = ?
        WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+         AND NOT (
+           b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE
+         )
          AND (
            (b.payment_method = 'online' AND b.payment_status = 'paid')
            OR b.payment_method = 'cash_on_arrival'
@@ -4030,6 +4072,78 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       [hashBookingToken(ticketCode), req.params.id, req.auth.sub],
     );
     if (!result.affectedRows) {
+      const [expired] = await connection.execute(
+        `SELECT b.id, b.customer_id AS customerId, b.venue_id AS venueId,
+                v.name AS venueName,
+                COALESCE(b.sport_type, v.category) AS sportType
+         FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+           AND b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE
+         LIMIT 1`,
+        [req.params.id, req.auth.sub],
+      );
+      if (expired.length > 0) {
+        const expiredBooking = expired[0];
+        const [cancelled] = await connection.execute(
+          `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
+           SET b.status = 'cancelled'
+           WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
+             AND b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE`,
+          [req.params.id, req.auth.sub],
+        );
+        if (cancelled.affectedRows) {
+          await connection.execute(
+            `UPDATE messages m
+             JOIN conversations c ON c.id = m.conversation_id
+             SET m.attachment_json = JSON_SET(
+               m.attachment_json, '$.status', 'expired',
+               '$.approvalStatus', 'expired'
+             )
+             WHERE c.title = ? AND c.type = 'direct'
+               AND CASE WHEN JSON_VALID(m.attachment_json)
+                        THEN JSON_UNQUOTE(JSON_EXTRACT(
+                          m.attachment_json, '$.type'
+                        )) END = 'booking'
+               AND CASE WHEN JSON_VALID(m.attachment_json)
+                        THEN JSON_UNQUOTE(JSON_EXTRACT(
+                          m.attachment_json, '$.bookingId'
+                        )) END = ?`,
+            [`Booking ${expiredBooking.id}`, String(expiredBooking.id)],
+          );
+          const details = {
+            venueId: expiredBooking.venueId,
+            venueName: expiredBooking.venueName,
+            sportType: expiredBooking.sportType,
+            details: { bookingId: expiredBooking.id },
+          };
+          const description =
+            `Booking request #${expiredBooking.id} for ${expiredBooking.venueName} expired after 15 minutes without merchant approval.`;
+          for (const userId of [
+            expiredBooking.customerId,
+            req.auth.sub,
+          ]) {
+            await recordUserActivity(
+              connection,
+              userId,
+              'booking_auto_cancelled',
+              'Booking request expired',
+              description,
+              details,
+              { systemGenerated: true },
+            );
+          }
+          await connection.commit();
+        } else {
+          await connection.rollback();
+          return res.status(404).json({
+            error: 'Pending booking not found.',
+          });
+        }
+        return res.status(410).json({
+          error: 'Booking request expired and can no longer be approved.',
+        });
+      }
       const [unpaid] = await connection.execute(
         `SELECT b.id FROM bookings b
          JOIN merchant_businesses v ON v.id = b.venue_id
@@ -4072,6 +4186,24 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       [req.params.id, req.auth.sub],
     );
     const booking = rows[0];
+    await connection.execute(
+      `UPDATE messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       SET m.attachment_json = JSON_SET(
+         m.attachment_json, '$.status', 'approved',
+         '$.approvalStatus', 'approved'
+       )
+       WHERE c.title = ? AND c.type = 'direct'
+         AND CASE WHEN JSON_VALID(m.attachment_json)
+                  THEN JSON_UNQUOTE(JSON_EXTRACT(
+                    m.attachment_json, '$.type'
+                  )) END = 'booking'
+         AND CASE WHEN JSON_VALID(m.attachment_json)
+                  THEN JSON_UNQUOTE(JSON_EXTRACT(
+                    m.attachment_json, '$.bookingId'
+                  )) END = ?`,
+      [`Booking ${booking.id}`, String(booking.id)],
+    );
     booking.slotNumbers = bookingSlotNumbers(
       booking.slotNumbers,
       booking.slotNumber,
@@ -4712,11 +4844,17 @@ function startServer() {
     console.log(`TinkerPro Sports API listening on http://0.0.0.0:${port}`);
   });
   const completionInterval = setInterval(() => {
+    processBookingApprovalDeadlines().catch((error) => {
+      console.error('Could not process booking approval deadlines.', error);
+    });
     completeDueBookings().catch((error) => {
       console.error('Could not automatically finish due bookings.', error);
     });
   }, 10_000);
   completionInterval.unref();
+  processBookingApprovalDeadlines().catch((error) => {
+    console.error('Could not process booking approval deadlines.', error);
+  });
   completeDueBookings().catch((error) => {
     console.error('Could not automatically finish due bookings.', error);
   });

@@ -25,6 +25,7 @@ import 'core/business_type.dart';
 
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'input_formatters.dart';
 import 'app_settings_page.dart';
 import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
@@ -97,6 +98,15 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       const Duration(seconds: 30),
       (_) => _refreshBookingCountdown(),
     );
+  }
+
+  String _eventHoursRange(Map<String, dynamic> booking) {
+    final end = _bookingEnd(booking);
+    if (end == null) return 'Schedule unavailable';
+    final endTime =
+        '${end.hour.toString().padLeft(2, '0')}:'
+        '${end.minute.toString().padLeft(2, '0')}';
+    return '${_time(booking['startTime'])} - ${_time(endTime)}';
   }
 
   @override
@@ -388,10 +398,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                             TextField(
                               controller: phoneController,
                               keyboardType: TextInputType.phone,
+                              inputFormatters: const [
+                                PhilippineMobilePhoneFormatter(),
+                              ],
                               decoration: _profileInputDecoration(
                                 label: 'Contact number',
                                 icon: Icons.phone_outlined,
-                              ),
+                              ).copyWith(hintText: '09XX XXX XXXX'),
                             ),
                             const SizedBox(height: 6),
                             TextField(
@@ -562,10 +575,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       }
     } on Exception catch (error) {
       if (mounted) {
-        _message(
-          context,
-          _profileErrorMessage(error, 'update your profile'),
-        );
+        _message(context, _profileErrorMessage(error, 'update your profile'));
       }
     }
   }
@@ -1523,8 +1533,10 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
         ),
         const SizedBox(height: 6),
         AppText(
-          '${booking['date'] ?? ''} · ${_time(booking['startTime'])} · '
-          '${booking['durationHours'] ?? 0} hour(s)',
+          _isEventProfile
+              ? '${booking['date'] ?? ''} · ${_eventHoursRange(booking)}'
+              : '${booking['date'] ?? ''} · ${_time(booking['startTime'])} · '
+                    '${booking['durationHours'] ?? 0} hour(s)',
           textAlign: TextAlign.center,
           style: TextStyle(color: _profileMuted, fontSize: 11),
           localize: true,
@@ -2101,12 +2113,13 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
       const SizedBox(height: 6),
       _bookingDetailLine(
         Icons.calendar_today_outlined,
-        '${booking['date'] ?? ''} · ${_time(booking['startTime'])}',
+        _isEventProfile
+            ? '${booking['date'] ?? ''} · ${_eventHoursRange(booking)}'
+            : '${booking['date'] ?? ''} · ${_time(booking['startTime'])}',
       ),
       _bookingDetailLine(
         Icons.schedule_outlined,
-        '${booking['durationHours'] ?? 0} hour(s) · '
-        '${booking['players'] ?? 0} $_peopleLabel',
+        '${_isEventProfile ? '' : '${booking['durationHours'] ?? 0} hour(s) · '}${booking['players'] ?? 0} $_peopleLabel',
       ),
       if (_isEventProfile && '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
         _bookingDetailLine(
@@ -2638,7 +2651,9 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         const SizedBox(height: 6),
                         _bookingDetailLine(
                           Icons.schedule_outlined,
-                          'Visit: $visitTime',
+                          _isEventProfile
+                              ? 'Event hours: ${_eventHoursRange(booking)}'
+                              : 'Visit: $visitTime',
                         ),
                         if (createdAt.isNotEmpty) ...[
                           const SizedBox(height: 6),
@@ -2650,8 +2665,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                         const SizedBox(height: 6),
                         _bookingDetailLine(
                           Icons.group_outlined,
-                          '${booking['durationHours'] ?? 0} hour(s) · '
-                          '${booking['players'] ?? 0} $_peopleLabel',
+                          '${_isEventProfile ? '' : '${booking['durationHours'] ?? 0} hour(s) · '}${booking['players'] ?? 0} $_peopleLabel',
                         ),
                         if (_isEventProfile &&
                             '${booking['eventType'] ?? ''}'.trim().isNotEmpty)
@@ -2788,8 +2802,7 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
             : _isEventProfile
             ? 'Completed event'
             : 'Completed match'} · '
-        '${_time(booking['startTime'])} · '
-        '${booking['durationHours'] ?? 0} hour(s) · '
+        '${_isEventProfile ? _eventHoursRange(booking) : '${_time(booking['startTime'])} · ${booking['durationHours'] ?? 0} hour(s)'} · '
         '${booking['players'] ?? 0} $_peopleLabel'
         '${_isEventProfile && '${booking['eventType'] ?? ''}'.trim().isNotEmpty ? ' · ${booking['eventType']}' : ''}',
     badge: '#${index + 1}',
@@ -2917,12 +2930,11 @@ class _ProfileDashboardPageState extends State<ProfileDashboardPage> {
                 _bookingDetailLine(
                   Icons.calendar_today_outlined,
                   '${booking['date'] ?? 'Date unavailable'} · '
-                  '${_time(booking['startTime'])}',
+                  '${_isEventProfile ? _eventHoursRange(booking) : _time(booking['startTime'])}',
                 ),
                 _bookingDetailLine(
                   Icons.schedule_outlined,
-                  '${booking['durationHours'] ?? 0} hour(s) · '
-                  '${booking['players'] ?? 0} $_peopleLabel',
+                  '${_isEventProfile ? '' : '${booking['durationHours'] ?? 0} hour(s) · '}${booking['players'] ?? 0} $_peopleLabel',
                 ),
                 if (_isEventProfile &&
                     '${booking['eventType'] ?? ''}'.trim().isNotEmpty)

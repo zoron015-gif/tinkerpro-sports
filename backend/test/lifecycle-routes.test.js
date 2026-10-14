@@ -117,17 +117,33 @@ function makeConnection() {
         return response(db.newsFeedRows);
       }
       if (sql.includes('FROM bookings') && sql.includes('AND start_time <')) {
-        return response(db.overlapRows ?? (
+        const overlapRows = db.overlapRows ?? (
           db.overlap
             ? [{ slotNumber: null, occupiesFullStudio: 1 }]
             : []
-        ));
+        );
+        return response(
+          sql.includes("status = 'approved'")
+            ? overlapRows.filter((booking) => booking.status !== 'pending')
+            : overlapRows,
+        );
       }
       if (
         sql.includes('SELECT b.id, b.customer_id AS customerId') &&
         sql.includes('CURRENT_DATE >= DATE_ADD(b.booking_date')
       ) {
         return response(db.dueBookings);
+      }
+      if (
+        sql.includes('SELECT b.id, b.customer_id AS customerId') &&
+        sql.includes('b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE')
+      ) {
+        return response(
+          db.expiredApprovalBooking &&
+            Number(params[0]) === db.expiredApprovalBooking.id
+            ? [db.expiredApprovalBooking]
+            : [],
+        );
       }
       if (sql.includes('WHERE b.payment_checkout_session_id = ?')) {
         return response(
@@ -198,6 +214,17 @@ function makeConnection() {
         if (db.declineBooking) db.declineBooking.status = 'cancelled';
         return [{ affectedRows: db.declineBooking ? 1 : 0 }, []];
       }
+      if (
+        sql.includes('SELECT b.id, b.customer_id AS customerId') &&
+        sql.includes('b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE')
+      ) {
+        return response(
+          db.expiredApprovalBooking &&
+            Number(params[0]) === db.expiredApprovalBooking.id
+            ? [db.expiredApprovalBooking]
+            : [],
+        );
+      }
       if (sql.includes('SELECT b.id, b.customer_id AS customerId')) {
         return response([{
           id: Number(params[0]),
@@ -205,6 +232,9 @@ function makeConnection() {
           venueId: 7,
           venueName: 'Test Court',
           sportType: 'Basketball',
+          paymentMethod: 'online',
+          paymentStatus: 'paid',
+          paidAmount: 500,
           bookingDate: '2026-10-01',
           startTime: '09:00:00',
           durationHours: 2,
@@ -217,6 +247,12 @@ function makeConnection() {
       }
       if (sql.includes('INSERT INTO conversations')) return [{ insertId: 601 }, []];
       if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
+        if (
+          sql.includes("SET b.status = 'cancelled'") &&
+          sql.includes('CURRENT_TIMESTAMP - INTERVAL 15 MINUTE')
+        ) {
+          return [{ affectedRows: db.expiredApprovalCancelAffected ?? 1 }, []];
+        }
         return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
       }
       if (sql.includes('DELETE b FROM bookings b')) {
@@ -236,6 +272,9 @@ function makeConnection() {
         sql.includes("UPDATE bookings") &&
         sql.includes("SET b.status = 'cancelled'")
       ) {
+        if (sql.includes('CURRENT_TIMESTAMP - INTERVAL 15 MINUTE')) {
+          return [{ affectedRows: db.expiredApprovalCancelAffected ?? 1 }, []];
+        }
         return [{ affectedRows: db.cancelAffected ? 1 : 0 }, []];
       }
       return [{ affectedRows: 1, insertId: 601 }, []];
@@ -511,9 +550,15 @@ before(async () => {
       if (sql.includes('FROM fitness_booking_attendance')) {
         return response(attendanceRecords);
       }
-      if (sql.includes('SELECT start_time AS startTime')) {
+      if (sql.includes('SELECT b.start_time AS startTime')) {
         if (db.availabilityError) throw db.availabilityError;
-        return response(db.availabilityRows);
+        const availableRows = db.availabilityRows;
+        return response(
+          availableRows.map(({ status, ...booking }) => ({
+            ...booking,
+            status,
+          })),
+        );
       }
       if (sql.includes('FROM email_verification_tokens t')) {
         return response(db.verificationToken ? [db.verificationToken] : []);
@@ -522,6 +567,12 @@ before(async () => {
         return response(db.resetToken ? [db.resetToken] : []);
       }
       if (sql.includes('UPDATE bookings b JOIN merchant_businesses')) {
+        if (
+          sql.includes("SET b.status = 'cancelled'") &&
+          sql.includes('CURRENT_TIMESTAMP - INTERVAL 15 MINUTE')
+        ) {
+          return [{ affectedRows: db.expiredApprovalCancelAffected ?? 1 }, []];
+        }
         return [{ affectedRows: db.transitionAffected ? 1 : 0 }, []];
       }
       if (sql.includes('DELETE b FROM bookings b')) {
@@ -1857,15 +1908,27 @@ test('merchant business image update validates image lists', async () => {
   );
 });
 
-test('availability returns bookings and validates its required inputs', async () => {
-  db.availabilityRows = [{ startTime: '09:00:00', durationHours: 1 }];
+test('sports availability returns pending and approved bookings with status', async () => {
+  db.availabilityRows = [
+    { startTime: '09:00:00', durationHours: 1, status: 'approved' },
+    { startTime: '10:00:00', durationHours: 1, status: 'pending' },
+  ];
   const response = await request('/api/bookings/availability?venueId=7&date=2026-10-01');
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { bookings: db.availabilityRows });
+  assert.deepEqual(await response.json(), {
+    bookings: [
+      { startTime: '09:00:00', durationHours: 1, slotNumbers: [], status: 'approved' },
+      { startTime: '10:00:00', durationHours: 1, slotNumbers: [], status: 'pending' },
+    ],
+  });
+  const availabilityQuery = db.calls.find(({ sql }) =>
+    sql.includes('SELECT b.start_time AS startTime'),
+  );
+  assert.ok(availabilityQuery.sql.includes("b.status IN ('pending', 'approved')"));
 
   const invalid = await request('/api/bookings/availability?venueId=0&date=bad');
   assert.equal(invalid.status, 400);
-  assert.equal(db.calls.filter(({ sql }) => sql.includes('SELECT start_time AS startTime')).length, 1);
+  assert.equal(db.calls.filter(({ sql }) => sql.includes('SELECT b.start_time AS startTime')).length, 1);
 });
 
 test('availability database failures return the generic server error', async () => {
@@ -1906,6 +1969,35 @@ test('booking rejects an occupied interval and does not persist a booking', asyn
   });
   assert.ok(db.calls.some(({ sql }) => sql.includes('FROM bookings') && sql.includes('AND start_time <')));
   assert.equal(db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')), false);
+});
+
+test('sports booking requests do not block pending requests for the same slot', async () => {
+  db.overlapRows = [{
+    slotNumber: 2,
+    slotNumbers: [2],
+    occupiesFullStudio: 0,
+    status: 'pending',
+  }];
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 2,
+      players: 2,
+      paymentMethod: 'cash_on_arrival',
+      sportType: 'Badminton',
+      slotNumber: 2,
+    },
+  });
+
+  assert.equal(response.status, 201);
+  const overlapQuery = db.calls.find(({ sql }) =>
+    sql.includes('AND start_time <'),
+  );
+  assert.ok(overlapQuery.sql.includes("status = 'approved'"));
+  assert.ok(!overlapQuery.sql.includes("status IN ('pending', 'approved')"));
 });
 
 test('booking success calculates add-on charges and downpayment', async () => {
@@ -1973,6 +2065,7 @@ test('booking success calculates add-on charges and downpayment', async () => {
 test('Event booking validates event type and guest capacity and charges the event fee once', async () => {
   db.venue.businessType = 'Event';
   db.venue.eventFee = 10000;
+  db.venue.hours = '8:00 AM - 12:00 AM';
 
   const response = await request('/api/bookings', {
     method: 'POST',
@@ -1995,7 +2088,14 @@ test('Event booking validates event type and guest capacity and charges the even
   assert.equal(booking.downpayment, 5000);
   const insert = db.calls.find(({ sql }) => sql.includes('INSERT INTO bookings'));
   assert.ok(insert.sql.includes('event_type'));
+  assert.equal(insert.params[3], '08:00:00');
+  assert.equal(insert.params[4], 16);
   assert.equal(insert.params[14], 'Wedding');
+  const overlapQuery = db.calls.find(({ sql }) =>
+    sql.includes('AND start_time <'),
+  );
+  assert.equal(overlapQuery.params[2], '08:00:00');
+  assert.equal(overlapQuery.params[3], 16);
   const requestMessage = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
   );
@@ -2004,6 +2104,31 @@ test('Event booking validates event type and guest capacity and charges the even
   assert.equal(ticket.businessType, 'Event');
   assert.equal(ticket.eventType, 'Wedding');
   assert.equal(ticket.players, 120);
+});
+
+test('Event bookings require valid same-day venue opening hours', async () => {
+  db.venue.businessType = 'Event';
+  db.venue.eventFee = 10000;
+  db.venue.hours = 'Hours not configured';
+
+  const response = await request('/api/bookings', {
+    method: 'POST',
+    body: {
+      venueId: 7,
+      date: '2026-10-01',
+      startTime: '09:00',
+      durationHours: 4,
+      players: 120,
+      paymentMethod: 'cash_on_arrival',
+      eventType: 'Wedding',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(
+    db.calls.some(({ sql }) => sql.includes('INSERT INTO bookings')),
+    false,
+  );
 });
 
 test('Event booking rejects event types and guest counts outside venue configuration', async () => {
@@ -2507,6 +2632,11 @@ test('merchant approval issues a booking ticket', async () => {
     sql.includes("SET b.status = 'approved'"),
   );
   assert.ok(approvalUpdate);
+  const requestTicketUpdate = db.calls.find(({ sql }) =>
+    sql.includes('UPDATE messages m') &&
+    sql.includes("m.attachment_json, '$.status', 'approved'"),
+  );
+  assert.ok(requestTicketUpdate);
   assert.match(
     approvalUpdate.sql,
     /\(b\.payment_method = 'online' AND b\.payment_status = 'paid'\)/,
@@ -2514,6 +2644,55 @@ test('merchant approval issues a booking ticket', async () => {
   assert.match(
     approvalUpdate.sql,
     /OR b\.payment_method = 'cash_on_arrival'/,
+  );
+  assert.match(
+    approvalUpdate.sql,
+    /b\.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE/,
+  );
+  assert.doesNotMatch(
+    approvalUpdate.sql.split('AND (')[0],
+    /payment_method|payment_status|paid_amount/,
+  );
+});
+
+test('merchant approval expires overdue paid online requests and updates their request ticket', async () => {
+  db.transitionAffected = false;
+  db.expiredApprovalBooking = {
+    id: 501,
+    customerId: 42,
+    venueId: 7,
+    venueName: 'Test Court',
+    sportType: 'Basketball',
+  };
+
+  const response = await request('/api/merchant/bookings/501/approve', {
+    method: 'PATCH',
+    role: 'merchant',
+  });
+
+  assert.equal(response.status, 410);
+  assert.deepEqual(await response.json(), {
+    error: 'Booking request expired and can no longer be approved.',
+  });
+  assert.ok(db.calls.some(({ sql }) =>
+    sql.includes("SET b.status = 'cancelled'") &&
+    sql.includes('CURRENT_TIMESTAMP - INTERVAL 15 MINUTE'),
+  ));
+  const expiryUpdate = db.calls.find(({ sql }) =>
+    sql.includes("SET b.status = 'cancelled'") &&
+    sql.includes('CURRENT_TIMESTAMP - INTERVAL 15 MINUTE'),
+  );
+  assert.doesNotMatch(
+    expiryUpdate.sql,
+    /payment_method|payment_status|paid_amount|payment_refund_status/,
+  );
+  assert.ok(db.calls.some(({ sql }) =>
+    sql.includes("m.attachment_json, '$.status', 'expired'"),
+  ));
+  assert.equal(
+    db.calls.filter(({ sql }) => sql.includes('INSERT INTO user_activity_logs'))
+      .length,
+    2,
   );
 });
 
@@ -2852,6 +3031,12 @@ test('merchant booking refresh automatically completes bookings at type-specific
   const response = await request('/api/merchant/bookings', { role: 'merchant' });
 
   assert.equal(response.status, 200);
+  const bookingsQuery = db.calls.find(({ sql }) =>
+    sql.includes('b.created_at AS createdAt') &&
+    sql.includes('AS approvalExpiresAt'),
+  );
+  assert.ok(bookingsQuery);
+  assert.match(bookingsQuery.sql, /DATE_ADD\(b\.created_at, INTERVAL 15 MINUTE\)/);
   const completionQuery = db.calls.find(({ sql }) =>
     sql.includes("WHERE b.status = 'approved'") &&
     sql.includes('CURRENT_DATE >= DATE_ADD(b.booking_date'),

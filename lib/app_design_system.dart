@@ -244,6 +244,7 @@ abstract final class AppSpacing {
     horizontal: 12,
     vertical: 8,
   );
+  static const dialogInset = 24.0;
   static const panelInset = 20.0;
   static const xLarge = 24.0;
   static const xxLarge = 32.0;
@@ -265,6 +266,7 @@ abstract final class AppRadii {
   static const merchantCard = 12.0;
   static const marketplaceCard = 14.0;
   static const dialog = 14.0;
+  static const bottomSheet = 20.0;
 }
 
 abstract final class AppTypography {

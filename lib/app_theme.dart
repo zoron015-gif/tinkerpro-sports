@@ -30,6 +30,38 @@ abstract final class AppTheme {
       scrolledUnderElevation: 0,
       titleTextStyle: AppTypography.pageTitle,
     ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.dialogInset,
+        vertical: AppSpacing.large,
+      ),
+      titleTextStyle: TextStyle(
+        color: AppColors.ink,
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+      ),
+      contentTextStyle: TextStyle(color: AppColors.muted, fontSize: 14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.dialog),
+        side: BorderSide(color: AppColors.border),
+      ),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: AppColors.surface,
+      modalBackgroundColor: AppColors.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      dragHandleColor: AppColors.border,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadii.bottomSheet),
+        ),
+      ),
+    ),
     cardTheme: CardThemeData(
       color: AppColors.surface,
       surfaceTintColor: Colors.transparent,
@@ -292,6 +324,11 @@ abstract final class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.dialogInset,
+          vertical: AppSpacing.large,
+        ),
         titleTextStyle: textTheme.titleLarge?.copyWith(
           color: scheme.onSurface,
           fontWeight: FontWeight.w800,
@@ -301,17 +338,19 @@ abstract final class AppTheme {
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.dialog),
+          side: BorderSide(color: scheme.outlineVariant),
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surface,
         modalBackgroundColor: surface,
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
         showDragHandle: true,
         dragHandleColor: scheme.outline,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
-            top: Radius.circular(AppRadii.dialog),
+            top: Radius.circular(AppRadii.bottomSheet),
           ),
         ),
       ),

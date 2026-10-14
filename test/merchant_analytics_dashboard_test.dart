@@ -391,9 +391,17 @@ void main() {
         'venueName': 'Sample Court',
         'businessType': 'Event',
         'date': date,
+        'startTime': '09:00:00',
+        'durationHours': 8,
         'players': 6,
+        'eventType': 'Wedding',
         'total': 200,
         'downpayment': 100,
+        'paymentMethod': 'cash_on_arrival',
+        'paidAmount': 0,
+        'approvalExpiresAt': DateTime.now()
+            .add(const Duration(minutes: 5))
+            .toIso8601String(),
         'status': 'pending',
       },
       {
@@ -515,17 +523,31 @@ void main() {
       findsNothing,
     );
     expect(find.text('1 pending'), findsOneWidget);
-    final analyticsMetricKeys = [
-      'revenue',
-      'collected',
-      'bookings',
-      'live-venues',
-    ];
+    final analyticsMetricKeys = ['collected', 'bookings', 'live-venues'];
     final analyticsMetricSizes = [
       for (final key in analyticsMetricKeys)
         tester.getSize(find.byKey(ValueKey('merchant-analytics-metric-$key'))),
     ];
     expect(analyticsMetricSizes.toSet(), hasLength(1));
+    final revenueMetric = find.byKey(
+      const ValueKey('merchant-analytics-metric-revenue'),
+    );
+    expect(
+      tester.getSize(revenueMetric).height,
+      greaterThan(analyticsMetricSizes.first.height),
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-revenue-value')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-revenue-trend')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('merchant-analytics-revenue-sparkline')),
+      findsOneWidget,
+    );
     final bookingsMetric = find.byKey(
       const ValueKey('merchant-analytics-metric-bookings'),
     );
@@ -617,10 +639,23 @@ void main() {
     await tester.tap(find.text('Event').last);
     await tester.pumpAndSettle();
     expect(find.text('\u{20B1} 0.00'), findsWidgets);
+    final analyticsScrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('merchant-analytics-sales-chart')),
+      300,
+      scrollable: analyticsScrollable,
+    );
     expect(
       find.text('\u{20B1} 0.00 confirmed sales · \u{20B1} 0.00 collected'),
       findsOneWidget,
     );
+    await tester.scrollUntilVisible(
+      analyticsTypeFilter,
+      -300,
+      scrollable: analyticsScrollable,
+    );
+    await tester.ensureVisible(analyticsTypeFilter);
+    await tester.pumpAndSettle();
     await tester.tap(analyticsTypeFilter);
     await tester.pumpAndSettle();
     await tester.tap(find.text('All booking types').last);
@@ -956,6 +991,7 @@ void main() {
     await tester.tap(find.text('Requests'));
     await tester.pumpAndSettle();
     expect(find.text('Customer Two'), findsOneWidget);
+    expect(find.text('Approval deadline'), findsOneWidget);
     await tester.tap(find.text('Customer'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -986,11 +1022,17 @@ void main() {
     final pendingBookingView = find.byKey(
       const ValueKey('merchant-booking-view-11'),
     );
+    await tester.ensureVisible(pendingBookingView);
+    await tester.pumpAndSettle();
+    expect(find.text('Approval deadline'), findsOneWidget);
     final managementScroll = _managementScrollable(tester);
     tester.state<ScrollableState>(managementScroll).position.jumpTo(400);
     await tester.pumpAndSettle();
     await tester.tap(pendingBookingView);
     await tester.pumpAndSettle();
+    expect(find.text('Event schedule'), findsOneWidget);
+    expect(find.textContaining('9:00 AM - 5:00 PM'), findsWidgets);
+    expect(find.text('Duration'), findsNothing);
     final detailsScroll = find
         .descendant(
           of: find.byKey(

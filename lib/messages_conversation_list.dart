@@ -112,13 +112,15 @@ class MessagesConversationList extends StatelessWidget {
               AppText(
                 '${filtered.length}',
                 style: TextStyle(color: Colors.grey.shade600),
-               localize: true,),
+                localize: true,
+              ),
             ],
           ),
         ),
         Expanded(
           child: filtered.isEmpty
               ? ListView(
+                  key: const ValueKey('messages-conversation-scroll-list'),
                   controller: scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   keyboardDismissBehavior:
@@ -140,7 +142,9 @@ class MessagesConversationList extends StatelessWidget {
                   ],
                 )
               : ListView(
+                  key: const ValueKey('messages-conversation-scroll-list'),
                   controller: scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   children: filtered.map((conversation) {
@@ -174,7 +178,8 @@ class MessagesConversationList extends StatelessWidget {
                               child: AppText(
                                 '$unread',
                                 style: const TextStyle(fontSize: 11),
-                               localize: true,),
+                                localize: true,
+                              ),
                             )
                           : null,
                       onTap: () => onSelectConversation(id),
@@ -315,7 +320,11 @@ class MessagesConversationList extends StatelessWidget {
         children: [
           const CircleAvatar(radius: 27, child: Icon(Icons.add_rounded)),
           const SizedBox(height: 6),
-          AppText('New', style: TextStyle(color: Colors.grey.shade700), localize: true),
+          AppText(
+            'New',
+            style: TextStyle(color: Colors.grey.shade700),
+            localize: true,
+          ),
         ],
       ),
     ),

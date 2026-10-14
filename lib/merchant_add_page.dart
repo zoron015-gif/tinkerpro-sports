@@ -4423,6 +4423,10 @@ class MerchantAddPageState extends State<MerchantAddPage> {
             child: const AppText('Cancel', localize: true),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.errorText,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const AppText('Delete', localize: true),
           ),

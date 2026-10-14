@@ -33,6 +33,49 @@ class _AnalyticsBucket {
   final int participants;
 }
 
+class _AnalyticsSparklinePainter extends CustomPainter {
+  const _AnalyticsSparklinePainter({required this.values, required this.color});
+
+  final List<double> values;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty || size.width <= 0 || size.height <= 0) return;
+    final minimum = values.reduce(math.min);
+    final maximum = values.reduce(math.max);
+    final range = maximum - minimum;
+    final points = [
+      for (var index = 0; index < values.length; index++)
+        Offset(
+          values.length == 1
+              ? size.width / 2
+              : size.width * index / (values.length - 1),
+          range == 0
+              ? size.height / 2
+              : size.height - (values[index] - minimum) / range * size.height,
+        ),
+    ];
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _AnalyticsSparklinePainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.color != color;
+}
+
 List<DateTime> _weekStarts(DateTime start, DateTime end) {
   final first = _weekStart(start);
   final last = _weekStart(end);
@@ -602,17 +645,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   double get _periodSales => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(
-        0,
-        (total, booking) => total + _bookingAmount(booking['total']),
-      );
+      .fold(0, (total, booking) => total + _bookingAmount(booking['total']));
 
   double get _periodCollected => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(
-        0,
-        (total, booking) => total + _bookingAmountReceived(booking),
-      );
+      .fold(0, (total, booking) => total + _bookingAmountReceived(booking));
 
   int get _periodCustomers => _periodBookings
       .map((booking) => booking['customerId'] ?? booking['customerName'])
@@ -643,6 +680,71 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final averagePlayers = bookingCount == 0
         ? 0.0
         : _periodParticipants / bookingCount;
+    if (_analyticsView == 'Sales report') {
+      return Column(
+        children: [
+          _analyticsRevenueHero(collectedShare),
+          const SizedBox(height: _analyticsElementGap),
+          Row(
+            children: [
+              Expanded(
+                child: _analyticsMetric(
+                  'Collected',
+                  _formatCurrency(_periodCollected),
+                  Icons.account_balance_wallet_outlined,
+                  context: 'Of ${_formatCurrency(_periodSales)} in sales',
+                  progress: collectedShare,
+                  progressLabel: 'Collected',
+                  onTap: () => _selectAnalyticsView('Sales report'),
+                ),
+              ),
+              const SizedBox(width: _analyticsElementGap),
+              Expanded(
+                child: _analyticsMetric(
+                  'Bookings',
+                  '$bookingCount',
+                  Icons.event_available_outlined,
+                  context:
+                      '$confirmedBookings confirmed · $pendingBookings pending',
+                  progress: bookingCount == 0
+                      ? 0
+                      : confirmedBookings / bookingCount,
+                  progressLabel: 'Confirmed',
+                  onTap: () => _selectAnalyticsView('Venue performance'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: _analyticsElementGap),
+          Row(
+            children: [
+              Expanded(
+                child: _analyticsMetric(
+                  'Live venues',
+                  '$liveVenues / ${_analyticsBusinesses.length}',
+                  Icons.storefront_outlined,
+                  context:
+                      '${(liveVenueShare * 100).round()}% of your venues are live',
+                  progress: liveVenueShare,
+                  progressLabel: 'Live',
+                  onTap: () => _selectAnalyticsView('Venue performance'),
+                ),
+              ),
+              const SizedBox(width: _analyticsElementGap),
+              Expanded(
+                child: _analyticsMetric(
+                  'Customers',
+                  '$_periodCustomers',
+                  Icons.person_outline_rounded,
+                  context: 'Unique customers in this period',
+                  onTap: () => _selectAnalyticsView('Customer count'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
     final primaryMetric = switch (_analyticsView) {
       'Customer count' => '$_periodParticipants',
       'Venue performance' => '$bookingCount',
@@ -751,6 +853,107 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _analyticsRevenueHero(double collectedShare) {
+    final buckets = _analyticsBuckets;
+    final previousSales = buckets.length < 2
+        ? null
+        : buckets[buckets.length - 2].sales;
+    final latestSales = buckets.isEmpty ? 0.0 : buckets.last.sales;
+    final change = previousSales == null || previousSales <= 0
+        ? null
+        : (latestSales - previousSales) / previousSales * 100;
+    final trendColor = change == null
+        ? _merchantMuted
+        : change >= 0
+        ? const Color(0xFF168B69)
+        : AppColors.errorText;
+    final trendText = change == null
+        ? 'No previous-period sales'
+        : '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% vs previous ${switch (_analyticsPeriod) {
+            'Weekly' => 'week',
+            'Monthly' => 'month',
+            'Annual' => 'year',
+            _ => 'day',
+          }}';
+
+    return Card(
+      key: const ValueKey('merchant-analytics-metric-revenue'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: AppColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: AppText(
+                    'Revenue',
+                    style: TextStyle(
+                      color: _merchantMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Icon(
+                  change != null && change < 0
+                      ? Icons.trending_down_rounded
+                      : Icons.trending_up_rounded,
+                  size: 17,
+                  color: trendColor,
+                ),
+                const SizedBox(width: 3),
+                AppText(
+                  trendText,
+                  key: const ValueKey('merchant-analytics-revenue-trend'),
+                  style: TextStyle(
+                    color: trendColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            AppText(
+              _formatCurrency(_periodSales),
+              key: const ValueKey('merchant-analytics-revenue-value'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: _merchantInk,
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                height: 1.15,
+              ),
+            ),
+            const SizedBox(height: 3),
+            AppText(
+              '${(collectedShare * 100).round()}% collected · confirmed sales in selected period',
+              style: TextStyle(color: _merchantMuted, fontSize: 10),
+              localize: true,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              key: const ValueKey('merchant-analytics-revenue-sparkline'),
+              height: 44,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _AnalyticsSparklinePainter(
+                  values: [for (final bucket in buckets) bucket.sales],
+                  color: const Color(0xFF00A6B2),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

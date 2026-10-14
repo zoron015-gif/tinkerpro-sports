@@ -121,13 +121,8 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               style: TextStyle(color: _muted, fontSize: 14, height: 1.45),
              localize: true,),
             const SizedBox(height: 6),
-            _AuthField(
-              label: 'Verification code',
-              hint: '000000',
-              icon: Icons.mark_email_read_outlined,
-              keyboardType: TextInputType.number,
+            _AuthCodeField(
               controller: _codeController,
-              maxLength: 6,
               fieldKey: _codeFieldKey,
               errorText: _codeError,
               onChanged: (_) => setState(() => _codeError = null),

@@ -1982,11 +1982,23 @@ const _additionalLanguageText = <String, Map<String, String>>{
     'ja': '本日の実績',
     'zh': '今日表现',
   },
-  'Valid after venue approval': {
-    'fil': 'Valid pagkatapos aprubahan ng venue',
-    'ko': '장소 승인 후 유효',
-    'ja': '施設の承認後に有効',
-    'zh': '场地批准后生效',
+  'Request expires in 15 min': {
+    'fil': 'Mag-e-expire ang request sa loob ng 15 minuto',
+    'ko': '요청이 15분 후 만료됩니다',
+    'ja': 'リクエストは15分後に期限切れになります',
+    'zh': '请求将在 15 分钟后过期',
+  },
+  'Approval deadline': {
+    'fil': 'Deadline ng pag-apruba',
+    'ko': '승인 마감 시간',
+    'ja': '承認期限',
+    'zh': '审批截止时间',
+  },
+  'Search venue, transaction ID, or booking reference': {
+    'fil': 'Maghanap ng venue, transaction ID, o booking reference',
+    'ko': '장소, 거래 ID 또는 예약 번호 검색',
+    'ja': '会場、取引ID、予約番号を検索',
+    'zh': '搜索场地、交易编号或预订编号',
   },
   'Online payments are not configured yet. No booking has been ': {
     'fil': 'Hindi pa naka-configure ang online payment. Walang booking na ',

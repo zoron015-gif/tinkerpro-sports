@@ -20,6 +20,17 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - run: >-
+          dart format --output=none --set-exit-if-changed
+          lib/features/bookings/domain/booking_schedule.dart
+          lib/features/bookings/application/booking_schedule_controller.dart
+          lib/features/bookings/data/http_booking_schedule_repository.dart
+          lib/features/bookings/presentation/booking_schedule_conflict.dart
+          lib/features/merchant_management/data/merchant_booking_repository.dart
+          lib/core/api_http_client.dart
+          test/booking_schedule_controller_test.dart
+          test/booking_schedule_repository_test.dart
+          test/merchant_booking_repository_test.dart
       - run: flutter analyze
       - run: >-
           flutter test
@@ -27,6 +38,15 @@ jobs:
           test/app_startup_test.dart
           test/messages_api_auth_test.dart
           test/news_feed_navigation_test.dart
+          test/booking_schedule_conflict_test.dart
+          test/booking_schedule_controller_test.dart
+          test/booking_schedule_repository_test.dart
+          test/merchant_booking_repository_test.dart
+          test/merchant_analytics_dashboard_test.dart
+          test/merchant_profile_dashboard_test.dart
+          test/profile_dashboard_test.dart
+          test/fitness_booking_page_test.dart
+          test/event_booking_page_test.dart
 
   backend-audit:
     runs-on: ubuntu-latest

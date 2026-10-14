@@ -49,7 +49,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
   String _courtType = 'All';
   String _availability = 'Any';
   String _priceSort = 'Recommended';
-  double _maxPrice = 700;
+  double? _maxPrice;
   Position? _userPosition;
   bool _locationLoading = false;
   final Set<String> _amenities = <String>{};
@@ -60,7 +60,6 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     super.initState();
     _sport = widget.categoryAllLabel;
     _userPosition = widget.initialUserPosition;
-    _maxPrice = _priceFilterMaximum;
   }
 
   @override
@@ -73,12 +72,14 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     final query = _searchController.text.trim().toLowerCase();
     final filtered = widget.posts.where((post) {
       final address = '${post['address'] ?? ''}'.toLowerCase();
-      final category = '${post['category'] ?? ''}'.toLowerCase();
+      final categories = venueFilterCategories(post)
+          .map((value) => value.toLowerCase())
+          .toList();
       final facility = '${post['facilityType'] ?? ''}'.toLowerCase();
       final hours = '${post['hours'] ?? post['opening_hours'] ?? ''}'
           .toLowerCase();
       final availability = '${post['availability'] ?? ''}'.toLowerCase();
-      final price = _venuePrice(post);
+      final price = venueFilterPrice(post);
       final rawAmenities = '${post['tags'] ?? post['amenities'] ?? ''}'
           .toLowerCase();
       final searchable = [
@@ -96,21 +97,21 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       ].map((value) => '$value').join(' ').toLowerCase();
       return (_area == 'All areas' || address.contains(_area.toLowerCase())) &&
           (_sport == widget.categoryAllLabel ||
-              category == _sport.toLowerCase()) &&
+              categories.contains(_sport.toLowerCase())) &&
           (_courtType == 'All' || facility == _courtType.toLowerCase()) &&
           (_availability == 'Any' ||
               hours.contains('open 24 hours') ||
               availability.contains('open 24 hours')) &&
-          price <= _maxPrice &&
+          (_maxPrice == null || price <= _maxPrice!) &&
           _amenities.every(
             (amenity) => rawAmenities.contains(amenity.toLowerCase()),
           ) &&
           (query.isEmpty || searchable.contains(query));
     }).toList();
     if (_priceSort == 'Lowest to highest') {
-      filtered.sort((a, b) => _venuePrice(a).compareTo(_venuePrice(b)));
+      filtered.sort((a, b) => venueFilterPrice(a).compareTo(venueFilterPrice(b)));
     } else if (_priceSort == 'Highest to lowest') {
-      filtered.sort((a, b) => _venuePrice(b).compareTo(_venuePrice(a)));
+      filtered.sort((a, b) => venueFilterPrice(b).compareTo(venueFilterPrice(a)));
     } else if (_userPosition case final position?) {
       filtered.sort(
         (a, b) =>
@@ -120,19 +121,18 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
     return filtered;
   }
 
-  double _venuePrice(Map<String, dynamic> post) =>
-      double.tryParse(
-        '${post['pricePerHour'] ?? post['price_per_hour'] ?? post['eventFee'] ?? post['event_fee'] ?? 0}',
-      ) ??
-      0;
+  double get _priceFilterMaximum => venueFilterPriceMaximum(widget.posts);
 
-  double get _priceFilterMaximum {
-    var maximum = 700.0;
-    for (final post in widget.posts) {
-      final price = _venuePrice(post);
-      if (price > maximum) maximum = price;
-    }
-    return (maximum / 100).ceil() * 100.0;
+  List<String> get _categoryOptions {
+    final values =
+        widget.posts
+            .expand(venueFilterCategories)
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    return [widget.categoryAllLabel, ...values];
   }
 
   double _distanceFrom(Position position, Map<String, dynamic> post) {
@@ -180,7 +180,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       _courtType = 'All';
       _availability = 'Any';
       _priceSort = 'Recommended';
-      _maxPrice = _priceFilterMaximum;
+      _maxPrice = null;
       _userPosition = null;
       _amenities.clear();
     });
@@ -193,7 +193,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
       (_courtType == 'All' ? 0 : 1) +
       (_availability == 'Any' ? 0 : 1) +
       (_priceSort == 'Recommended' ? 0 : 1) +
-      (_maxPrice >= _priceFilterMaximum ? 0 : 1) +
+      (_maxPrice == null ? 0 : 1) +
       _amenities.length +
       (_userPosition == null ? 0 : 1);
 
@@ -254,10 +254,7 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                             spacing: 6,
                             runSpacing: 6,
                             children: [
-                              for (final value in _options(
-                                (post) => '${post['category'] ?? ''}',
-                                widget.categoryAllLabel,
-                              ))
+                              for (final value in _categoryOptions)
                                 ChoiceChip(
                                   key: ValueKey(
                                     'all-venues-filter-sport-$value',
@@ -404,15 +401,19 @@ class _AllVenuesPageState extends State<AllVenuesPage> {
                           _filterLabel(widget.priceFilterLabel),
                           Slider(
                             key: const ValueKey('all-venues-filter-price'),
-                            value: _maxPrice,
+                            value: _maxPrice ?? _priceFilterMaximum,
                             min: 0,
                             max: _priceFilterMaximum,
-                            divisions: 14,
-                            label: _maxPrice >= _priceFilterMaximum
+                            divisions: (_priceFilterMaximum / 50).round(),
+                            label: _maxPrice == null
                                 ? '${_priceFilterMaximum.round()}+'
-                                : _maxPrice.round().toString(),
+                                : _maxPrice!.round().toString(),
                             onChanged: (value) {
-                              setState(() => _maxPrice = value);
+                              setState(
+                                () => _maxPrice = value >= _priceFilterMaximum
+                                    ? null
+                                    : value,
+                              );
                               setSheetState(() {});
                             },
                           ),

@@ -8,8 +8,10 @@ import 'booking_cancellation_notice.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
 import 'fitness_booking_pricing.dart';
-import 'booking_schedule_conflict.dart';
+import 'features/bookings/presentation/booking_schedule_conflict.dart';
 import 'app_preferences.dart';
+import 'features/bookings/data/http_booking_schedule_repository.dart';
+import 'features/bookings/application/booking_schedule_controller.dart';
 
 class _FitnessVenueHours {
   const _FitnessVenueHours(this.openingMinute, this.closingMinute);
@@ -363,12 +365,18 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       );
       final scheduleAvailable = await confirmBookingScheduleConflict(
         context: context,
-        api: widget.api,
-        token: token,
+        controller: BookingScheduleController(
+          repository: HttpBookingScheduleRepository(
+            client: widget.api.httpClient,
+            authHeaders: widget.api.authHeadersForToken,
+            token: token,
+          ),
+        ),
         venueId: _businessId,
         venueName: '${widget.business['name'] ?? 'Fitness venue'}',
         startsAt: bookingStart,
         durationHours: _firstVisitDurationHours,
+        requireCancelForPendingRequest: true,
       );
       if (!scheduleAvailable || !mounted) return;
       final timeUntilBooking = bookingStart.difference(DateTime.now());
@@ -379,25 +387,27 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const AppText('Confirm Fitness booking', localize: true),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppText(
-                '${widget.business['name'] ?? 'Fitness venue'}\n'
-                '$_category · ${_planTitle(_plan!)}\n'
-                'Plan duration: ${FitnessBookingPricing.planDurationLabel(_selectedCategory, _plan) ?? 'Not available'}\n'
-                '${_dateString(_date)} · ${_isSessionPlan ? '${time.format(context)}–${_sessionHours!.closingTime.format(context)}' : time.format(context)}\n'
-                '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
-                '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
-                '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time plan total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
-                localize: true,
-              ),
-              if (startsWithin24Hours) ...[
-                const SizedBox(height: 12),
-                const BookingCancellationNotice(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppText(
+                  '${widget.business['name'] ?? 'Fitness venue'}\n'
+                  '$_category · ${_planTitle(_plan!)}\n'
+                  'Plan duration: ${FitnessBookingPricing.planDurationLabel(_selectedCategory, _plan) ?? 'Not available'}\n'
+                  '${_dateString(_date)} · ${_isSessionPlan ? '${time.format(context)}–${_sessionHours!.closingTime.format(context)}' : time.format(context)}\n'
+                  '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
+                  '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
+                  '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time plan total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
+                  localize: true,
+                ),
+                if (startsWithin24Hours) ...[
+                  const SizedBox(height: 12),
+                  const BookingCancellationNotice(),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -966,11 +976,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                           'Duration unavailable',
               ),
               if (!_isSessionPlan)
-                _summaryRow(
-                  'First-visit reservation',
-                  0,
-                  suffix: '1 hour',
-                ),
+                _summaryRow('First-visit reservation', 0, suffix: '1 hour'),
               _summaryRow(
                 'First visit',
                 0,

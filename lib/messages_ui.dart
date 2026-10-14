@@ -24,6 +24,39 @@ int? asInt(Object? value) {
   return null;
 }
 
+String _eventHoursLabel(Object? startValue, Object? durationValue) {
+  final time = safeString(startValue).split(':');
+  final hour = time.isNotEmpty ? int.tryParse(time[0]) : null;
+  final minute = time.length > 1 ? int.tryParse(time[1]) : null;
+  final duration = durationValue is num
+      ? durationValue.toDouble()
+      : double.tryParse(safeString(durationValue));
+  if (hour == null ||
+      hour < 0 ||
+      hour > 23 ||
+      minute == null ||
+      minute < 0 ||
+      minute > 59 ||
+      duration == null ||
+      duration <= 0) {
+    return safeString(startValue, '—');
+  }
+  final end = DateTime(
+    2024,
+    1,
+    1,
+    hour,
+    minute,
+  ).add(Duration(minutes: (duration * 60).round()));
+  String clock(int hour, int minute) {
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    return '$displayHour:${minute.toString().padLeft(2, '0')} $period';
+  }
+
+  return '${clock(hour, minute)} - ${clock(end.hour % 24, end.minute)}';
+}
+
 String displayName(Map<String, dynamic> user) {
   final first = safeString(user['firstName']);
   final last = safeString(user['lastName']);
@@ -132,6 +165,7 @@ class MessagesBookingTicket extends StatelessWidget {
     final ticket = BookingTicketViewModel.fromMap(data);
     final isBookingRequest = ticket.isBookingRequest;
     final approved = ticket.approved;
+    final expired = ticket.expired;
     final bookingId = ticket.bookingId;
     final venueName = ticket.venueName;
     final sportType = ticket.sportType;
@@ -154,10 +188,12 @@ class MessagesBookingTicket extends StatelessWidget {
     final transactionId = ticket.transactionId;
     final paymentMethod = ticket.paymentMethod;
     final isPaid = ticket.isPaid;
-    final ticketHighlight = isBookingRequest
-        ? const Color(0xFFB45309)
+    final ticketHighlight = expired
+        ? const Color(0xFFB42318)
         : approved
         ? const Color(0xFF237A43)
+        : isBookingRequest
+        ? const Color(0xFFB45309)
         : AppColors.navy;
 
     return ConstrainedBox(
@@ -168,10 +204,10 @@ class MessagesBookingTicket extends StatelessWidget {
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isBookingRequest || approved
+            color: expired || isBookingRequest || approved
                 ? ticketHighlight.withValues(alpha: .55)
                 : AppColors.border,
-            width: isBookingRequest || approved ? 1.5 : 1,
+            width: expired || isBookingRequest || approved ? 1.5 : 1,
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -209,8 +245,12 @@ class MessagesBookingTicket extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         AppText(
-                          isBookingRequest
-                              ? 'BOOKING REQUEST'
+                          expired
+                              ? 'BOOKING REQUEST EXPIRED'
+                              : isBookingRequest
+                              ? approved
+                                    ? 'BOOKING CONFIRMED'
+                                    : 'BOOKING REQUEST'
                               : isPaid
                               ? 'PAYMENT RECEIPT'
                               : 'BOOKING CONFIRMATION',
@@ -241,7 +281,9 @@ class MessagesBookingTicket extends StatelessWidget {
                     children: [
                       Expanded(
                         child: AppText(
-                          approved
+                          expired
+                              ? 'BOOKING REQUEST EXPIRED'
+                              : approved
                               ? 'BOOKING CONFIRMED'
                               : isBookingRequest
                               ? 'BOOKING SUBMITTED'
@@ -255,12 +297,15 @@ class MessagesBookingTicket extends StatelessWidget {
                         ),
                       ),
                       _TicketStatusPill(
-                        label: approved
+                        label: expired
+                            ? 'EXPIRED'
+                            : approved
                             ? 'APPROVED'
                             : isBookingRequest
                             ? 'PENDING REVIEW'
                             : 'PENDING APPROVAL',
                         approved: approved,
+                        expired: expired,
                       ),
                     ],
                   ),
@@ -353,8 +398,13 @@ class MessagesBookingTicket extends StatelessWidget {
                       Expanded(
                         child: _TicketDetail(
                           icon: Icons.schedule_rounded,
-                          label: 'START',
-                          value: time,
+                          label: isEventBooking ? 'VENUE HOURS' : 'START',
+                          value: isEventBooking
+                              ? _eventHoursLabel(
+                                  data['startTime'],
+                                  data['durationHours'],
+                                )
+                              : time,
                         ),
                       ),
                     ],
@@ -369,7 +419,7 @@ class MessagesBookingTicket extends StatelessWidget {
                           value: safeString(data['players'], '—'),
                         ),
                       ),
-                      if (!isFitnessBooking) ...[
+                      if (!isFitnessBooking && !isEventBooking) ...[
                         const SizedBox(width: 6),
                         Expanded(
                           child: _TicketDetail(
@@ -474,7 +524,9 @@ class MessagesBookingTicket extends StatelessWidget {
                             ),
                           ),
                         ],
-                        if (isBookingRequest && bookingToken.isNotEmpty) ...[
+                        if (isBookingRequest &&
+                            !expired &&
+                            bookingToken.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           AppText(
                             'BOOKING TOKEN',
@@ -494,11 +546,11 @@ class MessagesBookingTicket extends StatelessWidget {
                             ),
                           ),
                         ],
-                        if (!approved)
+                        if (!approved && !expired)
                           Padding(
                             padding: EdgeInsets.only(top: 4),
                             child: AppText(
-                              'Valid after venue approval',
+                              'Request expires in 15 min',
                               style: TextStyle(
                                 color: messageMuted,
                                 fontSize: 10,
@@ -615,22 +667,35 @@ class _TicketDetail extends StatelessWidget {
 }
 
 class _TicketStatusPill extends StatelessWidget {
-  const _TicketStatusPill({required this.label, required this.approved});
+  const _TicketStatusPill({
+    required this.label,
+    required this.approved,
+    required this.expired,
+  });
 
   final String label;
   final bool approved;
+  final bool expired;
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
     decoration: BoxDecoration(
-      color: approved ? const Color(0xFFE7F6ED) : AppColors.softOrangeAlt,
+      color: expired
+          ? const Color(0xFFFEE4E2)
+          : approved
+          ? const Color(0xFFE7F6ED)
+          : AppColors.softOrangeAlt,
       borderRadius: BorderRadius.circular(20),
     ),
     child: AppText(
       label,
       style: TextStyle(
-        color: approved ? const Color(0xFF247A43) : messageOrange,
+        color: expired
+            ? const Color(0xFFB42318)
+            : approved
+            ? const Color(0xFF247A43)
+            : messageOrange,
         fontSize: 8,
         fontWeight: FontWeight.w900,
         letterSpacing: .3,

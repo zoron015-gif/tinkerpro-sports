@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:myapp/auth_api.dart';
+import 'package:myapp/app_bottom_navigation.dart';
 import 'package:myapp/message_notification_host.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,6 +19,73 @@ void main() {
       'session_api_token': 'test-token',
     });
   });
+
+  testWidgets(
+    'unread message badge is visible on customer navigation outside Bookings',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'session_api_token': 'test-token',
+        'session_account_email': 'me@example.com',
+      });
+      var unreadCount = 2;
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/messages/conversations') {
+            return http.Response(
+              jsonEncode({
+                'conversations': [
+                  _conversation(
+                    message: 'Unread message',
+                    time: '2026-09-28T10:00:00Z',
+                    unreadCount: unreadCount,
+                  ),
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            500,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MessageNotificationHost(
+            api: api,
+            pollingInterval: const Duration(milliseconds: 100),
+            child: Scaffold(
+              bottomNavigationBar: AppBottomNavigation(
+                selectedIndex: 1,
+                onDestinationSelected: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump();
+
+      var visibleBadges = find.byWidgetPredicate(
+        (widget) => widget is Badge && widget.isLabelVisible,
+      );
+      expect(visibleBadges, findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+
+      unreadCount = 0;
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      visibleBadges = find.byWidgetPredicate(
+        (widget) => widget is Badge && widget.isLabelVisible,
+      );
+      expect(visibleBadges, findsNothing);
+      expect(find.text('2'), findsNothing);
+    },
+  );
 
   testWidgets(
     'booking message alert uses the other account name and profile image',
@@ -219,12 +287,13 @@ void main() {
 Map<String, dynamic> _conversation({
   required String message,
   required String time,
+  int unreadCount = 1,
 }) => {
   'id': 4,
   'title': 'Alex Doe',
   'lastMessage': message,
   'lastMessageAt': time,
-  'unreadCount': 1,
+  'unreadCount': unreadCount,
   'archived': false,
   'blockedByMe': false,
 };

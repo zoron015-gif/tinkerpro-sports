@@ -7,8 +7,72 @@ import 'app_session.dart';
 import 'auth_api.dart';
 import 'app_design_system.dart';
 import 'booking_cancellation_notice.dart';
-import 'booking_schedule_conflict.dart';
+import 'features/bookings/presentation/booking_schedule_conflict.dart';
 import 'app_preferences.dart';
+import 'features/bookings/data/http_booking_schedule_repository.dart';
+import 'features/bookings/application/booking_schedule_controller.dart';
+
+class _EventVenueHours {
+  const _EventVenueHours(this.openingMinute, this.closingMinute);
+
+  final int openingMinute;
+  final int closingMinute;
+
+  TimeOfDay get openingTime =>
+      TimeOfDay(hour: openingMinute ~/ 60, minute: openingMinute % 60);
+  TimeOfDay get closingTime =>
+      TimeOfDay(
+        hour: (closingMinute % (24 * 60)) ~/ 60,
+        minute: closingMinute % 60,
+      );
+  double get durationHours => (closingMinute - openingMinute) / 60;
+
+  static _EventVenueHours? parse(String value) {
+    final match = RegExp(
+      r'^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (match == null) return null;
+
+    int? toMinutes(
+      String? hourText,
+      String? minuteText,
+      String? period, {
+      bool isClosing = false,
+    }) {
+      final hour = int.tryParse(hourText ?? '');
+      final minute = int.tryParse(minuteText ?? '0');
+      if (hour == null ||
+          hour < 1 ||
+          hour > 12 ||
+          minute == null ||
+          minute > 59 ||
+          period == null) {
+        return null;
+      }
+      final minutes =
+          (hour % 12 + (period.toUpperCase() == 'PM' ? 12 : 0)) * 60 +
+          minute;
+      if (isClosing &&
+          hour == 12 &&
+          minute == 0 &&
+          period.toUpperCase() == 'AM') {
+        return 24 * 60;
+      }
+      return minutes;
+    }
+
+    final opening = toMinutes(match.group(1), match.group(2), match.group(3));
+    final closing = toMinutes(
+      match.group(4),
+      match.group(5),
+      match.group(6),
+      isClosing: true,
+    );
+    if (opening == null || closing == null || closing <= opening) return null;
+    return _EventVenueHours(opening, closing);
+  }
+}
 
 class EventBookingPage extends StatefulWidget {
   const EventBookingPage({
@@ -36,8 +100,9 @@ class _EventBookingPageState extends State<EventBookingPage> {
   );
   final _guestCountController = TextEditingController();
   late DateTime _date = DateTime.now().add(const Duration(days: 1));
-  TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
-  int _durationHours = 4;
+  late final _EventVenueHours? _venueHours = _EventVenueHours.parse(
+    '${widget.business['hours'] ?? ''}',
+  );
   String? _eventType;
   String? _eventTypeError;
   String? _guestCountError;
@@ -102,9 +167,14 @@ class _EventBookingPageState extends State<EventBookingPage> {
       '${_date.month.toString().padLeft(2, '0')}-'
       '${_date.day.toString().padLeft(2, '0')}';
 
+  TimeOfDay get _startTime =>
+      _venueHours?.openingTime ?? const TimeOfDay(hour: 9, minute: 0);
+
   String get _timeValue =>
       '${_startTime.hour.toString().padLeft(2, '0')}:'
       '${_startTime.minute.toString().padLeft(2, '0')}';
+
+  double get _durationHours => _venueHours?.durationHours ?? 0;
 
   double get _cashOnArrivalAmount =>
       double.parse((_eventFee * 0.5).toStringAsFixed(2));
@@ -159,14 +229,6 @@ class _EventBookingPageState extends State<EventBookingPage> {
     if (date != null) setState(() => _date = date);
   }
 
-  Future<void> _chooseTime() async {
-    final time = await showTimePicker(
-      context: context,
-      initialTime: _startTime,
-    );
-    if (time != null) setState(() => _startTime = time);
-  }
-
   void _scrollToField(GlobalKey key) {
     final target = key.currentContext;
     if (target == null) return;
@@ -184,6 +246,12 @@ class _EventBookingPageState extends State<EventBookingPage> {
             'Choose one of the event types offered by this venue.',
       );
       _scrollToField(_eventTypeFieldKey);
+      return;
+    }
+    if (_venueHours == null) {
+      _showError(
+        'This venue must provide valid same-day opening and closing hours before an event can be booked.',
+      );
       return;
     }
     setState(() => _eventTypeError = null);
@@ -254,18 +322,19 @@ class _EventBookingPageState extends State<EventBookingPage> {
       );
       final scheduleAvailable = await confirmBookingScheduleConflict(
         context: context,
-        api: _api,
-        token: token,
+        controller: BookingScheduleController(
+          repository: HttpBookingScheduleRepository(
+            client: _api.httpClient,
+            authHeaders: _api.authHeadersForToken,
+            token: token,
+          ),
+        ),
         venueId: _number(widget.business['id']),
         venueName: _venueName,
         startsAt: bookingStart,
         durationHours: _durationHours.toDouble(),
       );
       if (!scheduleAvailable || !mounted) return;
-      final timeUntilBooking = bookingStart.difference(DateTime.now());
-      final startsWithin24Hours =
-          !timeUntilBooking.isNegative &&
-          timeUntilBooking < const Duration(hours: 24);
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -284,8 +353,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 _confirmationRow('Venue', _venueName),
                 _confirmationRow('Event type', _eventType!),
                 _confirmationRow('Date', _dateValue),
-                _confirmationRow('Start time', _startTime.format(context)),
-                _confirmationRow('Duration', '$_durationHours hours'),
+                _confirmationRow(
+                  'Venue hours',
+                  '${_venueHours.openingTime.format(context)} - ${_venueHours.closingTime.format(context)}',
+                ),
                 _confirmationRow('Guests', '$guests'),
                 _confirmationRow('Payment', paymentLabel),
                 _confirmationRow(
@@ -294,10 +365,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                       : 'Total',
                   '\u{20B1} ${(_paymentMethod == 'cash_on_arrival' ? _cashOnArrivalAmount : _eventFee).toStringAsFixed(2)}',
                 ),
-                if (startsWithin24Hours) ...[
-                  const SizedBox(height: 12),
-                  const BookingCancellationNotice(),
-                ],
+                const SizedBox(height: 12),
+                const BookingCancellationNotice(),
                 if (_paymentMethod == 'cash_on_arrival')
                   _confirmationRow(
                     'Remaining cash balance',
@@ -326,7 +395,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
         venueId: _number(widget.business['id']),
         date: _dateValue,
         startTime: '$_timeValue:00',
-        durationHours: _durationHours.toDouble(),
+        durationHours: _durationHours,
         players: guests,
         paymentMethod: _paymentMethod,
         eventType: _eventType!,
@@ -695,7 +764,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         }),
                 ),
                 const SizedBox(height: 6),
-                _sectionLabel('CHOOSE DATE AND TIME'),
+                _sectionLabel('CHOOSE DATE'),
                 Row(
                   children: [
                     Expanded(
@@ -705,45 +774,22 @@ class _EventBookingPageState extends State<EventBookingPage> {
                         label: AppText(_dateValue),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _submitting ? null : _chooseTime,
-                        icon: const Icon(Icons.schedule_rounded),
-                        label: AppText(_startTime.format(context)),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                _sectionLabel('DURATION AND GUESTS'),
-                DropdownButtonFormField<int>(
-                  initialValue: _durationHours,
-                  isExpanded: true,
-                  decoration: _inputDecoration(
-                    'Event duration',
-                    prefixIcon: const Icon(Icons.access_time_rounded),
-                    labelText: appLanguageText('Duration', 'Duration'),
+                _sectionLabel('EVENT HOURS'),
+                if (_venueHours == null)
+                  const AppText(
+                    'This venue has not provided valid opening and closing hours. Event bookings are unavailable until the venue updates its hours.',
+                    localize: true,
+                  )
+                else
+                  AppText(
+                    'The event reserves the venue from ${_venueHours.openingTime.format(context)} to ${_venueHours.closingTime.format(context)}.',
+                    style: TextStyle(color: AppColors.muted),
                   ),
-                  items: List.generate(
-                    24,
-                    (index) => DropdownMenuItem(
-                      value: index + 1,
-                      child: AppText(
-                        index == 0 ? '1 hour' : '${index + 1} hours',
-                        localize: true,
-                      ),
-                    ),
-                  ),
-                  onChanged: _submitting
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            setState(() => _durationHours = value);
-                          }
-                        },
-                ),
                 const SizedBox(height: 6),
+                _sectionLabel('GUESTS'),
                 TextField(
                   key: _guestCountFieldKey,
                   controller: _guestCountController,
@@ -813,16 +859,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   'Event fee',
                   '\u{20B1} ${_eventFee.toStringAsFixed(2)}',
                 ),
-                _paymentSummaryRow(
-                  'Duration',
-                  '$_durationHours hour${_durationHours == 1 ? '' : 's'}',
-                ),
                 _paymentSummaryRow('Guests', '$guests'),
-                _paymentSummaryRow(
-                  'Schedule',
-                  '${MaterialLocalizations.of(context).formatShortDate(_date)} · '
-                      '${_startTime.format(context)} · $_durationHours hr',
-                ),
+                _paymentScheduleRow(),
                 _paymentSummaryRow(
                   'Event total',
                   '\u{20B1} ${_eventFee.toStringAsFixed(2)}',
@@ -994,6 +1032,29 @@ class _EventBookingPageState extends State<EventBookingPage> {
               fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
             ),
           ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _paymentScheduleRow() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppText(
+          'Schedule',
+          style: TextStyle(
+            color: AppColors.muted,
+            fontWeight: FontWeight.w500,
+          ),
+          localize: true,
+        ),
+        const SizedBox(height: 2),
+        AppText(
+          '${MaterialLocalizations.of(context).formatShortDate(_date)} · '
+          '${_venueHours == null ? 'Venue hours unavailable' : '${_venueHours.openingTime.format(context)} - ${_venueHours.closingTime.format(context)}'}',
+          style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
         ),
       ],
     ),

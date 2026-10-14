@@ -106,7 +106,49 @@ void main() {
     expect(find.text('No pending bookings.'), findsOneWidget);
   });
 
-  testWidgets('viewing bookings clears status notification badges', (
+  testWidgets(
+    'opening bookings clears non-expired status notification badges',
+    (tester) async {
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/bookings') {
+            return http.Response(
+              jsonEncode({
+                'bookings': [
+                  {..._approvedBooking, 'id': 31},
+                  {..._approvedBooking, 'id': 32, 'status': 'completed'},
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/api/messages/conversations') {
+            return http.Response(jsonEncode({'conversations': []}), 200);
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            404,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: CustomerBookingsPage(api: api)),
+      );
+      await tester.pumpAndSettle();
+
+      final bookingsDestination = tester.widget<NavigationDestination>(
+        find.byKey(const ValueKey('news-feed-nav-bookings')),
+      );
+      expect((bookingsDestination.icon as Badge).isLabelVisible, isFalse);
+
+      final badges = tester.widgetList<Badge>(find.byType(Badge));
+      expect(badges, isNotEmpty);
+      expect(badges.every((badge) => !badge.isLabelVisible), isTrue);
+    },
+  );
+
+  testWidgets('expired booking banner identifies the expired booking', (
     tester,
   ) async {
     final api = AuthApi(
@@ -115,8 +157,21 @@ void main() {
           return http.Response(
             jsonEncode({
               'bookings': [
-                {..._approvedBooking, 'id': 31},
-                {..._approvedBooking, 'id': 32, 'status': 'completed'},
+                {
+                  ..._approvedBooking,
+                  'id': 45,
+                  'status': 'expired',
+                  'transactionId': 'TP-TXN-00000045',
+                  'paymentMethod': 'online',
+                  'paymentStatus': 'paid',
+                  'paidAmount': 250,
+                },
+                {
+                  ..._approvedBooking,
+                  'id': 46,
+                  'status': 'approved',
+                  'transactionId': 'TP-TXN-00000046',
+                },
               ],
             }),
             200,
@@ -132,9 +187,38 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
     await tester.pumpAndSettle();
 
-    final badges = tester.widgetList<Badge>(find.byType(Badge));
-    expect(badges, isNotEmpty);
-    expect(badges.every((badge) => !badge.isLabelVisible), isTrue);
+    expect(
+      find.text('Your booking request at Test Court has expired.'),
+      findsOneWidget,
+    );
+    expect(find.text('TP-TXN-00000045'), findsOneWidget);
+    expect(find.text('BK-45'), findsOneWidget);
+    expect(find.text('BK-46'), findsNothing);
+    expect(
+      (tester
+                  .widget<NavigationDestination>(
+                    find.byKey(const ValueKey('news-feed-nav-bookings')),
+                  )
+                  .icon
+              as Badge)
+          .isLabelVisible,
+      isTrue,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('booking-status-banner-dismiss')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      (tester
+                  .widget<NavigationDestination>(
+                    find.byKey(const ValueKey('news-feed-nav-bookings')),
+                  )
+                  .icon
+              as Badge)
+          .isLabelVisible,
+      isFalse,
+    );
   });
 
   testWidgets('customer booking details show the recorded venue arrival', (
@@ -176,6 +260,56 @@ void main() {
       find.textContaining('Checked in · 2026-10-01T09:45:00'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Event booking details show venue hours without duration', (
+    tester,
+  ) async {
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {
+                  ..._approvedBooking,
+                  'id': 13,
+                  'businessType': 'Event',
+                  'eventType': 'Wedding',
+                  'startTime': '09:00:00',
+                  'durationHours': 8,
+                  'players': 100,
+                  'paymentMethod': 'cash_on_arrival',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved (1)'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    final detailsButton = find.byKey(
+      const ValueKey('customer-booking-details-13'),
+    );
+    await tester.ensureVisible(detailsButton);
+    await tester.pumpAndSettle();
+    await tester.tap(detailsButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Venue hours'), findsOneWidget);
+    expect(find.text('9:00 AM - 5:00 PM'), findsOneWidget);
+    expect(find.text('Duration'), findsNothing);
   });
 
   testWidgets('customer can permanently delete a completed booking', (
@@ -286,7 +420,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Completed (1)'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('customer-booking-details-25')));
+    final bookingDetails = find.byKey(
+      const ValueKey('customer-booking-details-25'),
+    );
+    await tester.ensureVisible(bookingDetails);
+    await tester.pumpAndSettle();
+    await tester.tap(bookingDetails);
     await tester.pumpAndSettle();
     expect(find.text('Cancelled Court'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
@@ -447,6 +586,91 @@ void main() {
     );
   });
 
+  testWidgets(
+    'customer booking search matches venue, transaction, and booking reference',
+    (tester) async {
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/bookings') {
+            return http.Response(
+              jsonEncode({
+                'bookings': [
+                  {
+                    'id': 101,
+                    'venueName': 'Alpha Sports Center',
+                    'status': 'pending',
+                    'transactionId': 'TP-TXN-00000101',
+                    'date': '2026-10-20',
+                    'startTime': '09:00:00',
+                    'durationHours': 1,
+                  },
+                  {
+                    'id': 102,
+                    'venueName': 'Beta Fitness Studio',
+                    'status': 'pending',
+                    'transactionId': 'TP-TXN-00000102',
+                    'date': '2026-10-20',
+                    'startTime': '10:00:00',
+                    'durationHours': 1,
+                  },
+                  {
+                    'id': 103,
+                    'venueName': 'Gamma Event Hall',
+                    'status': 'pending',
+                    'transactionId': 'TP-TXN-00000103',
+                    'date': '2026-10-20',
+                    'startTime': '11:00:00',
+                    'durationHours': 1,
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/api/messages/conversations') {
+            return http.Response(jsonEncode({'conversations': []}), 200);
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            404,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: CustomerBookingsPage(api: api)),
+      );
+      await tester.pumpAndSettle();
+      final search = find.byKey(const ValueKey('customer-bookings-search'));
+      expect(find.text('Alpha Sports Center'), findsOneWidget);
+
+      await tester.enterText(search, 'beta fitness');
+      await tester.pumpAndSettle();
+      expect(find.text('Alpha Sports Center'), findsNothing);
+      expect(find.text('Beta Fitness Studio'), findsOneWidget);
+      expect(find.text('Gamma Event Hall'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('customer-bookings-search-clear')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(search, 'TP-TXN-00000101');
+      await tester.pumpAndSettle();
+      expect(find.text('Alpha Sports Center'), findsOneWidget);
+      expect(find.text('Beta Fitness Studio'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('customer-bookings-search-clear')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(search, 'BK-103');
+      await tester.pumpAndSettle();
+      expect(find.text('Gamma Event Hall'), findsOneWidget);
+      expect(find.text('Alpha Sports Center'), findsNothing);
+      expect(find.text('Beta Fitness Studio'), findsNothing);
+    },
+  );
+
   testWidgets('tapping the booking status banner dismisses it', (tester) async {
     await tester.pumpWidget(
       MaterialApp(home: CustomerBookingsPage(api: _api())),
@@ -478,7 +702,16 @@ void main() {
           return http.Response(
             jsonEncode({
               'bookings': [
-                {..._approvedBooking, 'id': 20, 'status': 'pending'},
+                {
+                  ..._approvedBooking,
+                  'id': 20,
+                  'status': 'pending',
+                  'paymentMethod': 'cash_on_arrival',
+                  'paidAmount': 0,
+                  'approvalExpiresAt': DateTime.now()
+                      .add(const Duration(minutes: 5))
+                      .toIso8601String(),
+                },
                 {..._approvedBooking, 'id': 21, 'status': 'approved'},
               ],
             }),
@@ -500,6 +733,10 @@ void main() {
       find.text(
         'Waiting for the venue to approve your request. Not confirmed yet.',
       ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customer-booking-approval-deadline-20')),
       findsOneWidget,
     );
 

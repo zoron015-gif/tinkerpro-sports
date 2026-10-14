@@ -12,6 +12,7 @@ import 'messages_ui.dart';
 import 'messages_conversation_list.dart';
 import 'messages_chat_view.dart';
 import 'messages_controller.dart';
+import 'message_unread_count.dart';
 import 'profile_dashboard.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
@@ -116,6 +117,7 @@ class _MessagesDashboardPageState extends State<MessagesDashboardPage> {
 
   void _handleControllerChange() {
     if (!mounted) return;
+    MessageUnreadCountScope.update(context, _unreadMessageCount);
     setState(() {});
   }
 

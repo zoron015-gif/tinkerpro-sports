@@ -149,6 +149,9 @@ class BookingTicketViewModel {
 
   bool get isBookingRequest => type == 'booking';
 
+  bool get expired =>
+      status == 'expired' || approvalStatus == 'expired';
+
   bool get approved =>
       BookingStatusParser.parse(status).isApproved ||
       BookingStatusParser.parse(approvalStatus).isApproved ||
@@ -172,10 +175,22 @@ class BookingTicketViewModel {
   String get bookingReference => 'BK-$bookingId';
 
   String get detailTitle =>
-      approved ? 'BOOKING CONFIRMED' : isBookingRequest ? 'BOOKING SUBMITTED' : 'PAYMENT RECEIVED';
+      expired
+          ? 'BOOKING REQUEST EXPIRED'
+          : approved
+          ? 'BOOKING CONFIRMED'
+          : isBookingRequest
+          ? 'BOOKING SUBMITTED'
+          : 'PAYMENT RECEIVED';
 
   String get badgeLabel =>
-      approved ? 'APPROVED' : isBookingRequest ? 'PENDING REVIEW' : 'PENDING APPROVAL';
+      expired
+          ? 'EXPIRED'
+          : approved
+          ? 'APPROVED'
+          : isBookingRequest
+          ? 'PENDING REVIEW'
+          : 'PENDING APPROVAL';
 
   String get totalLabel =>
       isPaid ? 'TOTAL PAID' : paymentMethod == 'cash_on_arrival' ? 'DUE AT VENUE' : 'BOOKING TOTAL';
@@ -188,12 +203,20 @@ class BookingTicketViewModel {
           : 'TINKERPRO  ·  COURT PASS';
 
   String get statusText =>
-      isBookingRequest
+      expired
+          ? 'BOOKING REQUEST EXPIRED'
+          : isBookingRequest
           ? 'BOOKING REQUEST'
           : isPaid
           ? 'PAYMENT RECEIPT'
           : 'BOOKING CONFIRMATION';
 
   String get accessLabel =>
-      isBookingRequest ? 'BOOKING REQUEST' : approved ? 'BOOKING CONFIRMED' : 'PAYMENT RECEIVED';
+      expired
+          ? 'BOOKING REQUEST EXPIRED'
+          : isBookingRequest
+          ? 'BOOKING REQUEST'
+          : approved
+          ? 'BOOKING CONFIRMED'
+          : 'PAYMENT RECEIVED';
 }

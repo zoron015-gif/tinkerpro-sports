@@ -46,7 +46,7 @@ void main() {
     expect(find.text('TOTAL PAID'), findsOneWidget);
     expect(find.text('Payment ref: pay_test_501'), findsOneWidget);
     expect(find.text('Online'), findsOneWidget);
-    expect(find.text('Valid after venue approval'), findsOneWidget);
+    expect(find.text('Request expires in 15 min'), findsOneWidget);
   });
 
   testWidgets('approved ticket displays its access code', (tester) async {
@@ -85,6 +85,65 @@ void main() {
     );
   });
 
+  testWidgets('request ticket reflects approval and expiry status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 505,
+            'status': 'approved',
+            'paymentMethod': 'cash_on_arrival',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('BOOKING CONFIRMED'), findsWidgets);
+    expect(find.text('Request expires in 15 min'), findsNothing);
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('messages-booking-ticket-header')),
+          )
+          .color,
+      const Color(0xFF237A43),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 505,
+            'status': 'expired',
+            'approvalStatus': 'expired',
+            'paymentMethod': 'online',
+            'paymentStatus': 'paid',
+            'bookingToken': 'expired-token',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('BOOKING REQUEST EXPIRED'), findsWidgets);
+    expect(find.text('EXPIRED'), findsOneWidget);
+    expect(find.text('expired-token'), findsNothing);
+    expect(find.text('Request expires in 15 min'), findsNothing);
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('messages-booking-ticket-header')),
+          )
+          .color,
+      const Color(0xFFB42318),
+    );
+  });
+
   testWidgets('booking request ticket shows its transaction and unique token', (
     tester,
   ) async {
@@ -107,6 +166,8 @@ void main() {
             'slotNumbers': [2, 3],
             'total': 500,
             'downpayment': 250,
+            'paymentMethod': 'online',
+            'paymentStatus': 'paid',
           }),
         ),
       ),
@@ -123,6 +184,7 @@ void main() {
     expect(find.text('Slots 2, 3'), findsOneWidget);
     expect(find.text('\u{20B1} 500.00'), findsOneWidget);
     expect(find.text('Downpayment: \u{20B1} 250.00'), findsOneWidget);
+    expect(find.text('Request expires in 15 min'), findsOneWidget);
     expect(
       tester
           .widget<Container>(
@@ -183,8 +245,8 @@ void main() {
             'status': 'payment_received',
             'venueName': 'Grand Event Hall',
             'bookingDate': '2026-10-01',
-            'startTime': '18:00:00',
-            'durationHours': 4,
+            'startTime': '07:00:00',
+            'durationHours': 15,
             'players': 120,
             'amount': 25000,
           }),
@@ -196,6 +258,9 @@ void main() {
     expect(find.text('PAYMENT RECEIPT'), findsOneWidget);
     expect(find.text('TP-TXN-00000503'), findsOneWidget);
     expect(find.text('\u{20B1} 25000.00'), findsOneWidget);
+    expect(find.text('VENUE HOURS'), findsOneWidget);
+    expect(find.text('7:00 AM - 10:00 PM'), findsOneWidget);
+    expect(find.text('DURATION'), findsNothing);
     expect(find.text('TINKERPRO  ·  COURT PASS'), findsNothing);
   });
 

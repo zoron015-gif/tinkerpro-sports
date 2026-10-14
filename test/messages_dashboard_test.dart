@@ -129,6 +129,66 @@ void main() {
     expect(find.text('Earlier message to the venue.'), findsNothing);
   });
 
+  testWidgets('pulling down refreshes a short populated inbox', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'session_api_token': 'test-token',
+      'session_role': 'customer',
+    });
+    FlutterSecureStorage.setMockInitialValues({
+      'session_api_token': 'test-token',
+    });
+    var conversationLoads = 0;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/messages/conversations') {
+          conversationLoads++;
+          return http.Response(
+            jsonEncode({
+              'conversations': [
+                {
+                  'id': 55,
+                  'type': 'direct',
+                  'title': 'Chat with Merchant',
+                  'lastMessage': 'Please confirm the booking.',
+                  'lastMessageAt': '2026-10-10T09:00:00Z',
+                  'members': [
+                    {'id': 7, 'firstName': 'Merchant', 'lastName': 'Owner'},
+                    {'id': 42, 'firstName': 'Customer', 'lastName': 'One'},
+                  ],
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/contacts') {
+          return http.Response(jsonEncode({'contacts': []}), 200);
+        }
+        if (request.url.path == '/api/auth/me') {
+          return http.Response(
+            jsonEncode({
+              'user': {'id': 42},
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 200);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: MessagesDashboardPage(api: api)));
+    await tester.pumpAndSettle();
+    expect(conversationLoads, 1);
+
+    await tester.drag(
+      find.byKey(const ValueKey('messages-conversation-scroll-list')),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+
+    expect(conversationLoads, greaterThan(1));
+  });
+
   testWidgets('long-press delete-for-everyone shows the removal notice', (
     tester,
   ) async {

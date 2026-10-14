@@ -4,6 +4,37 @@ import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'core/business_type.dart';
+
+double venueFilterPrice(Map<String, dynamic> post) =>
+    double.tryParse(
+      '${post['pricePerHour'] ?? post['price_per_hour'] ?? post['eventFee'] ?? post['event_fee'] ?? 0}',
+    ) ??
+    0;
+
+double venueFilterPriceMaximum(Iterable<Map<String, dynamic>> posts) {
+  var maximum = 700.0;
+  for (final post in posts) {
+    final price = venueFilterPrice(post);
+    if (price > maximum) maximum = price;
+  }
+  return (maximum / 100).ceil() * 100.0;
+}
+
+List<String> venueFilterCategories(Map<String, dynamic> post) {
+  final eventTypes = post['eventTypes'];
+  if (BusinessTypeParser.parse(post['businessType']) == BusinessType.event &&
+      eventTypes is List) {
+    final categories = eventTypes
+        .map((value) => '$value'.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    if (categories.isNotEmpty) return categories;
+  }
+
+  final category = '${post['category'] ?? ''}'.trim();
+  return category.isEmpty ? const [] : [category];
+}
 
 const filterPanelTransitionDuration = Duration(milliseconds: 300);
 const filterPanelMaxWidth = 440.0;

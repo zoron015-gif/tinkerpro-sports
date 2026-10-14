@@ -127,7 +127,10 @@ class _RoleCard extends StatelessWidget {
                         width: 44,
                         height: 44,
                         child: IconButton(
-                          tooltip: appLanguageText('About merchant tools', 'About merchant tools'),
+                          tooltip: appLanguageText(
+                            'About merchant tools',
+                            'About merchant tools',
+                          ),
                           onPressed: onNoticeTap,
                           padding: AppSpacing.buttonPadding,
                           constraints: const BoxConstraints.tightFor(
@@ -175,7 +178,6 @@ class _AuthField extends StatelessWidget {
     this.obscureText = false,
     this.suffix,
     this.controller,
-    this.maxLength,
     this.errorText,
     this.fieldKey,
     this.onChanged,
@@ -188,7 +190,6 @@ class _AuthField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffix;
   final TextEditingController? controller;
-  final int? maxLength;
   final String? errorText;
   final Key? fieldKey;
   final ValueChanged<String>? onChanged;
@@ -209,13 +210,10 @@ class _AuthField extends StatelessWidget {
       ),
       const SizedBox(height: 6),
       TextField(
-        key: ValueKey(
-          'auth-field-${label.toLowerCase().replaceAll(' ', '-')}',
-        ),
+        key: ValueKey('auth-field-${label.toLowerCase().replaceAll(' ', '-')}'),
         controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
-        maxLength: maxLength,
         onChanged: onChanged,
         decoration: InputDecoration(
           errorText: errorText,
@@ -234,7 +232,6 @@ class _AuthField extends StatelessWidget {
             horizontal: 12,
             vertical: 12,
           ),
-          counterText: maxLength == null ? null : '',
           filled: true,
           fillColor: AppColors.surface,
           hintStyle: const TextStyle(color: Color(0xFF9CA6B5), fontSize: 13),
@@ -261,6 +258,173 @@ class _AuthField extends StatelessWidget {
   );
 }
 
+class _AuthCodeField extends StatefulWidget {
+  const _AuthCodeField({
+    required this.controller,
+    required this.fieldKey,
+    this.errorText,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final Key fieldKey;
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  State<_AuthCodeField> createState() => _AuthCodeFieldState();
+}
+
+class _AuthCodeFieldState extends State<_AuthCodeField> {
+  late final List<TextEditingController> _digitControllers;
+  late final List<FocusNode> _focusNodes;
+
+  @override
+  void initState() {
+    super.initState();
+    _digitControllers = List.generate(6, (_) => TextEditingController());
+    _focusNodes = List.generate(6, (_) => FocusNode());
+    _distributeDigits(widget.controller.text);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AuthCodeField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _distributeDigits(widget.controller.text);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _digitControllers) {
+      controller.dispose();
+    }
+    for (final focusNode in _focusNodes) {
+      focusNode.dispose();
+    }
+    super.dispose();
+  }
+
+  void _distributeDigits(String value, {int startAt = 0, bool notify = false}) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    final start = startAt.clamp(0, _digitControllers.length);
+    for (var index = start; index < _digitControllers.length; index++) {
+      _digitControllers[index].clear();
+    }
+    for (
+      var index = 0;
+      index < digits.length && start + index < _digitControllers.length;
+      index++
+    ) {
+      _digitControllers[start + index].text = digits[index];
+    }
+    _syncCode(notify: notify);
+  }
+
+  void _onDigitChanged(int index, String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 1) {
+      _distributeDigits(digits, startAt: index, notify: true);
+      final next = index + digits.length;
+      if (next < _focusNodes.length) {
+        _focusNodes[next].requestFocus();
+      } else {
+        _focusNodes.last.unfocus();
+      }
+    } else {
+      _digitControllers[index].text = digits;
+      if (digits.isNotEmpty && index < _focusNodes.length - 1) {
+        _focusNodes[index + 1].requestFocus();
+      } else if (digits.isEmpty && index > 0) {
+        _focusNodes[index - 1].requestFocus();
+      }
+      _syncCode();
+    }
+  }
+
+  void _syncCode({bool notify = true}) {
+    final code = _digitControllers.map((controller) => controller.text).join();
+    widget.controller.value = TextEditingValue(
+      text: code,
+      selection: TextSelection.collapsed(offset: code.length),
+    );
+    if (notify) widget.onChanged?.call(code);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    key: widget.fieldKey,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      AppText(
+        'Verification code',
+        localize: true,
+        style: TextStyle(
+          color: _ink,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: List.generate(
+          _digitControllers.length,
+          (index) => Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                right: index == _digitControllers.length - 1 ? 0 : 6,
+              ),
+              child: Semantics(
+                label: 'Verification code digit ${index + 1} of 6',
+                child: TextField(
+                  controller: _digitControllers[index],
+                  focusNode: _focusNodes[index],
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (value) => _onDigitChanged(index, value),
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: _orange, width: 1.5),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      if (widget.errorText != null) ...[
+        const SizedBox(height: 6),
+        AppText(
+          widget.errorText!,
+          style: TextStyle(color: AppColors.errorText, fontSize: 12),
+          localize: true,
+        ),
+      ],
+    ],
+  );
+}
+
 class _OrDivider extends StatelessWidget {
   const _OrDivider();
 
@@ -278,7 +442,8 @@ class _OrDivider extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: .8,
           ),
-         localize: true,),
+          localize: true,
+        ),
       ),
       Expanded(child: Divider(color: Color(0xFFDDE2EA))),
     ],

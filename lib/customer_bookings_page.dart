@@ -7,8 +7,10 @@ import 'package:image_picker/image_picker.dart';
 
 import 'app_session.dart';
 import 'app_design_system.dart';
+import 'app_localization.dart';
 import 'auth_api.dart';
 import 'core/business_type.dart';
+import 'core/booking_approval_deadline.dart';
 import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'messages_dashboard.dart';
@@ -166,8 +168,13 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   );
   final List<GlobalKey<RefreshIndicatorState>> _bookingRefreshKeys =
       List.generate(3, (_) => GlobalKey<RefreshIndicatorState>());
+  final TextEditingController _bookingSearchController =
+      TextEditingController();
   int _selectedBookingTab = 0;
+  String _bookingSearchQuery = '';
   int _unreadBookingCount = 0;
+  List<Booking> _bookingStatusNotifications = [];
+  Booking? _activeBookingStatusBannerBooking;
   int _unreadMessageCount = 0;
   String? _messageCountError;
   String? _bookingStatusBannerKey;
@@ -182,6 +189,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
 
   @override
   void dispose() {
+    _bookingSearchController.dispose();
     for (final controller in _bookingScrollControllers) {
       controller.dispose();
     }
@@ -196,29 +204,38 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       token,
       businessType: widget.businessType,
     );
-    final bannerBooking = _bookingStatusBannerBooking(bookings);
+    final bannerBooking = _bookingStatusBannerBooking(
+      bookings
+          .where(_isBookingStatusNotification)
+          .where(
+            (booking) =>
+                !session.bookingStatusBannerDismissed(_bookingStatusKey(booking)),
+          )
+          .toList(),
+    );
+    _bookingStatusNotifications = bookings
+        .where((booking) => _bookingStatus(booking) == 'expired')
+        .where(
+          (booking) =>
+              !session.bookingStatusBannerDismissed(_bookingStatusKey(booking)),
+        )
+        .toList()
+      ..sort(_compareBookingStatusNotifications);
+    _activeBookingStatusBannerBooking = bannerBooking;
     _bookingStatusBannerKey = bannerBooking == null
         ? null
         : _bookingStatusKey(bannerBooking);
     _showBookingStatusBanner =
-        bannerBooking == null ||
+        bannerBooking != null &&
         !session.bookingStatusBannerDismissed(_bookingStatusBannerKey!);
-    final unreadBookings = bookings.where((booking) {
-      final status = _bookingStatus(booking);
-      return status == 'approved' ||
-          status == 'finished' ||
-          status == 'done' ||
-          status == 'completed' ||
-          status == 'expired' ||
-          status == 'cancelled';
-    }).toList();
-    _unreadBookingCount = unreadBookings.where((booking) {
-      return !session.bookingStatusBannerDismissed(_bookingStatusKey(booking));
-    }).length;
-    for (final booking in unreadBookings) {
+    _unreadBookingCount = _bookingStatusNotifications.length;
+    for (final booking in bookings.where(
+      (booking) =>
+          _isBookingStatusNotification(booking) &&
+          _bookingStatus(booking) != 'expired',
+    )) {
       await session.dismissBookingStatusBanner(_bookingStatusKey(booking));
     }
-    _unreadBookingCount = 0;
     try {
       final conversations = await _api.conversations(
         token,
@@ -237,6 +254,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ? 'We couldn’t check for new messages. Check your connection and try again.'
           : 'Your unread message count is temporarily unavailable.';
     }
+    if (mounted) setState(() {});
     return bookings;
   }
 
@@ -271,7 +289,20 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   Future<void> _dismissBookingStatusBanner() async {
     if (!_showBookingStatusBanner) return;
     final bannerKey = _bookingStatusBannerKey;
-    setState(() => _showBookingStatusBanner = false);
+    setState(() {
+      _bookingStatusNotifications.removeWhere(
+        (booking) => _bookingStatusKey(booking) == bannerKey,
+      );
+      final nextBooking = _bookingStatusNotifications.isEmpty
+          ? null
+          : _bookingStatusNotifications.first;
+      _activeBookingStatusBannerBooking = nextBooking;
+      _bookingStatusBannerKey = nextBooking == null
+          ? null
+          : _bookingStatusKey(nextBooking);
+      _showBookingStatusBanner = nextBooking != null;
+      _unreadBookingCount = _bookingStatusNotifications.length;
+    });
     if (bannerKey == null) return;
     final session = await AppSession.load();
     await session.dismissBookingStatusBanner(bannerKey);
@@ -373,20 +404,30 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           }
           final bookings = snapshot.data ?? const <Booking>[];
           final pending = bookings
-              .where((booking) => _bookingStatus(booking) == 'pending')
+              .where(
+                (booking) =>
+                    _bookingStatus(booking) == 'pending' &&
+                    _matchesBookingSearch(booking),
+              )
               .toList();
           final approved = bookings
-              .where((booking) => _bookingStatus(booking) == 'approved')
+              .where(
+                (booking) =>
+                    _bookingStatus(booking) == 'approved' &&
+                    _matchesBookingSearch(booking),
+              )
               .toList();
           final completed = bookings
               .where(
-                (booking) => const {
-                  'finished',
-                  'done',
-                  'completed',
-                  'expired',
-                  'cancelled',
-                }.contains(_bookingStatus(booking)),
+                (booking) =>
+                    const {
+                      'finished',
+                      'done',
+                      'completed',
+                      'expired',
+                      'cancelled',
+                    }.contains(_bookingStatus(booking)) &&
+                    _matchesBookingSearch(booking),
               )
               .toList();
 
@@ -412,7 +453,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                       ),
                     ],
                   ),
-                if (approved.isNotEmpty || completed.isNotEmpty)
+                if (_bookingStatusNotifications.isNotEmpty ||
+                    approved.isNotEmpty ||
+                    completed.isNotEmpty)
                   AnimatedSize(
                     alignment: Alignment.topCenter,
                     duration: const Duration(milliseconds: 220),
@@ -421,6 +464,60 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                         ? _bookingStatusBanner(approved, completed)
                         : const SizedBox.shrink(),
                   ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                  child: TextField(
+                    key: const ValueKey('customer-bookings-search'),
+                    controller: _bookingSearchController,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (value) =>
+                        setState(() => _bookingSearchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: appLanguageText(
+                        'Search venue, transaction ID, or booking reference',
+                        'Maghanap ng venue, transaction ID, o booking reference',
+                        languageCode: Localizations.localeOf(
+                          context,
+                        ).languageCode,
+                      ),
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _bookingSearchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              key: const ValueKey(
+                                'customer-bookings-search-clear',
+                              ),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _bookingSearchController.clear();
+                                setState(() => _bookingSearchQuery = '');
+                              },
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: AppColors.accent,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 Material(
                   color: AppColors.surface,
                   child: TabBar(
@@ -458,19 +555,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     children: [
                       _bookingTab(
                         pending,
-                        emptyMessage: 'No pending bookings.',
+                        emptyMessage: _bookingEmptyMessage(
+                          'No pending bookings.',
+                        ),
                         controller: _bookingScrollControllers[0],
                         refreshKey: _bookingRefreshKeys[0],
                       ),
                       _bookingTab(
                         approved,
-                        emptyMessage: 'No approved bookings.',
+                        emptyMessage: _bookingEmptyMessage(
+                          'No approved bookings.',
+                        ),
                         controller: _bookingScrollControllers[1],
                         refreshKey: _bookingRefreshKeys[1],
                       ),
                       _bookingTab(
                         completed,
-                        emptyMessage: 'No completed bookings.',
+                        emptyMessage: _bookingEmptyMessage(
+                          'No completed bookings.',
+                        ),
                         controller: _bookingScrollControllers[2],
                         refreshKey: _bookingRefreshKeys[2],
                       ),
@@ -534,21 +637,53 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
 
   String _bookingStatus(Booking booking) => booking.status;
 
-  Booking? _bookingStatusBannerBooking(List<Booking> bookings) {
-    final completed = bookings.where((booking) {
-      return const {
+  bool _isBookingStatusNotification(Booking booking) =>
+      const {
+        'approved',
         'finished',
         'done',
         'completed',
         'expired',
         'cancelled',
       }.contains(_bookingStatus(booking));
-    });
-    if (completed.isNotEmpty) return completed.first;
-    final approved = bookings.where(
-      (booking) => _bookingStatus(booking) == 'approved',
-    );
-    return approved.isEmpty ? null : approved.first;
+
+  int _compareBookingStatusNotifications(Booking first, Booking second) {
+    int priority(Booking booking) => switch (_bookingStatus(booking)) {
+      'expired' => 0,
+      'cancelled' => 1,
+      'approved' => 2,
+      _ => 3,
+    };
+
+    final priorityComparison = priority(first).compareTo(priority(second));
+    if (priorityComparison != 0) return priorityComparison;
+    final firstCreated = DateTime.tryParse(first.createdAt);
+    final secondCreated = DateTime.tryParse(second.createdAt);
+    if (firstCreated == null || secondCreated == null) return 0;
+    return secondCreated.compareTo(firstCreated);
+  }
+
+  Booking? _bookingStatusBannerBooking(List<Booking> bookings) {
+    final notifications = bookings
+        .where(_isBookingStatusNotification)
+        .toList()
+      ..sort((first, second) {
+        final firstStatus = _bookingStatus(first);
+        final secondStatus = _bookingStatus(second);
+        if (firstStatus == 'expired' && secondStatus != 'expired') return -1;
+        if (secondStatus == 'expired' && firstStatus != 'expired') return 1;
+        final firstIsInactive = {'finished', 'done', 'completed', 'cancelled'}
+            .contains(firstStatus);
+        final secondIsInactive =
+            {'finished', 'done', 'completed', 'cancelled'}.contains(
+              secondStatus,
+            );
+        if (firstIsInactive != secondIsInactive) {
+          return firstIsInactive ? -1 : 1;
+        }
+        return _compareBookingStatusNotifications(first, second);
+      });
+    return notifications.isEmpty ? null : notifications.first;
   }
 
   String _bookingStatusKey(Booking booking) {
@@ -559,10 +694,13 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   }
 
   Widget _bookingStatusBanner(List<Booking> approved, List<Booking> completed) {
-    final booking = completed.isNotEmpty ? completed.first : approved.first;
+    final booking =
+        _activeBookingStatusBannerBooking ??
+        (completed.isNotEmpty ? completed.first : approved.first);
     final status = _bookingStatus(booking);
     final isCompleted = {'finished', 'done', 'completed'}.contains(status);
     final isInactive = {'expired', 'cancelled'}.contains(status);
+    final isExpired = status == 'expired';
     return MaterialBanner(
       backgroundColor: isCompleted
           ? const Color(0xFFE7F6EC)
@@ -587,14 +725,76 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: AppText(
-            isCompleted || isInactive
-                ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
-                      '${_statusLabel(status)}.'
-                : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
-                      'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
-            localize: true,
-            style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText(
+                isExpired
+                    ? 'Your booking request at ${booking['venueName'] ?? 'your venue'} has expired.'
+                    : isCompleted || isInactive
+                    ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
+                          '${_statusLabel(status)}.'
+                    : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
+                          'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
+                localize: true,
+                style: TextStyle(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Column(
+                key: const ValueKey('booking-status-banner-references'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const AppText(
+                        'TRANSACTION ID',
+                        localize: true,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: AppText(
+                          booking.transactionId,
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const AppText(
+                        'BOOKING REFERENCE',
+                        localize: true,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      AppText(
+                        'BK-${booking.id ?? '—'}',
+                        style: TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -641,6 +841,25 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
+  bool _matchesBookingSearch(Booking booking) {
+    final query = _bookingSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) return true;
+
+    final searchableValues = [
+      '${booking['venueName'] ?? ''}',
+      booking.transactionId,
+      'BK-${booking.id ?? ''}',
+    ];
+    return searchableValues.any(
+      (value) => value.toLowerCase().contains(query),
+    );
+  }
+
+  String _bookingEmptyMessage(String defaultMessage) =>
+      _bookingSearchQuery.trim().isEmpty
+      ? defaultMessage
+      : 'No bookings match your search.';
+
   void _replaceWith(Route<void> route) {
     Navigator.of(context).pushReplacement(route);
   }
@@ -672,6 +891,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
 
   Widget _bookingCard(Booking booking) {
     final status = '${booking['status'] ?? 'pending'}';
+    final approvalDeadline = parseBookingApprovalDeadline(
+      booking['approvalExpiresAt'],
+    );
     final images = _imageUrls(booking);
     final type = '${booking['businessType'] ?? ''}'.trim();
     final category = '${booking['category'] ?? ''}'.trim();
@@ -747,6 +969,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     height: 1.3,
                   ),
                 ),
+                if (status.toLowerCase() == 'pending' &&
+                    approvalDeadline != null) ...[
+                  const SizedBox(height: 4),
+                  AppText(
+                    'Request deadline: ${formatBookingApprovalDeadline(approvalDeadline)}',
+                    key: ValueKey(
+                      'customer-booking-approval-deadline-${booking.id}',
+                    ),
+                    style: TextStyle(
+                      color: AppColors.errorText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 if (status.toLowerCase() == 'cancelled' &&
                     booking.paymentRefundStatus != 'not_requested') ...[
                   const SizedBox(height: 6),
@@ -991,6 +1228,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             child: const AppText('Keep booking', localize: true),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.errorText,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const AppText('Delete permanently', localize: true),
           ),
@@ -1054,6 +1295,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             child: const AppText('Keep booking', localize: true),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.errorText,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const AppText('Cancel booking', localize: true),
           ),
@@ -1479,11 +1724,19 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           ),
           const SizedBox(height: 6),
           _bookingField('Date', booking['date']),
-          _bookingField('Start time', _formatTime(booking['startTime'])),
-          _bookingField(
-            fitnessPlanType.isNotEmpty ? 'First visit session' : 'Duration',
-            '${_amount(booking['durationHours']).toStringAsFixed(0)} hour(s)',
-          ),
+          if (isEvent)
+            _bookingField(
+              'Venue hours',
+              '${_formatTime(booking['startTime'])} - '
+                  '${_endTime(booking['startTime'], _amount(booking['durationHours'])) ?? '—'}',
+            )
+          else ...[
+            _bookingField('Start time', _formatTime(booking['startTime'])),
+            _bookingField(
+              fitnessPlanType.isNotEmpty ? 'First visit session' : 'Duration',
+              '${_amount(booking['durationHours']).toStringAsFixed(0)} hour(s)',
+            ),
+          ],
           if (fitnessPlanType.isNotEmpty)
             _bookingField(
               'Plan duration',
@@ -1638,6 +1891,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final start = _formatTime(booking['startTime']);
     final duration = _amount(booking['durationHours']);
     final end = _endTime(booking['startTime'], duration);
+    final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
+    if (isEvent) {
+      return end == null ? '$date · $start' : '$date · $start - $end';
+    }
     final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
     final sessionLabel = fitnessPlanType.isNotEmpty
         ? 'First visit session'

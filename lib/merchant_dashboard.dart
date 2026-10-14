@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -10,6 +11,7 @@ import 'app_bottom_navigation.dart';
 import 'app_session.dart';
 import 'auth_api.dart';
 import 'core/booking_status.dart';
+import 'core/booking_approval_deadline.dart';
 import 'merchant_add_page.dart';
 import 'merchant_profile_dashboard.dart';
 import 'messages_dashboard.dart';
@@ -17,6 +19,8 @@ import 'skeleton_loader.dart';
 import 'app_card_styles.dart';
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'input_formatters.dart';
+import 'features/merchant_management/data/merchant_booking_repository.dart';
 
 part 'merchant_dashboard_analytics.dart';
 part 'merchant_dashboard_analytics_section.dart';
@@ -85,6 +89,7 @@ class MerchantDashboardPage extends StatefulWidget {
 
 class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   late final AuthApi _api;
+  late final MerchantBookingRepository _merchantBookingRepository;
   final _formKey = GlobalKey<FormState>();
   final _merchantAddPageKey = GlobalKey<MerchantAddPageState>();
   final _firstName = TextEditingController();
@@ -179,6 +184,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   void initState() {
     super.initState();
     _api = widget.api ?? AuthApi();
+    _merchantBookingRepository = AuthApiMerchantBookingRepository(api: _api);
     _loadProfile();
   }
 
@@ -476,8 +482,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                                       _field(
                                         _phone,
                                         'Direct contact phone',
-                                        'Contact phone',
+                                        '09XX XXX XXXX',
                                         keyboardType: TextInputType.phone,
+                                        inputFormatters: const [
+                                          PhilippineMobilePhoneFormatter(),
+                                        ],
                                       ),
                                       const SizedBox(height: 6),
                                       _field(
@@ -1361,7 +1370,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     bool showDelete = false,
   }) {
     final pending = _isPendingBooking(booking);
+    final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
     final checkedInAt = booking['checkedInAt'];
+    final approvalDeadline = parseBookingApprovalDeadline(
+      booking['approvalExpiresAt'],
+    );
     return Card(
       elevation: 0,
       color: AppColors.surface,
@@ -1390,10 +1403,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'Booking date and time',
               _bookingTimeRangeLabel(booking),
             ),
-            _payoutManagementInfoRow(
-              'Duration',
-              _bookingDurationHoursLabel(booking['durationHours']),
-            ),
+            if (!isEvent)
+              _payoutManagementInfoRow(
+                'Duration',
+                _bookingDurationHoursLabel(booking['durationHours']),
+              ),
             if ('${booking['fitnessPlanType'] ?? ''}'.isNotEmpty)
               _payoutManagementInfoRow(
                 'Plan duration',
@@ -1403,6 +1417,11 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'Status',
               BookingStatusParser.label(booking['status']),
             ),
+            if (pending && approvalDeadline != null)
+              _payoutManagementInfoRow(
+                'Approval deadline',
+                formatBookingApprovalDeadline(approvalDeadline),
+              ),
             if (_hasCheckedIn(booking)) ...[
               _payoutManagementInfoRow('Arrival status', 'Arrived'),
               _payoutManagementInfoRow('Check-in time', checkedInAt),
@@ -1445,6 +1464,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   }
 
   Widget _paymentManagementBookingCard(Map<String, dynamic> booking) {
+    final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
     final isCashOnArrival = booking['paymentMethod'] == 'cash_on_arrival';
     final isCancelled = BookingStatusParser.isCancelled(booking['status']);
     final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
@@ -1620,7 +1640,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               'Payment method',
               _payoutPaymentLabel(booking['paymentMethod']),
             ),
-            _payoutManagementInfoRow('Booking date', booking['date']),
+            _payoutManagementInfoRow(
+              isEvent ? 'Event schedule' : 'Booking date',
+              isEvent ? _bookingTimeRangeLabel(booking) : booking['date'],
+            ),
             _payoutManagementInfoRow(
               'Amount received',
               '\u{20B1} ${received.toStringAsFixed(2)}',
@@ -1991,17 +2014,24 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               if (!paymentOnly)
                 _payoutDetailsSection('Booking information', [
                   _payoutDetailRow('Reference', 'BK-${booking['id']}'),
-                  _payoutDetailRow('Date', booking['date']),
-                  _payoutDetailRow(
-                    'Start time',
-                    _formatPayoutTime(booking['startTime']),
-                  ),
-                  _payoutDetailRow(
-                    fitnessPlanType.isNotEmpty
-                        ? 'First visit session'
-                        : 'Duration',
-                    '${booking['durationHours'] ?? '—'} hour(s)',
-                  ),
+                  if (isEvent)
+                    _payoutDetailRow(
+                      'Event schedule',
+                      _bookingTimeRangeLabel(booking),
+                    )
+                  else ...[
+                    _payoutDetailRow('Date', booking['date']),
+                    _payoutDetailRow(
+                      'Start time',
+                      _formatPayoutTime(booking['startTime']),
+                    ),
+                    _payoutDetailRow(
+                      fitnessPlanType.isNotEmpty
+                          ? 'First visit session'
+                          : 'Duration',
+                      '${booking['durationHours'] ?? '—'} hour(s)',
+                    ),
+                  ],
                   _payoutDetailRow(playersLabel, booking['players']),
                   _payoutDetailRow(
                     'Booking type',
@@ -3042,6 +3072,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
           onEditProfile: _openMerchantEditPanel,
           onLogout: widget.onLogout ?? (_) async {},
           api: _api,
+          bookingRepository: _merchantBookingRepository,
           onNavigate: _navigateFromMerchantProfile,
         ),
       ),
@@ -3106,10 +3137,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   Future<void> _fetchBookings() async {
     try {
-      final session = await AppSession.load();
-      final token = session.apiToken;
-      if (token == null || token.isEmpty) return;
-      final bookings = await _api.merchantBookings(token);
+      final bookings = await _merchantBookingRepository.loadBookings();
       if (mounted) {
         setState(() {
           final checkedInBookingIds = _bookings
@@ -3149,9 +3177,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
 
   Future<void> _approveMerchantBooking(int bookingId) async {
     try {
-      final token = (await AppSession.load()).apiToken;
-      if (token == null || token.isEmpty) return;
-      await _api.approveBooking(token: token, bookingId: bookingId);
+      await _merchantBookingRepository.approveBooking(bookingId);
       await _loadBookings();
       _showMessage('Booking approved. The customer will be notified.');
     } on Exception catch (error) {
@@ -3216,11 +3242,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       return;
     }
     try {
-      final token = (await AppSession.load()).apiToken;
-      if (token == null || token.isEmpty) return;
-      await _api.declineBooking(
-        token: token,
-        bookingId: bookingId,
+      await _merchantBookingRepository.declineBooking(
+        bookingId,
         reason: declineReason,
       );
       await _loadBookings();
@@ -3246,6 +3269,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
             child: const AppText('Keep booking', localize: true),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.errorText,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const AppText('Delete permanently', localize: true),
           ),
@@ -3254,12 +3281,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     );
     if (confirmed != true) return;
     try {
-      final token = (await AppSession.load()).apiToken;
-      if (token == null || token.isEmpty) {
-        _showMessage('Please sign in again to delete this booking.');
-        return;
-      }
-      await _api.deleteCompletedBooking(token: token, bookingId: bookingId);
+      await _merchantBookingRepository.deleteCompletedBooking(bookingId);
       await _loadBookings();
       if (mounted) _showMessage('Completed booking permanently deleted.');
     } on Exception catch (error) {
@@ -3272,11 +3294,8 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     String paymentStatus,
   ) async {
     try {
-      final token = (await AppSession.load()).apiToken;
-      if (token == null || token.isEmpty) return;
-      await _api.setCashOnArrivalPaymentStatus(
-        token: token,
-        bookingId: (booking['id'] as num).toInt(),
+      await _merchantBookingRepository.setCashOnArrivalPaymentStatus(
+        (booking['id'] as num).toInt(),
         paymentStatus: paymentStatus,
       );
       await _loadBookings();
@@ -3739,10 +3758,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     bool required = true,
     int maxLines = 1,
     TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
   }) => TextFormField(
     controller: controller,
     maxLines: maxLines,
     keyboardType: keyboardType,
+    inputFormatters: inputFormatters,
     decoration: InputDecoration(
       labelText: appLanguageText(label, label),
       hintText: appLanguageText(hint, hint),

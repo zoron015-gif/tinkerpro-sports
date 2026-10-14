@@ -214,13 +214,8 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                 onPressed: _requestCode,
               )
             else ...[
-              _AuthField(
-                label: 'Verification code',
-                hint: '000000',
-                icon: Icons.verified_outlined,
-                keyboardType: TextInputType.number,
+              _AuthCodeField(
                 controller: _codeController,
-                maxLength: 6,
                 fieldKey: _codeFieldKey,
                 errorText: _codeError,
                 onChanged: (_) => setState(() => _codeError = null),
