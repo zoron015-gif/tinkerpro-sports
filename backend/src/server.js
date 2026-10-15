@@ -11,6 +11,9 @@ const { createCorsOriginPolicy } = require('./cors_policy');
 const {
   createBookingApprovalDeadlineProcessor,
 } = require('./booking_approval_deadlines');
+const {
+  createBookingPaymentDeadlineProcessor,
+} = require('./booking_payment_deadlines');
 const { sendPasswordResetCode, sendVerificationCode } = require('./mailer');
 const { createRateLimiter } = require('./rate_limit');
 const readCache = require('./read_cache');
@@ -513,6 +516,8 @@ async function recordUserActivity(
 
 const processBookingApprovalDeadlines =
   createBookingApprovalDeadlineProcessor({ pool, recordUserActivity });
+const processBookingPaymentDeadlines =
+  createBookingPaymentDeadlineProcessor({ pool, recordUserActivity });
 
 function requireAuth(req, res, next) {
   const header = req.get('authorization') || '';
@@ -1087,9 +1092,36 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
       }
       delete message.attachmentJson;
     }
+    const bookingIdsWithApprovalTickets = new Set(
+      rows
+        .filter(({ attachment }) => {
+          if (attachment?.type !== 'booking_ticket') return false;
+          return ['approved', 'confirmed'].includes(
+            String(attachment.status ?? '').toLowerCase(),
+          ) || ['approved', 'confirmed'].includes(
+            String(attachment.approvalStatus ?? '').toLowerCase(),
+          );
+        })
+        .map(({ attachment }) => positiveIntegerId(attachment.bookingId))
+        .filter((id) => id !== null)
+        .map(String),
+    );
+    const visibleRows = rows.filter(({ attachment }) => {
+      if (
+        attachment?.type !== 'booking_payment_ticket' ||
+        attachment.paymentMethod !== 'cash_on_arrival'
+      ) {
+        return true;
+      }
+      const bookingId = positiveIntegerId(attachment.bookingId);
+      return (
+        bookingId === null ||
+        !bookingIdsWithApprovalTickets.has(String(bookingId))
+      );
+    });
     const bookingTicketIds = [
       ...new Set(
-        rows
+        visibleRows
           .map((message) => message.attachment)
           .filter(
             (attachment) =>
@@ -1117,7 +1149,7 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
           booking.venueName,
         ]),
       );
-      for (const message of rows) {
+      for (const message of visibleRows) {
         const attachment = message.attachment;
         if (
           !attachment ||
@@ -1133,7 +1165,7 @@ app.get('/api/messages/conversations/:id', requireAuth, async (req, res, next) =
         if (venueName) attachment.venueName = venueName;
       }
     }
-    return res.json({ messages: rows });
+    return res.json({ messages: visibleRows });
   } catch (error) {
     return next(error);
   }
@@ -2444,7 +2476,9 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
       `SELECT id, total_amount AS totalAmount,
               downpayment_amount AS downpaymentAmount,
               payment_method AS paymentMethod,
-              payment_status AS paymentStatus, paid_amount AS paidAmount, status
+              payment_status AS paymentStatus, paid_amount AS paidAmount, status,
+              payment_due_at AS paymentDueAt,
+              payment_due_at > CURRENT_TIMESTAMP AS paymentDeadlineActive
          FROM bookings
         WHERE id = ? AND customer_id = ?
         LIMIT 1`,
@@ -2453,11 +2487,16 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
     const booking = rows[0];
     if (!booking) return res.status(404).json({ error: 'Booking not found.' });
     if (
-      booking.status !== 'pending' ||
+      booking.status !== 'approved' ||
       booking.paymentMethod !== 'online'
     ) {
       return res.status(409).json({
-        error: 'Payment type does not match the pending booking.',
+        error: 'Online payment is available only after the booking is approved.',
+      });
+    }
+    if (!booking.paymentDueAt || !booking.paymentDeadlineActive) {
+      return res.status(410).json({
+        error: 'The 15-minute online payment deadline has expired.',
       });
     }
     if (booking.paymentStatus === 'paid') {
@@ -2510,18 +2549,251 @@ app.post('/api/payments/paymongo/checkout', requireAuth, requireRole('customer')
     ) {
       return res.status(502).json({ error: 'PayMongo returned no checkout URL.' });
     }
-    await pool.execute(
+    const [checkoutLinkUpdate] = await pool.execute(
       `UPDATE bookings
        SET payment_checkout_session_id = ?
-       WHERE id = ? AND customer_id = ? AND status = 'pending'
-         AND payment_status <> 'paid'`,
+       WHERE id = ? AND customer_id = ? AND status = 'approved'
+         AND payment_method = 'online' AND payment_status <> 'paid'
+         AND payment_due_at > CURRENT_TIMESTAMP`,
       [checkoutSessionId, booking.id, req.auth.sub],
     );
+    if (!checkoutLinkUpdate.affectedRows) {
+      return res.status(410).json({
+        error: 'The booking payment deadline expired before checkout could start.',
+      });
+    }
     return res.json({ checkoutUrl });
   } catch (error) {
     return next(error);
   }
 });
+
+app.post(
+  '/api/bookings/:id/prototype-payment',
+  requireAuth,
+  requireRole('customer'),
+  async (req, res, next) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({
+        error: 'Prototype payments are disabled in production.',
+      });
+    }
+    const bookingId = Number(req.params.id);
+    const prototypeProviders = ['gcash', 'maya', 'atome', 'card'];
+    if (
+      !isNumericInput(req.params.id) ||
+      !Number.isSafeInteger(bookingId) ||
+      bookingId <= 0 ||
+      req.body.paymentMethod !== 'prototype_card' ||
+      !prototypeProviders.includes(req.body.provider)
+    ) {
+      return res.status(400).json({
+        error: 'A valid booking and prototype payment method are required.',
+      });
+    }
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      await connection.beginTransaction();
+      const [rows] = await connection.execute(
+        `SELECT b.id, b.customer_id AS customerId,
+                b.venue_id AS venueId, b.total_amount AS totalAmount,
+                b.downpayment_amount AS downpaymentAmount,
+                b.payment_method AS paymentMethod,
+                b.payment_status AS paymentStatus, b.status,
+                b.payment_due_at AS paymentDueAt,
+                b.payment_due_at > CURRENT_TIMESTAMP AS paymentDeadlineActive,
+                v.merchant_id AS merchantId, v.name AS venueName,
+                v.business_type AS businessType
+         FROM bookings b
+         JOIN merchant_businesses v ON v.id = b.venue_id
+         WHERE b.id = ? AND b.customer_id = ?
+         LIMIT 1 FOR UPDATE`,
+        [bookingId, req.auth.sub],
+      );
+      const booking = rows[0];
+      if (!booking) {
+        await connection.rollback();
+        return res.status(404).json({ error: 'Booking not found.' });
+      }
+      if (
+        booking.status !== 'approved' ||
+        !['online', 'cash_on_arrival'].includes(booking.paymentMethod)
+      ) {
+        await connection.rollback();
+        return res.status(409).json({
+          error: 'Prototype payment is available only for approved payable bookings.',
+        });
+      }
+      if (booking.paymentStatus === 'paid') {
+        await connection.rollback();
+        return res.status(409).json({
+          error: 'This booking has already been paid.',
+        });
+      }
+      if (!booking.paymentDueAt || Number(booking.paymentDeadlineActive) !== 1) {
+        await connection.rollback();
+        return res.status(410).json({
+          error: 'The 15-minute payment window has expired.',
+        });
+      }
+
+      const isCashOnArrival = booking.paymentMethod === 'cash_on_arrival';
+      const paymentProvider = req.body.provider;
+      const amount = isCashOnArrival
+        ? Number(booking.downpaymentAmount)
+        : Number(booking.totalAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await connection.rollback();
+        return res.status(409).json({
+          error: 'This booking has no valid payment amount due.',
+        });
+      }
+      const paymentReference = `PROTOTYPE-${booking.id}-${Date.now()}`;
+      const [paymentUpdate] = await connection.execute(
+        `UPDATE bookings
+         SET payment_status = ?, paid_amount = ?,
+             payment_reference = ?, paid_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND customer_id = ? AND status = 'approved'
+           AND payment_method IN ('online', 'cash_on_arrival')
+           AND payment_status = 'unpaid'
+           AND payment_due_at > CURRENT_TIMESTAMP`,
+        [
+          isCashOnArrival ? 'partial' : 'paid',
+          amount,
+          paymentReference,
+          booking.id,
+          req.auth.sub,
+        ],
+      );
+      if (!paymentUpdate.affectedRows) {
+        await connection.rollback();
+        return res.status(409).json({
+          error: 'This booking is no longer eligible for prototype payment.',
+        });
+      }
+
+      await connection.execute(
+        `UPDATE messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         SET m.attachment_json = JSON_SET(
+           m.attachment_json, '$.paymentStatus', ?,
+           '$.paidAmount', ?, '$.paymentReference', ?,
+           '$.paymentProvider', ?
+         )
+         WHERE c.title = ? AND c.type = 'direct'
+           AND CASE WHEN JSON_VALID(m.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      m.attachment_json, '$.type'
+                    )) END = 'booking_ticket'
+           AND CASE WHEN JSON_VALID(m.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      m.attachment_json, '$.bookingId'
+                    )) END = ?`,
+        [
+          isCashOnArrival ? 'partial' : 'paid',
+          amount,
+          paymentReference,
+          paymentProvider,
+          `Booking ${booking.id}`,
+          String(booking.id),
+        ],
+      );
+
+      const [conversations] = await connection.execute(
+        'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
+        ['direct', `Booking ${booking.id}`],
+      );
+      let conversationId = conversations[0]?.id;
+      if (!conversationId) {
+        const [conversation] = await connection.execute(
+          'INSERT INTO conversations (type, title, created_by) VALUES (?, ?, ?)',
+          ['direct', `Booking ${booking.id}`, booking.customerId],
+        );
+        conversationId = conversation.insertId;
+        await connection.execute(
+          'INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+          [
+            conversationId,
+            booking.customerId,
+            conversationId,
+            booking.merchantId,
+          ],
+        );
+      }
+      const transactionId = bookingTransactionId(booking.id);
+      const bookingReference = `BK-${booking.id}`;
+      const message =
+        `Prototype ${isCashOnArrival ? 'downpayment' : 'payment'} of ₱${amount.toFixed(2)} was recorded for booking #${booking.id} at ${booking.venueName}. ` +
+        `This is a test transaction; no real payment was processed. ` +
+        `Transaction ID: ${transactionId}. Booking reference: ${bookingReference}.`;
+      if (!isCashOnArrival) {
+        await connection.execute(
+          `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+           VALUES (?, ?, ?, ?)`,
+          [
+            conversationId,
+            booking.customerId,
+            message,
+            JSON.stringify({
+              type: 'booking_payment_ticket',
+              bookingId: booking.id,
+              transactionId,
+              bookingReference,
+              venueName: booking.venueName,
+              businessType: booking.businessType,
+              amount,
+              totalAmount: Number(booking.totalAmount),
+              payableAmount: amount,
+              paymentMethod: booking.paymentMethod,
+              paymentStatus: 'paid',
+              paymentReference,
+              paymentProvider,
+              status: 'paid',
+            }),
+          ],
+        );
+      }
+      for (const userId of [booking.customerId, booking.merchantId]) {
+        await recordUserActivity(
+          connection,
+          userId,
+          'booking_payment_received',
+          'Prototype payment recorded',
+          message,
+          {
+            venueId: booking.venueId,
+            venueName: booking.venueName,
+            details: {
+              bookingId: booking.id,
+              transactionId,
+              bookingReference,
+              amount,
+              paymentReference,
+              prototype: true,
+            },
+          },
+          { systemGenerated: true },
+        );
+      }
+      await connection.commit();
+      return res.json({
+        received: true,
+        prototype: true,
+        bookingId: booking.id,
+        transactionId,
+        bookingReference,
+        amount,
+        paymentReference,
+      });
+    } catch (error) {
+      if (connection) await connection.rollback();
+      return next(error);
+    } finally {
+      connection?.release();
+    }
+  },
+);
 
 app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
   const webhookSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
@@ -2586,6 +2858,11 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
               b.payment_status AS paymentStatus,
               b.payment_refund_status AS paymentRefundStatus,
               b.payment_refund_id AS paymentRefundId, b.status,
+              b.payment_due_at AS paymentDueAt,
+              b.payment_expired_at AS paymentExpiredAt,
+              CASE WHEN b.status = 'approved'
+                     AND b.payment_due_at <= CURRENT_TIMESTAMP
+                   THEN 1 ELSE 0 END AS paymentDeadlineExpired,
               v.business_type AS businessType,
               v.name AS venueName,
               COALESCE(b.sport_type, v.category) AS sportType,
@@ -2624,7 +2901,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
     const expectedPaymentAmount = Number(booking.totalAmount);
     if (
       booking.paymentMethod !== 'online' ||
-      !['pending', 'cancelled'].includes(booking.status) ||
+      !['pending', 'approved', 'cancelled'].includes(booking.status) ||
       attributes?.metadata?.payment_type !== 'full' ||
       Number(paidPayment.attributes.amount) !== Math.round(expectedPaymentAmount * 100)
     ) {
@@ -2649,14 +2926,35 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
     }
 
     const nextPaymentStatus = 'paid';
-    const bookingWasCancelled = booking.status === 'cancelled';
+    const paymentDeadlineExpired =
+      Number(booking.paymentDeadlineExpired) === 1 ||
+      Boolean(booking.paymentExpiredAt);
+    const bookingWasCancelled =
+      booking.status === 'cancelled' || paymentDeadlineExpired;
     const paymentReference = paidPayment.id ?? attributes?.payment_intent?.id ?? checkoutSessionId;
     await connection.execute(
       `UPDATE bookings
        SET payment_status = ?, paid_amount = ?, payment_reference = ?,
-           paid_at = CURRENT_TIMESTAMP
+           paid_at = CURRENT_TIMESTAMP,
+           status = CASE WHEN ? = 1 THEN 'cancelled' ELSE status END,
+           payment_expired_at = CASE
+             WHEN ? = 1 THEN CURRENT_TIMESTAMP
+             ELSE payment_expired_at
+           END,
+           payment_refund_status = CASE
+             WHEN ? = 1 THEN 'pending'
+             ELSE payment_refund_status
+           END
        WHERE id = ? AND payment_status <> 'paid'`,
-      [nextPaymentStatus, expectedPaymentAmount, paymentReference, booking.id],
+      [
+        nextPaymentStatus,
+        expectedPaymentAmount,
+        paymentReference,
+        paymentDeadlineExpired ? 1 : 0,
+        paymentDeadlineExpired ? 1 : 0,
+        paymentDeadlineExpired ? 1 : 0,
+        booking.id,
+      ],
     );
     const [conversations] = await connection.execute(
       'SELECT id FROM conversations WHERE type = ? AND title = ? LIMIT 1',
@@ -2679,6 +2977,70 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
         ],
       );
     }
+    if (paymentDeadlineExpired) {
+      const expiredMessage =
+        `The reservation at ${booking.venueName} expired because payment was not received within 15 minutes after approval. ` +
+        `A late payment arrived, so its refund is being processed. ` +
+        `Transaction ID: ${transactionId}. Booking reference: BK-${booking.id}.`;
+      await connection.execute(
+        `INSERT INTO messages (conversation_id, sender_id, body, attachment_json)
+         VALUES (?, ?, ?, ?)`,
+        [
+          conversationId,
+          booking.merchantId,
+          expiredMessage,
+          JSON.stringify({
+            type: 'booking_ticket',
+            bookingId: booking.id,
+            transactionId,
+            bookingReference: `BK-${booking.id}`,
+            venueName: booking.venueName,
+            amount: expectedPaymentAmount,
+            payableAmount: expectedPaymentAmount,
+            paymentDueAt: booking.paymentDueAt,
+            paymentExpiredAt: new Date().toISOString(),
+            status: 'payment_expired',
+            approvalStatus: 'payment_expired',
+            paymentMethod: 'online',
+            paymentStatus: 'unpaid',
+          }),
+        ],
+      );
+      await recordUserActivity(
+        connection,
+        booking.customerId,
+        'booking_payment_expired',
+        'Booking payment expired',
+        expiredMessage,
+        {
+          venueId: booking.venueId,
+          venueName: booking.venueName,
+          details: {
+            bookingId: booking.id,
+            transactionId,
+            bookingReference: `BK-${booking.id}`,
+          },
+        },
+        { systemGenerated: true },
+      );
+      await recordUserActivity(
+        connection,
+        booking.merchantId,
+        'booking_payment_expired',
+        'Booking payment expired',
+        expiredMessage,
+        {
+          venueId: booking.venueId,
+          venueName: booking.venueName,
+          details: {
+            bookingId: booking.id,
+            transactionId,
+            bookingReference: `BK-${booking.id}`,
+          },
+        },
+        { systemGenerated: true },
+      );
+    }
     const ticketDetails = {
       type: 'booking_payment_ticket',
       bookingId: booking.id,
@@ -2686,7 +3048,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       businessType: booking.businessType,
       eventType: booking.eventType,
       status: 'payment_received',
-      approvalStatus: bookingWasCancelled ? 'cancelled' : 'pending',
+      approvalStatus: bookingWasCancelled ? 'cancelled' : 'approved',
       venueName: booking.venueName,
       sportType: booking.sportType,
       fitnessPlanType: booking.fitnessPlanType,
@@ -2703,6 +3065,8 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
       durationHours: booking.durationHours,
       players: booking.players,
       amount: expectedPaymentAmount,
+      payableAmount: expectedPaymentAmount,
+      paymentDueAt: booking.paymentDueAt,
       totalAmount: Number(booking.totalAmount),
       downpaymentAmount: Number(booking.downpaymentAmount),
       paidAmount: expectedPaymentAmount,
@@ -2719,7 +3083,7 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
         booking.merchantId,
         bookingWasCancelled
           ? `Payment received for cancelled booking #${booking.id}. The applicable cancellation refund is being processed separately.`
-          : `Payment received for booking #${booking.id}. The venue is reviewing your booking.`,
+          : `Payment received for booking #${booking.id}. The booking is approved.`,
         JSON.stringify(ticketDetails),
       ],
     );
@@ -2750,7 +3114,8 @@ app.post('/api/payments/paymongo/webhook', async (req, res, next) => {
     await connection.commit();
     const paymentRefundStatus =
       bookingWasCancelled &&
-      booking.paymentRefundStatus === 'pending' &&
+      (booking.paymentRefundStatus === 'pending' ||
+        paymentDeadlineExpired) &&
       !booking.paymentRefundId
         ? await requestPaymongoBookingRefund({
             ...booking,
@@ -3230,12 +3595,17 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
       [
         conversationId,
         req.auth.sub,
-        `New booking request #${result.insertId} submitted. Booking token: ${bookingToken}`,
+        `New booking request #${result.insertId} submitted. ` +
+          (paymentMethod === 'online'
+            ? `No payment is due while the merchant reviews your request. If approved, pay the full amount of ₱${total.toFixed(2)} online within 15 minutes. `
+            : `No payment is due while the merchant reviews your request. If approved, pay the ₱${downpayment.toFixed(2)} cash downpayment at the venue; the remaining ₱${(total - downpayment).toFixed(2)} is due on arrival. `) +
+          `Booking token: ${bookingToken}`,
         JSON.stringify({
           type: 'booking',
           bookingId: result.insertId,
           venueName: venue.name,
           transactionId: bookingTransactionId(result.insertId),
+          bookingReference: `BK-${result.insertId}`,
           businessType: venue.businessType,
           status: 'pending',
           extraPlayerCharge,
@@ -3247,6 +3617,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           players,
           total,
           downpayment,
+          payableAmount: downpayment,
           paymentMethod,
           slotNumber,
           slotNumbers,
@@ -3280,6 +3651,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         sportType: selectedSportType,
         details: {
           bookingId: result.insertId,
+          transactionId: bookingTransactionId(result.insertId),
+          bookingReference: `BK-${result.insertId}`,
           bookingDate,
           startTime,
           durationHours,
@@ -3289,6 +3662,7 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
           paymentMethod,
           total,
           downpayment,
+          payableAmount: downpayment,
           ...(slotNumbers.length > 0 ? { slotNumbers } : {}),
           ...(isFitness
             ? {
@@ -3309,7 +3683,8 @@ app.post('/api/bookings', requireAuth, requireRole('customer'), async (req, res,
         businessType: venue.businessType, venueId, date: bookingDate, startTime,
         durationHours, players, sportType: selectedSportType,
         eventType: selectedEventType,
-        slotNumber, slotNumbers, fullStudio, paymentMethod, pricePerHour, total, downpayment,
+        slotNumber, slotNumbers, fullStudio, paymentMethod, pricePerHour, total,
+        downpayment, payableAmount: downpayment,
         extraPlayers, extraPlayerCharge, includedPlayers,
         additionalPlayerFee, fitnessPlanType: isFitness ? fitnessPlanType : null,
         fitnessCategory: isFitness ? selectedSportType : null,
@@ -3377,6 +3752,34 @@ function sendBookingIdempotencyReplay(res, priorRequest, requestHash) {
 
 app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, next) => {
   try {
+    await pool.execute(
+      `UPDATE bookings b
+       JOIN (
+         SELECT CASE WHEN JSON_VALID(m.attachment_json)
+                     THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(
+                       m.attachment_json, '$.bookingId'
+                     )) AS UNSIGNED) END AS bookingId,
+                MAX(m.created_at) AS approvedAt
+         FROM messages m
+         WHERE CASE WHEN JSON_VALID(m.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      m.attachment_json, '$.type'
+                    )) END = 'booking_ticket'
+           AND CASE WHEN JSON_VALID(m.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      m.attachment_json, '$.status'
+                    )) END IN ('approved', 'confirmed')
+         GROUP BY bookingId
+       ) approval_ticket ON approval_ticket.bookingId = b.id
+       SET b.payment_due_at = DATE_ADD(
+         approval_ticket.approvedAt, INTERVAL 15 MINUTE
+       )
+       WHERE b.customer_id = ? AND b.status = 'approved'
+         AND b.payment_method IN ('online', 'cash_on_arrival')
+         AND b.payment_status = 'unpaid' AND b.payment_due_at IS NULL`,
+      [req.auth.sub],
+    );
+    await processBookingPaymentDeadlines();
     const businessType = req.query.businessType;
     let businessTypeFilter = '';
     const params = [req.auth.sub];
@@ -3441,6 +3844,8 @@ app.get('/api/bookings', requireAuth, requireRole('customer'), async (req, res, 
               b.payment_refund_status AS paymentRefundStatus,
               b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
+              b.payment_due_at AS paymentDueAt,
+              b.payment_expired_at AS paymentExpiredAt,
               ci.checked_in_at AS checkedInAt,
               b.status, b.created_at AS createdAt,
               CASE WHEN b.status = 'pending'
@@ -3845,6 +4250,7 @@ app.post(
 app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (req, res, next) => {
   try {
     await processBookingApprovalDeadlines();
+    await processBookingPaymentDeadlines();
     await completeDueBookings();
     const [bookings] = await pool.execute(
       `SELECT b.id, b.customer_id AS customerId,
@@ -3869,6 +4275,8 @@ app.get('/api/merchant/bookings', requireAuth, requireRole('merchant'), async (r
               b.total_amount AS total, b.downpayment_amount AS downpayment,
               b.payment_status AS paymentStatus,
               b.paid_amount AS paidAmount,
+              b.payment_due_at AS paymentDueAt,
+              b.payment_expired_at AS paymentExpiredAt,
               b.payment_refund_status AS paymentRefundStatus,
               b.payment_refund_id AS paymentRefundId,
               b.payment_reference AS paymentReference,
@@ -4033,14 +4441,16 @@ app.patch('/api/merchant/bookings/:id/payment', requireAuth, requireRole('mercha
                b.paid_at = CURRENT_TIMESTAMP
            WHERE b.id = ? AND v.merchant_id = ?
              AND b.payment_method = 'cash_on_arrival'
-             AND b.status <> 'cancelled' AND b.payment_status = 'unpaid'
+             AND b.status IN ('approved', 'finished')
+             AND b.payment_status = 'unpaid'
              AND b.downpayment_amount > 0`
         : `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
            SET b.payment_status = 'paid', b.paid_amount = b.total_amount,
                b.paid_at = CURRENT_TIMESTAMP
            WHERE b.id = ? AND v.merchant_id = ?
              AND b.payment_method = 'cash_on_arrival'
-             AND b.status <> 'cancelled' AND b.payment_status = 'partial'`,
+             AND b.status IN ('approved', 'finished')
+             AND b.payment_status = 'partial'`,
       [req.params.id, req.auth.sub],
     );
     if (!result.affectedRows) {
@@ -4060,13 +4470,19 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
     const ticketCode = createBookingToken();
     const [result] = await connection.execute(
       `UPDATE bookings b JOIN merchant_businesses v ON v.id = b.venue_id
-       SET b.status = 'approved', b.ticket_token_hash = ?
+       SET b.status = 'approved',
+           b.ticket_token_hash = ?,
+           b.payment_due_at = CASE
+             WHEN b.payment_status = 'unpaid'
+             THEN DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE)
+             ELSE NULL
+           END
        WHERE b.id = ? AND v.merchant_id = ? AND b.status = 'pending'
          AND NOT (
            b.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE
          )
          AND (
-           (b.payment_method = 'online' AND b.payment_status = 'paid')
+           b.payment_method = 'online'
            OR b.payment_method = 'cash_on_arrival'
          )`,
       [hashBookingToken(ticketCode), req.params.id, req.auth.sub],
@@ -4155,7 +4571,7 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       await connection.rollback();
       if (unpaid.length > 0) {
         return res.status(409).json({
-          error: 'The required online payment must be verified before approving this booking.',
+          error: 'The booking payment method is not supported.',
         });
       }
       return res.status(404).json({ error: 'Pending booking not found.' });
@@ -4165,9 +4581,11 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
               b.booking_date AS bookingDate, b.start_time AS startTime,
               b.duration_hours AS durationHours, b.players,
               b.total_amount AS totalAmount,
+              b.downpayment_amount AS downpaymentAmount,
               b.payment_reference AS paymentReference,
               b.payment_method AS paymentMethod,
               b.payment_status AS paymentStatus,
+              b.payment_due_at AS paymentDueAt,
               v.business_type AS businessType,
               v.name AS venueName,
               COALESCE(b.sport_type, v.category) AS sportType,
@@ -4186,24 +4604,19 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       [req.params.id, req.auth.sub],
     );
     const booking = rows[0];
-    await connection.execute(
-      `UPDATE messages m
-       JOIN conversations c ON c.id = m.conversation_id
-       SET m.attachment_json = JSON_SET(
-         m.attachment_json, '$.status', 'approved',
-         '$.approvalStatus', 'approved'
-       )
-       WHERE c.title = ? AND c.type = 'direct'
-         AND CASE WHEN JSON_VALID(m.attachment_json)
-                  THEN JSON_UNQUOTE(JSON_EXTRACT(
-                    m.attachment_json, '$.type'
-                  )) END = 'booking'
-         AND CASE WHEN JSON_VALID(m.attachment_json)
-                  THEN JSON_UNQUOTE(JSON_EXTRACT(
-                    m.attachment_json, '$.bookingId'
-                  )) END = ?`,
-      [`Booking ${booking.id}`, String(booking.id)],
-    );
+    const payableAmount = booking.paymentMethod === 'online'
+      ? Number(booking.totalAmount)
+      : Number(booking.downpaymentAmount);
+    const requiresPaymentAfterApproval =
+      booking.paymentStatus === 'unpaid' && Boolean(booking.paymentDueAt);
+    const transactionId = bookingTransactionId(booking.id);
+    const bookingReference = `BK-${booking.id}`;
+    const approvalMessage = requiresPaymentAfterApproval
+      ? `Booking #${booking.id} for ${booking.venueName} is approved. Pay ₱${payableAmount.toFixed(2)} ${booking.paymentMethod === 'online' ? 'online' : 'as the cash-on-arrival downpayment'} within 15 minutes to keep the reservation active. Transaction ID: ${transactionId}. Booking reference: ${bookingReference}.`
+      : booking.paymentMethod === 'cash_on_arrival' &&
+          booking.paymentStatus !== 'paid'
+      ? `Booking #${booking.id} for ${booking.venueName} is approved. Pay the ₱${payableAmount.toFixed(2)} cash-on-arrival downpayment within 15 minutes to keep the reservation active. The remaining ₱${(Number(booking.totalAmount) - payableAmount).toFixed(2)} is due at the venue. Transaction ID: ${transactionId}. Booking reference: ${bookingReference}.`
+      : `Booking #${booking.id} for ${booking.venueName} is approved. Transaction ID: ${transactionId}. Booking reference: ${bookingReference}.`;
     booking.slotNumbers = bookingSlotNumbers(
       booking.slotNumbers,
       booking.slotNumber,
@@ -4230,11 +4643,12 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       [
         conversationId,
         req.auth.sub,
-        `Booking #${booking.id} for ${booking.venueName} approved. Your ticket: ${ticketCode}`,
+        approvalMessage,
         JSON.stringify({
           type: 'booking_ticket',
           bookingId: booking.id,
-          transactionId: bookingTransactionId(booking.id),
+          transactionId,
+          bookingReference,
           businessType: booking.businessType,
           eventType: booking.eventType,
           status: 'approved',
@@ -4254,6 +4668,8 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
           durationHours: booking.durationHours,
           players: booking.players,
           amount: booking.totalAmount,
+          payableAmount,
+          paymentDueAt: booking.paymentDueAt,
           paymentMethod: booking.paymentMethod,
           paymentStatus: booking.paymentStatus,
           paymentReference: booking.paymentReference,
@@ -4265,13 +4681,18 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       req.auth.sub,
       'booking_approved',
       'Booking approved',
-      `Booking #${booking.id} for ${booking.venueName} was approved.`,
+      approvalMessage,
       {
         venueId: booking.venueId,
         venueName: booking.venueName,
         sportType: booking.sportType,
         details: {
           bookingId: booking.id,
+          transactionId,
+          bookingReference,
+          paymentMethod: booking.paymentMethod,
+          payableAmount,
+          paymentDueAt: booking.paymentDueAt,
           bookingDate: booking.bookingDate,
           startTime: booking.startTime,
           durationHours: booking.durationHours,
@@ -4284,7 +4705,7 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
       booking.customerId,
       'booking_approved',
       'Booking approved',
-      `Booking #${booking.id} for ${booking.venueName} was approved.`,
+      approvalMessage,
       {
         venueId: booking.venueId,
         venueName: booking.venueName,
@@ -4302,7 +4723,10 @@ app.patch('/api/merchant/bookings/:id/approve', requireAuth, requireRole('mercha
     return res.json({
       message: 'Booking approved and ticket issued.',
       status: 'approved',
-      transactionId: bookingTransactionId(req.params.id),
+      transactionId,
+      bookingReference,
+      payableAmount,
+      paymentDueAt: booking.paymentDueAt,
       ticketCode,
     });
   } catch (error) {
@@ -4847,6 +5271,9 @@ function startServer() {
     processBookingApprovalDeadlines().catch((error) => {
       console.error('Could not process booking approval deadlines.', error);
     });
+    processBookingPaymentDeadlines().catch((error) => {
+      console.error('Could not process booking payment deadlines.', error);
+    });
     completeDueBookings().catch((error) => {
       console.error('Could not automatically finish due bookings.', error);
     });
@@ -4854,6 +5281,9 @@ function startServer() {
   completionInterval.unref();
   processBookingApprovalDeadlines().catch((error) => {
     console.error('Could not process booking approval deadlines.', error);
+  });
+  processBookingPaymentDeadlines().catch((error) => {
+    console.error('Could not process booking payment deadlines.', error);
   });
   completeDueBookings().catch((error) => {
     console.error('Could not automatically finish due bookings.', error);

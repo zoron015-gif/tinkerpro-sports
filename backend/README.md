@@ -42,13 +42,31 @@ reviews, using MySQL.
    Google sign-in configuration. Configure `PORT` only if you do not want the
    default port 3000. The example also includes optional PayMongo checkout
    settings; provide valid credentials and return URLs if using that integration.
-   To issue a payment ticket, configure a PayMongo webhook for
+   Online bookings are requests first; no payment is taken before merchant
+   approval. After approval, online customers have 15 minutes to complete
+   payment; Cash on Arrival customers have 15 minutes to complete the required
+   downpayment, with the remaining balance due at the venue. The development
+   app simulates both obligations using its prototype payment form.
+
+   During development, the customer app uses a clearly labeled prototype
+   payment form with GCash, Maya, Atome, and credit/debit card options. Mobile
+   wallet demos use `09171234567` and verification code `123456`; the card demo
+   uses `4242 4242 4242 4242`. Enter demo values only. Form values stay on-device
+   and are never sent to or stored by the API; only the selected provider is
+   submitted. The prototype payment endpoint records a test payment only outside
+   production and is disabled when `NODE_ENV=production`; it does not process a
+   real charge.
+
+   The existing PayMongo integration can be enabled separately when real
+   payment processing is ready. The app's prototype payment action does not
+   use PayMongo. To issue a provider-verified payment ticket, configure a
+   PayMongo webhook for
    `POST /api/payments/paymongo/webhook`, subscribe to
    `checkout_session.payment.paid`, and set `PAYMONGO_WEBHOOK_SECRET` to that
    webhook's signing secret. The signed webhook is the source of truth; the
-   checkout redirect alone does not mark a booking paid. After payment, the
-   booking pass appears in Messages as pending venue approval. Venue approval
-   issues the separate entry ticket and access code.
+   checkout redirect alone does not mark a booking paid. Venue approval issues
+   a separate approval ticket. Prototype payments are test-only, and real
+   online payments are recorded only after the signed payment webhook succeeds.
 5. Install dependencies and apply database changes before starting the API:
 
    ```sh

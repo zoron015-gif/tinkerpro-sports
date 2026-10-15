@@ -126,6 +126,11 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   double _bookingAmountReceived(Map<String, dynamic> booking) {
     final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final paidAmount = booking['paidAmount'];
+    if (paidAmount != null) {
+      final amount = _bookingAmount(paidAmount);
+      if (amount > 0 || paymentStatus != 'paid') return amount;
+    }
     if (paymentStatus != 'paid') return 0;
     return _bookingAmount(booking['total']);
   }
@@ -524,7 +529,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       final customerId = booking['customerId'] ?? booking['customerName'];
       if (customerId != null) customersByBucket[index].add('$customerId');
       if (_isConfirmedBooking(booking)) {
-        sales[index] += _bookingAmount(booking['total']);
+        sales[index] += _bookingAmountReceived(booking);
         collected[index] += _bookingAmountReceived(booking);
         confirmedBookingCounts[index]++;
       }
@@ -613,8 +618,14 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
   String _weekdayLabel(int weekday) =>
       const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
 
-  bool _isConfirmedBooking(Map<String, dynamic> booking) =>
-      BookingStatusParser.isConfirmed(booking['status']);
+  bool _isConfirmedBooking(Map<String, dynamic> booking) {
+    if (!BookingStatusParser.isConfirmed(booking['status'])) return false;
+    final awaitingOnlinePayment =
+        '${booking['status'] ?? ''}'.toLowerCase() == 'approved' &&
+        booking['paymentMethod'] == 'online' &&
+        '${booking['paymentStatus'] ?? ''}'.toLowerCase() != 'paid';
+    return !awaitingOnlinePayment;
+  }
 
   List<Map<String, dynamic>> get _periodBookings {
     final bucketKeys = _analyticsBuckets.map((bucket) => bucket.key).toSet();
@@ -645,7 +656,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
 
   double get _periodSales => _periodBookings
       .where(_isConfirmedBooking)
-      .fold(0, (total, booking) => total + _bookingAmount(booking['total']));
+      .fold(0, (total, booking) => total + _bookingAmountReceived(booking));
 
   double get _periodCollected => _periodBookings
       .where(_isConfirmedBooking)
@@ -692,7 +703,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   'Collected',
                   _formatCurrency(_periodCollected),
                   Icons.account_balance_wallet_outlined,
-                  context: 'Of ${_formatCurrency(_periodSales)} in sales',
+                  context: 'Payments actually received',
                   progress: collectedShare,
                   progressLabel: 'Collected',
                   onTap: () => _selectAnalyticsView('Sales report'),
@@ -760,7 +771,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         '${averagePlayers.toStringAsFixed(1)} players per booking on average',
       'Venue performance' =>
         '$confirmedBookings confirmed · $pendingBookings pending',
-      _ => '${(collectedShare * 100).round()}% collected',
+      _ => 'Paid and collected',
     };
     final primaryIcon = switch (_analyticsView) {
       'Customer count' => Icons.people_outline_rounded,
@@ -806,7 +817,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                     : Icons.account_balance_wallet_outlined,
                 context: _analyticsView == 'Customer count'
                     ? 'Unique customers in this period'
-                    : 'Of ${_formatCurrency(_periodSales)} in confirmed sales',
+                    : 'Payments actually received',
                 progress: _analyticsView == 'Customer count'
                     ? null
                     : collectedShare,
@@ -871,7 +882,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         ? const Color(0xFF168B69)
         : AppColors.errorText;
     final trendText = change == null
-        ? 'No previous-period sales'
+        ? 'No previous-period payments'
         : '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}% vs previous ${switch (_analyticsPeriod) {
             'Weekly' => 'week',
             'Monthly' => 'month',
@@ -935,7 +946,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             ),
             const SizedBox(height: 3),
             AppText(
-              '${(collectedShare * 100).round()}% collected · confirmed sales in selected period',
+              'Payments received; unpaid approvals are excluded',
               style: TextStyle(color: _merchantMuted, fontSize: 10),
               localize: true,
             ),
@@ -1149,7 +1160,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
       for (final bucket in buckets)
         [
           _AnalyticsPointMetric(
-            label: 'Confirmed sales',
+            label: 'Payments received',
             value: _formatCurrency(bucket.sales),
             color: _merchantOrange,
           ),
@@ -1179,7 +1190,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             color: const Color(0xFFB34E91),
           ),
           _AnalyticsPointMetric(
-            label: 'Avg. confirmed booking',
+            label: 'Avg. payment received',
             value: _formatCurrency(
               bucket.confirmedBookings == 0
                   ? 0
@@ -1197,8 +1208,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final chartSummary = switch (_analyticsView) {
       'Customer count' => '$_periodCustomers unique customers across venues',
       _ =>
-        '${_formatCurrency(_periodSales)} confirmed sales · '
-            '${_formatCurrency(_periodCollected)} collected',
+        '${_formatCurrency(_periodCollected)} in payments received',
     };
     return _analyticsPanel(
       title: chartTitle,
@@ -1259,7 +1269,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                   detailLabels: detailLabels,
                   pointDetails: pointDetails,
                   series: venueSeries,
-                  valueLabel: isCustomerView ? 'Customers' : 'Confirmed sales',
+                  valueLabel: isCustomerView ? 'Customers' : 'Payments received',
                   valueColor: isCustomerView
                       ? const Color(0xFF168B69)
                       : _merchantOrange,
@@ -1556,7 +1566,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
             const SizedBox(height: _analyticsElementGap),
             AppText(
               _venueComparisonMetric == 'Sales'
-                  ? 'Sales include confirmed bookings only.'
+                  ? 'Payments received exclude unpaid approved bookings.'
                   : 'Sorted by $metricLabel from highest to lowest.',
               style: TextStyle(color: _merchantMuted, fontSize: 11),
             ),
@@ -1635,7 +1645,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
         sales:
             current.sales +
             (_isConfirmedBooking(booking)
-                ? _bookingAmount(booking['total'])
+                ? _bookingAmountReceived(booking)
                 : 0),
       );
     }
@@ -1692,7 +1702,7 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
     final ranked = _venueAnalytics;
     return _analyticsPanel(
       title: 'Venue performance',
-      subtitle: 'Ratings, confirmed sales, and booking counts',
+      subtitle: 'Ratings, payments received, and booking counts',
       child: ranked.isEmpty
           ? AppText(
               'Venue performance will appear when bookings come in.',

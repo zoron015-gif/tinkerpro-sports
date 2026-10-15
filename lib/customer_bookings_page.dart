@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -15,6 +16,7 @@ import 'event_dashboard.dart';
 import 'fitness_dashboard.dart';
 import 'messages_dashboard.dart';
 import 'profile_dashboard.dart';
+import 'prototype_payment_dialog.dart';
 import 'app_bottom_navigation.dart';
 import 'saved_dashboard.dart';
 import 'news_feed.dart';
@@ -159,9 +161,12 @@ class _BookingGalleryState extends State<_BookingGallery> {
   }
 }
 
-class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
+class _CustomerBookingsPageState extends State<CustomerBookingsPage>
+    with WidgetsBindingObserver {
   late final AuthApi _api;
   late Future<List<Booking>> _bookings;
+  Timer? _bookingRefreshTimer;
+  var _refreshingForUpdates = false;
   final List<ScrollController> _bookingScrollControllers = List.generate(
     3,
     (_) => ScrollController(),
@@ -171,6 +176,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   final TextEditingController _bookingSearchController =
       TextEditingController();
   int _selectedBookingTab = 0;
+  String _approvedPaymentFilter = 'all';
   String _bookingSearchQuery = '';
   int _unreadBookingCount = 0;
   List<Booking> _bookingStatusNotifications = [];
@@ -183,12 +189,19 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _api = widget.api ?? AuthApi();
     _bookings = _loadBookings();
+    _bookingRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _refreshForUpdates(),
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _bookingRefreshTimer?.cancel();
     _bookingSearchController.dispose();
     for (final controller in _bookingScrollControllers) {
       controller.dispose();
@@ -214,7 +227,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           .toList(),
     );
     _bookingStatusNotifications = bookings
-        .where((booking) => _bookingStatus(booking) == 'expired')
+        .where(
+          (booking) =>
+              _bookingStatus(booking) == 'expired' ||
+              _awaitingApprovalPayment(booking),
+        )
         .where(
           (booking) =>
               !session.bookingStatusBannerDismissed(_bookingStatusKey(booking)),
@@ -229,13 +246,6 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         bannerBooking != null &&
         !session.bookingStatusBannerDismissed(_bookingStatusBannerKey!);
     _unreadBookingCount = _bookingStatusNotifications.length;
-    for (final booking in bookings.where(
-      (booking) =>
-          _isBookingStatusNotification(booking) &&
-          _bookingStatus(booking) != 'expired',
-    )) {
-      await session.dismissBookingStatusBanner(_bookingStatusKey(booking));
-    }
     try {
       final conversations = await _api.conversations(
         token,
@@ -265,6 +275,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       _bookings = _loadBookings();
     });
     await _bookings;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshForUpdates();
+  }
+
+  void _refreshForUpdates() {
+    if (!mounted || _refreshingForUpdates) return;
+    _refreshingForUpdates = true;
+    setState(() {
+      _bookings = _loadBookings().whenComplete(() {
+        _refreshingForUpdates = false;
+      });
+    });
   }
 
   Future<void> _refreshAndScrollToTop() async {
@@ -416,7 +441,15 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                     _bookingStatus(booking) == 'approved' &&
                     _matchesBookingSearch(booking),
               )
-              .toList();
+              .toList()
+            ..sort(_compareApprovedPaymentPriority);
+          final filteredApproved = approved.where((booking) {
+            return switch (_approvedPaymentFilter) {
+              'payable' => booking.paymentStatus.toLowerCase() != 'paid',
+              'paid' => booking.paymentStatus.toLowerCase() == 'paid',
+              _ => true,
+            };
+          }).toList();
           final completed = bookings
               .where(
                 (booking) =>
@@ -561,13 +594,28 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                         controller: _bookingScrollControllers[0],
                         refreshKey: _bookingRefreshKeys[0],
                       ),
-                      _bookingTab(
-                        approved,
-                        emptyMessage: _bookingEmptyMessage(
-                          'No approved bookings.',
-                        ),
-                        controller: _bookingScrollControllers[1],
-                        refreshKey: _bookingRefreshKeys[1],
+                      Column(
+                        children: [
+                          if (_selectedBookingTab == 1)
+                            _approvedPaymentFilters(
+                              approved.length,
+                              filteredApproved.length,
+                            ),
+                          Expanded(
+                            child: _bookingTab(
+                              filteredApproved,
+                              emptyMessage: _bookingEmptyMessage(
+                                _approvedPaymentFilter == 'paid'
+                                    ? 'No fully paid bookings.'
+                                    : _approvedPaymentFilter == 'payable'
+                                    ? 'No payable bookings.'
+                                    : 'No approved bookings.',
+                              ),
+                              controller: _bookingScrollControllers[1],
+                              refreshKey: _bookingRefreshKeys[1],
+                            ),
+                          ),
+                        ],
                       ),
                       _bookingTab(
                         completed,
@@ -635,7 +683,22 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
-  String _bookingStatus(Booking booking) => booking.status;
+  String _bookingStatus(Booking booking) =>
+      booking.paymentExpiredAt.isNotEmpty ? 'expired' : booking.status;
+
+  bool _awaitingApprovalPayment(Booking booking) =>
+      booking.status == 'approved' &&
+      booking.paymentStatus.toLowerCase() == 'unpaid' &&
+      booking.paymentDueAt.isNotEmpty;
+
+  double _prototypePayableAmount(Booking booking) {
+    final paidAmount = booking.paidAmount;
+    final totalAmount = _amount(booking['total']);
+    final requiredAmount = booking.paymentMethod == 'cash_on_arrival'
+        ? _amount(booking['downpayment'])
+        : totalAmount;
+    return (requiredAmount - paidAmount).clamp(0, requiredAmount).toDouble();
+  }
 
   bool _isBookingStatusNotification(Booking booking) =>
       const {
@@ -648,12 +711,15 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
       }.contains(_bookingStatus(booking));
 
   int _compareBookingStatusNotifications(Booking first, Booking second) {
-    int priority(Booking booking) => switch (_bookingStatus(booking)) {
-      'expired' => 0,
-      'cancelled' => 1,
-      'approved' => 2,
-      _ => 3,
-    };
+    int priority(Booking booking) {
+      if (_awaitingApprovalPayment(booking)) return 0;
+      return switch (_bookingStatus(booking)) {
+        'expired' => 1,
+        'cancelled' => 2,
+        'approved' => 3,
+        _ => 4,
+      };
+    }
 
     final priorityComparison = priority(first).compareTo(priority(second));
     if (priorityComparison != 0) return priorityComparison;
@@ -690,7 +756,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final identity =
         booking.id?.toString() ??
         '${booking.venue.id ?? booking.venue.name}_${booking.date}_${booking.startTime}';
-    return '${identity}_${booking.status}';
+    return '${identity}_${_bookingStatus(booking)}_${booking.paymentDueAt}';
   }
 
   Widget _bookingStatusBanner(List<Booking> approved, List<Booking> completed) {
@@ -701,11 +767,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final isCompleted = {'finished', 'done', 'completed'}.contains(status);
     final isInactive = {'expired', 'cancelled'}.contains(status);
     final isExpired = status == 'expired';
+    final isAwaitingPayment = _awaitingApprovalPayment(booking);
     return MaterialBanner(
       backgroundColor: isCompleted
           ? const Color(0xFFE7F6EC)
           : isInactive
           ? const Color(0xFFFEE4E2)
+          : isAwaitingPayment
+          ? const Color(0xFFFFF4E5)
           : AppColors.softStatus,
       leading: Icon(
         isCompleted
@@ -717,6 +786,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             ? AppColors.success
             : isInactive
             ? AppColors.errorText
+            : isAwaitingPayment
+            ? const Color(0xFFB85C00)
             : AppColors.accentForeground,
       ),
       content: InkWell(
@@ -730,10 +801,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             children: [
               AppText(
                 isExpired
-                    ? 'Your booking request at ${booking['venueName'] ?? 'your venue'} has expired.'
+                    ? booking.paymentExpiredAt.isNotEmpty
+                          ? 'Your reservation at ${booking['venueName'] ?? 'your venue'} expired because payment was not received within 15 minutes after approval.'
+                          : 'Your booking request at ${booking['venueName'] ?? 'your venue'} has expired.'
                     : isCompleted || isInactive
                     ? 'Booking at ${booking['venueName'] ?? 'your venue'} is '
                           '${_statusLabel(status)}.'
+                    : isAwaitingPayment
+                    ? 'The venue approved your booking. Pay the required amount of \u{20B1} ${_prototypePayableAmount(booking).toStringAsFixed(2)} within 15 minutes using the test payment form, or the reservation will expire.'
                     : 'Booking at ${booking['venueName'] ?? 'your venue'} was approved '
                           'for ${booking['date']} at ${_formatTime(booking['startTime'])}.',
                 localize: true,
@@ -889,8 +964,103 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
+  Widget _approvedPaymentFilters(int total, int visible) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Row(
+        children: [
+          for (final filter in const [
+            ('all', 'All'),
+            ('payable', 'Payable'),
+            ('paid', 'Fully paid'),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                key: ValueKey('approved-payment-filter-${filter.$1}'),
+                label: AppText(filter.$2, localize: true),
+                selected: _approvedPaymentFilter == filter.$1,
+                onSelected: (selected) {
+                  if (selected) {
+                    setState(() => _approvedPaymentFilter = filter.$1);
+                  }
+                },
+              ),
+            ),
+          const Spacer(),
+          AppText(
+            '$visible / $total',
+            style: TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _compareApprovedPaymentPriority(Booking first, Booking second) {
+    final firstPaid = first.paymentStatus.toLowerCase() == 'paid';
+    final secondPaid = second.paymentStatus.toLowerCase() == 'paid';
+    if (firstPaid != secondPaid) return firstPaid ? 1 : -1;
+    final firstDue = DateTime.tryParse(first.paymentDueAt);
+    final secondDue = DateTime.tryParse(second.paymentDueAt);
+    if (firstDue != null && secondDue != null) {
+      return firstDue.compareTo(secondDue);
+    }
+    if (firstDue != null) return -1;
+    if (secondDue != null) return 1;
+    return 0;
+  }
+
+  Future<void> _payBookingPrototype(Booking booking) async {
+    final paymentProvider = await showDialog<String>(
+      context: context,
+      builder: (_) => PrototypePaymentDialog(
+        amount: _prototypePayableAmount(booking),
+      ),
+    );
+    if (paymentProvider == null || !mounted) return;
+    try {
+      final token = (await AppSession.load()).apiToken;
+      if (token == null || token.isEmpty) {
+        throw const AuthApiException(
+          'Please sign in again to complete this payment.',
+          401,
+        );
+      }
+      await _api.recordPrototypeBookingPayment(
+        token: token,
+        bookingId: booking.id!,
+        provider: paymentProvider,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: AppText(
+            'Prototype payment recorded. No real payment was processed.',
+            localize: true,
+          ),
+        ),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: AppText(
+            _bookingErrorMessage(error, 'start this payment'),
+            localize: true,
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _bookingCard(Booking booking) {
-    final status = '${booking['status'] ?? 'pending'}';
+    final status = _bookingStatus(booking);
+    final canPayBookingPrototype = _awaitingApprovalPayment(booking);
+    final paymentDeadline = DateTime.tryParse(booking.paymentDueAt);
     final approvalDeadline = parseBookingApprovalDeadline(
       booking['approvalExpiresAt'],
     );
@@ -954,16 +1124,22 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                         localize: true,
                       ),
                     ),
-                    _statusPill(status),
+                    _statusPill(
+                      status,
+                      awaitingPayment: canPayBookingPrototype,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 AppText(
-                  _statusGuidance(status),
+                  _statusGuidance(status, awaitingPayment: canPayBookingPrototype),
                   localize: true,
                   key: ValueKey('booking-status-guidance-$status'),
                   style: TextStyle(
-                    color: _statusColor(status),
+                    color: _statusColor(
+                      status,
+                      awaitingPayment:                       canPayBookingPrototype,
+                    ),
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     height: 1.3,
@@ -999,6 +1175,29 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                       height: 1.3,
                     ),
                   ),
+                ],
+                if (canPayBookingPrototype) ...[
+                  const SizedBox(height: 6),
+                  AppText(
+                    'Payment due: \u{20B1} ${_prototypePayableAmount(booking).toStringAsFixed(2)}',
+                    style: TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (paymentDeadline != null)
+                    AppText(
+                      'Pay by ${formatBookingApprovalDeadline(paymentDeadline)}',
+                      key: ValueKey(
+                        'customer-booking-payment-deadline-${booking.id}',
+                      ),
+                      style: TextStyle(
+                        color: AppColors.errorText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                 ],
                 const SizedBox(height: 6),
                 _venueDetail(Icons.location_on_outlined, booking['address']),
@@ -1066,7 +1265,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
-  String _statusLabel(String status) => switch (status.toLowerCase()) {
+  String _statusLabel(String status, {bool awaitingPayment = false}) =>
+      awaitingPayment
+          ? 'Approved · payment due'
+          : switch (status.toLowerCase()) {
     'pending' => 'Awaiting approval',
     'approved' => 'Confirmed',
     'finished' || 'done' || 'completed' => 'Completed',
@@ -1083,8 +1285,11 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
           .join(' '),
   };
 
-  String _localizedStatusLabel(String status) {
-    final label = _statusLabel(status);
+  String _localizedStatusLabel(
+    String status, {
+    bool awaitingPayment = false,
+  }) {
+    final label = _statusLabel(status, awaitingPayment: awaitingPayment);
     return appLanguageText(
       label,
       label,
@@ -1092,7 +1297,10 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     );
   }
 
-  Color _statusColor(String status) => switch (status.toLowerCase()) {
+  Color _statusColor(String status, {bool awaitingPayment = false}) =>
+      awaitingPayment
+          ? const Color(0xFFB85C00)
+          : switch (status.toLowerCase()) {
     'pending' => const Color(0xFFB85C00),
     'approved' ||
     'finished' ||
@@ -1102,18 +1310,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     _ => const Color(0xFF475467),
   };
 
-  String _statusGuidance(String status) => switch (status.toLowerCase()) {
+  String _statusGuidance(String status, {bool awaitingPayment = false}) =>
+      awaitingPayment
+          ? 'The venue approved this booking. Pay the required amount using the test payment form within 15 minutes, or the reservation will expire.'
+          : switch (status.toLowerCase()) {
     'pending' =>
       'Waiting for the venue to approve your request. Not confirmed yet.',
     'approved' => 'Confirmed by the venue. Your booking is ready.',
     'finished' || 'done' || 'completed' => 'This booking has been completed.',
-    'expired' => 'This request expired before it was confirmed.',
+    'expired' => 'This reservation expired because payment was not received within 15 minutes after approval.',
     'cancelled' => 'This booking was cancelled and is no longer reserved.',
     _ => 'Check the booking details or contact the venue for an update.',
   };
 
-  Widget _statusPill(String status) {
-    final color = _statusColor(status);
+  Widget _statusPill(String status, {bool awaitingPayment = false}) {
+    final color = _statusColor(status, awaitingPayment: awaitingPayment);
     return Container(
       key: ValueKey('booking-status-pill-${status.toLowerCase()}'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1122,7 +1333,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: AppText(
-        _localizedStatusLabel(status),
+        _localizedStatusLabel(status, awaitingPayment: awaitingPayment),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w800,
@@ -1482,7 +1693,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
   }
 
   Widget _bookingDetailsCard(Booking booking) {
-    final status = '${booking['status'] ?? 'pending'}';
+    final status = _bookingStatus(booking);
     final normalizedStatus = status.toLowerCase();
     final canDeleteCancelledBooking =
         normalizedStatus == 'cancelled' &&
@@ -1498,6 +1709,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
     final paidAmount = booking.paidAmount;
     final paymentStatus = booking.paymentStatus.toLowerCase();
     final isCashOnArrival = booking.paymentMethod == 'cash_on_arrival';
+    final awaitingApprovalPayment = _awaitingApprovalPayment(booking);
+    final paymentDeadline = DateTime.tryParse(booking.paymentDueAt);
     final remainingBalance = (total - paidAmount).clamp(0, total).toDouble();
     final fitnessPlanType = '${booking['fitnessPlanType'] ?? ''}';
     final coachName = '${booking['fitnessCoachName'] ?? ''}';
@@ -1534,15 +1747,21 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
                 ),
               ),
               const SizedBox(width: 6),
-              _statusPill(status),
+              _statusPill(
+                status,
+                awaitingPayment: awaitingApprovalPayment,
+              ),
             ],
           ),
           const SizedBox(height: 6),
           AppText(
-            _statusGuidance(status),
+            _statusGuidance(status, awaitingPayment: awaitingApprovalPayment),
             localize: true,
             style: TextStyle(
-              color: _statusColor(status),
+              color: _statusColor(
+                status,
+                awaitingPayment: awaitingApprovalPayment,
+              ),
               fontSize: 12,
               fontWeight: FontWeight.w600,
               height: 1.3,
@@ -1633,7 +1852,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
             isCashOnArrival && paymentStatus == 'partial'
                 ? 'Cash downpayment received: \u{20B1} ${paidAmount.toStringAsFixed(2)}'
                 : isCashOnArrival && paymentStatus != 'paid'
-                ? 'Cash downpayment due at venue: \u{20B1} ${downpayment.toStringAsFixed(2)}'
+                ? awaitingApprovalPayment
+                      ? 'Cash downpayment due within 15 minutes: \u{20B1} ${downpayment.toStringAsFixed(2)}'
+                      : 'Cash downpayment due at venue: \u{20B1} ${downpayment.toStringAsFixed(2)}'
                 : paymentStatus == 'paid'
                 ? 'Amount paid: \u{20B1} ${paidAmount.toStringAsFixed(2)}'
                 : '${fitnessPlanType.isNotEmpty ? 'One-time plan total' : 'Amount due'}: ? '
@@ -1654,6 +1875,35 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage> {
               localize: true,
               style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
+          if (awaitingApprovalPayment && paymentDeadline != null) ...[
+            const SizedBox(height: 10),
+            AppText(
+              'Payment deadline: ${formatBookingApprovalDeadline(paymentDeadline)}',
+              style: TextStyle(
+                color: AppColors.errorText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: ValueKey('customer-booking-pay-${booking.id}'),
+                onPressed: booking.id == null
+                    ? null
+                    : () => _payBookingPrototype(booking),
+                icon: const Icon(Icons.credit_card_rounded, size: 18),
+                label: const AppText('Pay now (test payment)', localize: true),
+              ),
+            ),
+            const SizedBox(height: 6),
+            AppText(
+              'Prototype only — no real payment is processed.',
+              localize: true,
+              style: TextStyle(fontSize: 11, color: AppColors.muted),
+            ),
+          ],
           const SizedBox(height: 6),
           const Divider(height: 1),
           const SizedBox(height: 6),
@@ -2005,6 +2255,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
         );
       }
     }
+
   }
   void _removeImage() {
     setState(() {

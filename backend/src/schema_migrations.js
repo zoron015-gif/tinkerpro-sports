@@ -319,6 +319,8 @@ async function ensureBookingsSchema() {
       payment_checkout_session_id VARCHAR(100) NULL,
       payment_reference VARCHAR(100) NULL,
       paid_at DATETIME NULL,
+      payment_due_at DATETIME NULL,
+      payment_expired_at DATETIME NULL,
       status ENUM('pending', 'approved', 'finished', 'cancelled') NOT NULL DEFAULT 'pending',
       approval_reminded_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -361,6 +363,8 @@ async function ensureBookingsSchema() {
     ['payment_refund_status', "VARCHAR(32) NOT NULL DEFAULT 'not_requested'"],
     ['payment_refund_id', 'VARCHAR(100) NULL'],
     ['paid_at', 'DATETIME NULL'],
+    ['payment_due_at', 'DATETIME NULL'],
+    ['payment_expired_at', 'DATETIME NULL'],
   ]) {
     await ensureTableColumn('bookings', name, definition);
   }
@@ -782,6 +786,69 @@ async function ensureVenueHeartsSchema() {
         `INSERT INTO schema_migrations (version, name)
          VALUES (?, ?)`,
         [11, 'booking-approval-deadlines'],
+      );
+    }
+    if (!appliedVersions.has(12)) {
+      await ensureTableColumn('bookings', 'payment_due_at', 'DATETIME NULL');
+      await ensureTableColumn('bookings', 'payment_expired_at', 'DATETIME NULL');
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [12, 'approval-first-online-booking-payments'],
+      );
+    }
+    if (!appliedVersions.has(13)) {
+      await connection.execute(
+        `UPDATE messages approval_message
+         JOIN messages expiry_message
+           ON expiry_message.conversation_id = approval_message.conversation_id
+          AND (
+            expiry_message.created_at > approval_message.created_at
+            OR (
+              expiry_message.created_at = approval_message.created_at
+              AND expiry_message.id > approval_message.id
+            )
+          )
+         JOIN conversations c ON c.id = approval_message.conversation_id
+         SET approval_message.attachment_json = JSON_REMOVE(
+           JSON_SET(
+             approval_message.attachment_json,
+             '$.status', 'approved',
+             '$.approvalStatus', 'approved'
+           ),
+           '$.paymentExpiredAt'
+         )
+         WHERE c.type = 'direct'
+           AND CASE WHEN JSON_VALID(approval_message.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      approval_message.attachment_json, '$.type'
+                    )) END = 'booking_ticket'
+           AND CASE WHEN JSON_VALID(approval_message.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      approval_message.attachment_json, '$.status'
+                    )) END = 'payment_expired'
+           AND CASE WHEN JSON_VALID(expiry_message.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      expiry_message.attachment_json, '$.type'
+                    )) END = 'booking_ticket'
+           AND CASE WHEN JSON_VALID(expiry_message.attachment_json)
+                    THEN JSON_UNQUOTE(JSON_EXTRACT(
+                      expiry_message.attachment_json, '$.status'
+                    )) END = 'payment_expired'
+           AND JSON_UNQUOTE(JSON_EXTRACT(
+             CASE WHEN JSON_VALID(approval_message.attachment_json)
+                  THEN approval_message.attachment_json ELSE 'null' END,
+             '$.bookingId'
+           )) = JSON_UNQUOTE(JSON_EXTRACT(
+             CASE WHEN JSON_VALID(expiry_message.attachment_json)
+                  THEN expiry_message.attachment_json ELSE 'null' END,
+             '$.bookingId'
+           ))`,
+      );
+      await connection.execute(
+        `INSERT INTO schema_migrations (version, name)
+         VALUES (?, ?)`,
+        [13, 'keep-approval-ticket-separate-from-payment-expiry-ticket'],
       );
     }
   } finally {

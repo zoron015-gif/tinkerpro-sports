@@ -25,9 +25,12 @@ class BookingTicketViewModel {
     required this.time,
     required this.amount,
     required this.downpayment,
+    required this.paymentDueAt,
+    required this.paymentExpiredAt,
     required this.ticketCode,
     required this.bookingToken,
     required this.paymentReference,
+    required this.paymentProvider,
     required this.transactionId,
     required this.paymentMethod,
   });
@@ -55,9 +58,12 @@ class BookingTicketViewModel {
   final String time;
   final num? amount;
   final num? downpayment;
+  final String paymentDueAt;
+  final String paymentExpiredAt;
   final String ticketCode;
   final String bookingToken;
   final String paymentReference;
+  final String paymentProvider;
   final String transactionId;
   final String paymentMethod;
 
@@ -101,12 +107,19 @@ class BookingTicketViewModel {
     final date = '${data['bookingDate'] ?? 'Date to be confirmed'}'.trim();
     final time = '${data['startTime'] ?? 'Time to be confirmed'}'.trim();
     final amount = num.tryParse(
-      '${data['amount'] ?? data['total'] ?? ''}',
+      '${type == 'booking_payment_ticket' ? data['amount'] : data['payableAmount'] ?? data['amount'] ?? data['total'] ?? ''}',
     );
-    final downpayment = num.tryParse('${data['downpayment'] ?? ''}');
+    final downpayment = num.tryParse(
+      '${data['downpayment'] ?? data['downpaymentAmount'] ?? ''}',
+    );
+    final paymentDueAt = '${data['paymentDueAt'] ?? ''}'.trim();
+    final paymentExpiredAt = '${data['paymentExpiredAt'] ?? ''}'.trim();
     final ticketCode = '${data['ticketCode'] ?? ''}'.trim();
     final bookingToken = '${data['bookingToken'] ?? ''}'.trim();
     final paymentReference = '${data['paymentReference'] ?? ''}'.trim();
+    final paymentProvider = '${data['paymentProvider'] ?? ''}'
+        .trim()
+        .toLowerCase();
     final transactionId = '${data['transactionId'] ?? ''}'.trim().isNotEmpty
         ? '${data['transactionId'] ?? ''}'.trim()
         : (int.tryParse(bookingId) == null
@@ -139,9 +152,12 @@ class BookingTicketViewModel {
       time: time,
       amount: amount,
       downpayment: downpayment,
+      paymentDueAt: paymentDueAt,
+      paymentExpiredAt: paymentExpiredAt,
       ticketCode: ticketCode,
       bookingToken: bookingToken,
       paymentReference: paymentReference,
+      paymentProvider: paymentProvider,
       transactionId: transactionId,
       paymentMethod: paymentMethod,
     );
@@ -150,17 +166,30 @@ class BookingTicketViewModel {
   bool get isBookingRequest => type == 'booking';
 
   bool get expired =>
-      status == 'expired' || approvalStatus == 'expired';
+      status == 'expired' || approvalStatus == 'expired' || paymentExpired;
+
+  bool get paymentExpired =>
+      status == 'payment_expired' || approvalStatus == 'payment_expired';
 
   bool get approved =>
-      BookingStatusParser.parse(status).isApproved ||
-      BookingStatusParser.parse(approvalStatus).isApproved ||
-      (type == 'booking_ticket' && status.isEmpty && approvalStatus.isEmpty);
+      type == 'booking_ticket' &&
+      (BookingStatusParser.parse(status).isApproved ||
+          BookingStatusParser.parse(approvalStatus).isApproved ||
+          (status.isEmpty && approvalStatus.isEmpty));
 
   bool get isPaid =>
       paymentStatus == 'paid' ||
       paymentStatus == 'payment_received' ||
       (type == 'booking_payment_ticket' && paymentStatus.isEmpty);
+
+  bool get isDownpaymentReceived =>
+      paymentMethod == 'cash_on_arrival' && paymentStatus == 'partial';
+
+  bool get awaitingOnlinePayment =>
+      approved &&
+      paymentStatus == 'unpaid' &&
+      paymentDueAt.isNotEmpty &&
+      !expired;
 
   bool get isFitnessBooking => fitnessPlanType.isNotEmpty;
 
@@ -175,8 +204,14 @@ class BookingTicketViewModel {
   String get bookingReference => 'BK-$bookingId';
 
   String get detailTitle =>
-      expired
+      paymentExpired
+          ? 'PAYMENT WINDOW EXPIRED'
+          : expired
           ? 'BOOKING REQUEST EXPIRED'
+          : awaitingOnlinePayment
+          ? 'APPROVED · PAYMENT DUE'
+          : isDownpaymentReceived
+          ? 'DOWNPAYMENT RECEIVED'
           : approved
           ? 'BOOKING CONFIRMED'
           : isBookingRequest
@@ -184,8 +219,14 @@ class BookingTicketViewModel {
           : 'PAYMENT RECEIVED';
 
   String get badgeLabel =>
-      expired
+      paymentExpired
+          ? 'WINDOW ENDED'
+          : expired
           ? 'EXPIRED'
+          : awaitingOnlinePayment
+          ? 'PAYMENT DUE'
+          : isDownpaymentReceived
+          ? 'DOWNPAYMENT RECEIVED'
           : approved
           ? 'APPROVED'
           : isBookingRequest
@@ -193,7 +234,23 @@ class BookingTicketViewModel {
           : 'PENDING APPROVAL';
 
   String get totalLabel =>
-      isPaid ? 'TOTAL PAID' : paymentMethod == 'cash_on_arrival' ? 'DUE AT VENUE' : 'BOOKING TOTAL';
+      isPaid
+      ? 'TOTAL PAID'
+      : expired
+      ? 'PAYMENT WINDOW ENDED'
+      : isDownpaymentReceived
+      ? 'DOWNPAYMENT RECEIVED'
+      : awaitingOnlinePayment && paymentMethod == 'cash_on_arrival'
+      ? 'DOWNPAYMENT DUE · 15 MIN'
+      : awaitingOnlinePayment
+      ? 'PAY ONLINE · 15 MIN'
+      : paymentMethod == 'cash_on_arrival'
+      ? approved
+            ? 'COA DUE AT VENUE'
+            : 'COA AFTER APPROVAL'
+      : approved
+      ? 'PAYABLE NOW'
+      : 'DUE AFTER APPROVAL';
 
   String get titleText =>
       isFitnessBooking
@@ -203,8 +260,14 @@ class BookingTicketViewModel {
           : 'TINKERPRO  ·  COURT PASS';
 
   String get statusText =>
-      expired
+      paymentExpired
+          ? 'PAYMENT WINDOW EXPIRED'
+          : expired
           ? 'BOOKING REQUEST EXPIRED'
+          : isDownpaymentReceived
+          ? 'DOWNPAYMENT RECEIPT'
+          : awaitingOnlinePayment
+          ? 'PAYMENT REQUIRED'
           : isBookingRequest
           ? 'BOOKING REQUEST'
           : isPaid
@@ -212,10 +275,16 @@ class BookingTicketViewModel {
           : 'BOOKING CONFIRMATION';
 
   String get accessLabel =>
-      expired
+      paymentExpired
+          ? 'PAYMENT WINDOW EXPIRED'
+          : expired
           ? 'BOOKING REQUEST EXPIRED'
+          : isDownpaymentReceived
+          ? 'DOWNPAYMENT RECEIVED'
           : isBookingRequest
           ? 'BOOKING REQUEST'
+          : awaitingOnlinePayment
+          ? 'PAYMENT REQUIRED'
           : approved
           ? 'BOOKING CONFIRMED'
           : 'PAYMENT RECEIVED';

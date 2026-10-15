@@ -153,6 +153,17 @@ extension AuthApiBookingOperations on AuthApi {
     headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
   );
 
+  Future<Map<String, dynamic>> recordPrototypeBookingPayment({
+    required String token,
+    required int bookingId,
+    required String provider,
+  }) => _request(
+    'POST',
+    '/api/bookings/$bookingId/prototype-payment',
+    body: {'paymentMethod': 'prototype_card', 'provider': provider},
+    headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
+  );
+
   Future<bool> payMongoPaymentsEnabled(String token) async {
     final response = await _request(
       'GET',
@@ -203,10 +214,7 @@ extension AuthApiBookingOperations on AuthApi {
     await _request(
       'PATCH',
       '/api/merchant/bookings/$bookingId/decline',
-      headers: _authHeaders(
-        token,
-        extra: {'Content-Type': 'application/json'},
-      ),
+      headers: _authHeaders(token, extra: {'Content-Type': 'application/json'}),
       body: {'reason': reason},
     );
   }
