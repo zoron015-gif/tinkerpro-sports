@@ -274,8 +274,20 @@ extension _MerchantDashboardAnalyticsSection on _MerchantDashboardPageState {
                 overflow: TextOverflow.ellipsis,
               ),
               style: OutlinedButton.styleFrom(
-                foregroundColor: _merchantNavy,
-                side: BorderSide(color: _merchantLine),
+                foregroundColor: AppPreferences.instance.darkMode
+                    ? AppColors.accessibleForeground(
+                        _merchantOrange,
+                        AppColors.darkSoftOrangeAlt,
+                      )
+                    : _merchantNavy,
+                backgroundColor: AppPreferences.instance.darkMode
+                    ? AppColors.darkSoftOrangeAlt
+                    : null,
+                side: BorderSide(
+                  color: AppPreferences.instance.darkMode
+                      ? _merchantOrange
+                      : _merchantLine,
+                ),
                 minimumSize: const Size(0, 40),
                 padding: AppSpacing.buttonPadding,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,

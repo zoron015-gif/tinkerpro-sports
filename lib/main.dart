@@ -187,8 +187,17 @@ class _OverviewPageState extends State<OverviewPage> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     await AppPreferences.instance.load();
+    try {
+      await AppSession.load().then((session) => session.clear());
+    } on Exception {
+      if (context.mounted) {
+        _showMessage(context, 'Could not log out. Please try again.');
+      }
+      return;
+    }
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const OverviewPage()),
       (_) => false,
@@ -197,9 +206,17 @@ class _OverviewPageState extends State<OverviewPage> {
       Future.wait<void>([
         FirebaseAuth.instance.signOut(),
         GoogleSignIn.instance.signOut(),
-        AppSession.load().then((session) => session.clear()),
       ]).then<void>((_) {}, onError: (_, _) {}),
     );
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: AppText('You have been logged out successfully.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _navy,
+        ),
+      );
   }
 
   void _showMessage(BuildContext context, String message) {

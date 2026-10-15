@@ -129,10 +129,20 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-messages'),
+<<<<<<< Updated upstream
                     icon: _countBadge(Icons.send_outlined, unreadMessageCount),
                     selectedIcon: _countBadge(
                       Icons.send_rounded,
                       unreadMessageCount,
+=======
+                    icon: _countBadge(
+                      messagesSquareIcon,
+                      widget.unreadMessageCount,
+                    ),
+                    selectedIcon: _countBadge(
+                      messagesSquareIcon,
+                      widget.unreadMessageCount,
+>>>>>>> Stashed changes
                     ),
                     label: label('Messages', 'Mga mensahe'),
                   ),
@@ -170,10 +180,13 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: const ValueKey('news-feed-nav-messages'),
-                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
+                    icon: _countBadge(
+                      messagesSquareIcon,
+                      widget.unreadMessageCount,
+                    ),
                     selectedIcon: _countBadge(
-                      Icons.send_rounded,
-                      unreadMessageCount,
+                      messagesSquareIcon,
+                      widget.unreadMessageCount,
                     ),
                     label: label('Messages', 'Mga mensahe'),
                   ),
