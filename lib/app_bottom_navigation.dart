@@ -129,12 +129,6 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: ValueKey('merchant-dashboard-nav-messages'),
-<<<<<<< Updated upstream
-                    icon: _countBadge(Icons.send_outlined, unreadMessageCount),
-                    selectedIcon: _countBadge(
-                      Icons.send_rounded,
-                      unreadMessageCount,
-=======
                     icon: _countBadge(
                       messagesSquareIcon,
                       widget.unreadMessageCount,
@@ -142,7 +136,6 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                     selectedIcon: _countBadge(
                       messagesSquareIcon,
                       widget.unreadMessageCount,
->>>>>>> Stashed changes
                     ),
                     label: label('Messages', 'Mga mensahe'),
                   ),
