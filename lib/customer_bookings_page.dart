@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 
 import 'app_session.dart';
 import 'app_design_system.dart';
-import 'app_localization.dart';
 import 'auth_api.dart';
 import 'core/business_type.dart';
 import 'core/booking_approval_deadline.dart';
