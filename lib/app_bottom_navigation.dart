@@ -161,8 +161,8 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
               : [
                   NavigationDestination(
                     key: const ValueKey('news-feed-nav-explore'),
-                    icon: Icon(Icons.location_on_outlined),
-                    selectedIcon: Icon(Icons.location_on_rounded),
+                    icon: const Icon(Icons.search_rounded),
+                    selectedIcon: const Icon(Icons.search_rounded),
                     label: label('Explore', 'Mag-explore'),
                   ),
                   NavigationDestination(
@@ -185,12 +185,8 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
                   ),
                   NavigationDestination(
                     key: const ValueKey('news-feed-nav-bookings'),
-                    icon: _countBadge(
-                      Icons.calendar_today_outlined,
-                      widget.unreadBookingCount,
-                    ),
-                    selectedIcon: _countBadge(
-                      Icons.calendar_today_rounded,
+                    icon: _calendarClockBadge(widget.unreadBookingCount),
+                    selectedIcon: _calendarClockBadge(
                       widget.unreadBookingCount,
                     ),
                     label: label('Bookings', 'Mga booking'),
@@ -211,5 +207,34 @@ class _AppBottomNavigationState extends State<AppBottomNavigation> {
     isLabelVisible: count > 0,
     label: AppText(count > 99 ? '99+' : '$count'),
     child: Icon(icon, size: 24),
+  );
+
+  Widget _calendarClockBadge(int count) => Badge(
+    isLabelVisible: count > 0,
+    label: AppText(count > 99 ? '99+' : '$count'),
+    child: SizedBox(
+      width: 24,
+      height: 24,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Icon(Icons.calendar_month_outlined, size: 22),
+          ),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.access_time_rounded, size: 12),
+            ),
+          ),
+        ],
+      ),
+    ),
   );
 }

@@ -16,7 +16,6 @@ import 'merchant_dashboard.dart';
 import 'app_session.dart';
 import 'message_notification_host.dart';
 import 'messages_dashboard.dart';
-import 'scroll_to_top_overlay.dart';
 
 import 'dart:async';
 
@@ -50,19 +49,12 @@ class MyApp extends StatelessWidget {
 
   AppPreferences get _preferences => _dependencies.preferences;
 
-  static final _scrollToTopController = ScrollToTopOverlayController();
-  static final ScrollToTopNavigatorObserver _scrollObserver =
-      ScrollToTopNavigatorObserver(
-        onNavigationChanged: _scrollToTopController.reset,
-      );
-
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _preferences,
     builder: (context, _) {
       return MaterialApp(
         navigatorKey: _rootNavigatorKey,
-        navigatorObservers: [MyApp._scrollObserver],
         title: 'TinkerPro',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.configured(
@@ -86,20 +78,17 @@ class MyApp extends StatelessWidget {
                 _preferences.textScale,
               ),
             ),
-            child: ScrollToTopOverlay(
-              controller: MyApp._scrollToTopController,
-              child: MessageNotificationHost(
-                child: child ?? const SizedBox.shrink(),
-                onOpenConversation: (conversationId) {
-                  _rootNavigatorKey.currentState?.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MessagesDashboardPage(
-                        initialConversationId: conversationId,
-                      ),
+            child: MessageNotificationHost(
+              child: child ?? const SizedBox.shrink(),
+              onOpenConversation: (conversationId) {
+                _rootNavigatorKey.currentState?.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MessagesDashboardPage(
+                      initialConversationId: conversationId,
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           );
         },
