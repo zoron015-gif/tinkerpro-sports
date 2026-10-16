@@ -1861,3 +1861,57 @@ class _BottomCallout extends StatelessWidget {
     );
   }
 }
+
+class PrototypePaymentDialog extends StatelessWidget {
+  const PrototypePaymentDialog({super.key, required this.amount});
+
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(
+            'Payment',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          AppText(
+            'Pay $amount',
+            style: TextStyle(
+              color: _orange,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          ElevatedButton(
+            onPressed: () => print('Payment successful'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.all(12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const AppText('Pay now'),
+          ),
+        ],
+      ),
+    );
+  }
+}
