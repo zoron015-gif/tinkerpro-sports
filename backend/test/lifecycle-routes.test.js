@@ -207,6 +207,52 @@ function makeConnection() {
         return response(db.declineBooking ? [db.declineBooking] : []);
       }
       if (
+        sql.includes('paymentDeadlineActive') &&
+        sql.includes('b.customer_id = ?') &&
+        sql.includes('FOR UPDATE')
+      ) {
+        return response(
+          db.prototypePaymentBooking &&
+            Number(params[0]) === db.prototypePaymentBooking.id &&
+            String(params[1]) === String(db.prototypePaymentBooking.customerId)
+            ? [db.prototypePaymentBooking]
+            : [],
+        );
+      }
+      if (
+        sql.includes('b.payment_due_at AS paymentDueAt') &&
+        sql.includes('WHERE b.id = ? AND v.merchant_id = ? LIMIT 1')
+      ) {
+        return response([{
+          id: Number(params[0]),
+          customerId: 42,
+          venueId: 7,
+          bookingDate: '2026-10-01',
+          startTime: '09:00:00',
+          durationHours: 2,
+          players: 6,
+          totalAmount: 270,
+          downpaymentAmount: 135,
+          paymentReference: null,
+          paymentMethod: 'online',
+          paymentStatus: 'unpaid',
+          paymentDueAt: '2026-10-15 10:00:00',
+          businessType: 'Sports',
+          venueName: 'Test Court',
+          sportType: 'Basketball',
+          eventType: null,
+          fitnessPlanType: null,
+          fitnessCategory: null,
+          fitnessCoachName: null,
+          fitnessCoachDurationMonths: null,
+          fitnessPlanPrice: null,
+          fitnessCoachPrice: null,
+          slotNumber: 1,
+          slotNumbers: [],
+          occupiesFullStudio: 1,
+        }]);
+      }
+      if (
         sql.includes("UPDATE bookings") &&
         sql.includes("SET status = 'cancelled'") &&
         sql.includes('paid_amount = 0')
@@ -382,9 +428,12 @@ function resetDatabase() {
       paymentMethod: 'online',
       paymentStatus: 'unpaid',
       paidAmount: 0,
-      status: 'pending',
+      status: 'approved',
+      paymentDueAt: '2026-10-15 10:00:00',
+      paymentDeadlineActive: 1,
     },
     webhookBooking: null,
+    prototypePaymentBooking: null,
   };
   paymentBooking = db.paymentBooking;
   attendanceBooking = {
@@ -494,6 +543,9 @@ before(async () => {
       }
       if (sql.includes('SELECT id, total_amount AS totalAmount')) {
         return response(paymentBooking ? [paymentBooking] : []);
+      }
+      if (sql.includes('SET payment_checkout_session_id = ?')) {
+        return [{ affectedRows: 1 }, []];
       }
       if (sql.includes('FROM venue_reviews r INNER JOIN users u')) {
         return response(db.venueReviews);
@@ -1049,6 +1101,51 @@ test('message history keeps older messages visible across duplicate booking chat
   assert.ok(historyQuery);
   assert.match(historyQuery.sql, /m\.conversation_id IN \(\?, \?\)/);
   assert.deepEqual(historyQuery.params, ['42', 602, 601, '42']);
+});
+
+test('message history hides duplicate COA receipt when its approval ticket exists', async () => {
+  db.messageReadScope = {
+    type: 'direct',
+    archivedAt: null,
+    peerId: 88,
+  };
+  db.duplicateDirectConversationIds = [602];
+  db.messageRows = [
+    {
+      id: 910,
+      conversationId: 602,
+      senderId: '88',
+      body: 'Booking approved.',
+      attachmentJson: JSON.stringify({
+        type: 'booking_ticket',
+        bookingId: 703,
+        status: 'approved',
+        paymentMethod: 'cash_on_arrival',
+      }),
+    },
+    {
+      id: 911,
+      conversationId: 602,
+      senderId: '42',
+      body: 'Downpayment received.',
+      attachmentJson: JSON.stringify({
+        type: 'booking_payment_ticket',
+        bookingId: 703,
+        status: 'partial',
+        paymentMethod: 'cash_on_arrival',
+        paymentStatus: 'partial',
+      }),
+    },
+  ];
+  db.ticketVenueNames.set(703, 'Test Court');
+
+  const response = await request('/api/messages/conversations/602');
+
+  assert.equal(response.status, 200);
+  const { messages } = await response.json();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].id, 910);
+  assert.equal(messages[0].attachment.type, 'booking_ticket');
 });
 
 test('booking numeric fields reject booleans and blank numeric strings', async () => {
@@ -2000,7 +2097,7 @@ test('sports booking requests do not block pending requests for the same slot', 
   assert.ok(!overlapQuery.sql.includes("status IN ('pending', 'approved')"));
 });
 
-test('booking success calculates add-on charges and downpayment', async () => {
+test('booking success records the payment obligation without collecting it', async () => {
   const response = await request('/api/bookings', {
     method: 'POST',
     headers: { 'user-agent': 'LifecycleAuditTest/1.0' },
@@ -2018,9 +2115,11 @@ test('booking success calculates add-on charges and downpayment', async () => {
   const { booking } = await response.json();
   assert.equal(booking.total, 270);
   assert.equal(booking.downpayment, 270);
+  assert.equal(booking.payableAmount, 270);
   assert.equal(booking.extraPlayers, 2);
   assert.equal(booking.extraPlayerCharge, 30);
   assert.equal(booking.status, 'pending');
+  assert.equal(booking.paymentMethod, 'online');
   assert.equal(booking.transactionId, 'TP-TXN-00000601');
   assert.equal(typeof booking.bookingToken, 'string');
   assert.match(response.headers.get('x-request-id'), /^[0-9a-f-]{36}$/i);
@@ -2032,6 +2131,8 @@ test('booking success calculates add-on charges and downpayment', async () => {
   );
   assert.ok(requestTicket);
   assert.equal(JSON.parse(requestTicket.params[3]).venueName, 'Test Court');
+  assert.match(requestTicket.params[2], /No payment is due while the merchant reviews/);
+  assert.match(requestTicket.params[2], /pay the full amount .* within 15 minutes/);
   const bookingInsert = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO bookings'),
   );
@@ -2054,6 +2155,9 @@ test('booking success calculates add-on charges and downpayment', async () => {
     paymentMethod: 'online',
     total: 270,
     downpayment: 270,
+    transactionId: 'TP-TXN-00000601',
+    bookingReference: 'BK-601',
+    payableAmount: 270,
   });
   assert.equal(activityInsert.params[8], '42');
   assert.equal(activityInsert.params[9], 'customer');
@@ -2620,26 +2724,43 @@ test('merchant approval issues a booking ticket', async () => {
   assert.equal(body.message, 'Booking approved and ticket issued.');
   assert.equal(typeof body.ticketCode, 'string');
   assert.equal(body.transactionId, 'TP-TXN-00000501');
+  assert.equal(body.payableAmount, 270);
+  assert.equal(body.paymentDueAt, '2026-10-15 10:00:00');
   const ticketMessage = db.calls.find(({ sql }) =>
     sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
   );
   assert.ok(ticketMessage);
+  assert.match(
+    ticketMessage.params[2],
+    /Pay ₱270\.00 online within 15 minutes/,
+  );
   const ticket = JSON.parse(ticketMessage.params[3]);
   assert.equal(ticket.transactionId, body.transactionId);
   assert.equal(ticket.ticketCode, body.ticketCode);
   assert.equal(ticket.venueName, 'Test Court');
+  assert.equal(ticket.payableAmount, 270);
+  assert.equal(ticket.paymentStatus, 'unpaid');
+  assert.equal(ticket.paymentDueAt, body.paymentDueAt);
   const approvalUpdate = db.calls.find(({ sql }) =>
     sql.includes("SET b.status = 'approved'"),
   );
   assert.ok(approvalUpdate);
-  const requestTicketUpdate = db.calls.find(({ sql }) =>
-    sql.includes('UPDATE messages m') &&
-    sql.includes("m.attachment_json, '$.status', 'approved'"),
+  assert.equal(
+    db.calls.some(({ sql }) =>
+      sql.includes('UPDATE messages m') &&
+      sql.includes("m.attachment_json, '$.status', 'approved'") &&
+      sql.includes("= 'booking'"),
+    ),
+    false,
+    'approval must leave the customer request ticket unchanged',
   );
-  assert.ok(requestTicketUpdate);
   assert.match(
     approvalUpdate.sql,
-    /\(b\.payment_method = 'online' AND b\.payment_status = 'paid'\)/,
+    /WHEN b\.payment_status = 'unpaid'/,
+  );
+  assert.match(
+    approvalUpdate.sql,
+    /DATE_ADD\(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE\)/,
   );
   assert.match(
     approvalUpdate.sql,
@@ -2650,7 +2771,7 @@ test('merchant approval issues a booking ticket', async () => {
     /b\.created_at <= CURRENT_TIMESTAMP - INTERVAL 15 MINUTE/,
   );
   assert.doesNotMatch(
-    approvalUpdate.sql.split('AND (')[0],
+    approvalUpdate.sql.split('WHERE')[1].split('AND NOT')[0],
     /payment_method|payment_status|paid_amount/,
   );
 });
@@ -3397,7 +3518,148 @@ test('payment checkout reports provider and missing-booking failures', async () 
   }
 });
 
-test('verified PayMongo payment adds one pending-approval ticket to booking chat', async () => {
+test('prototype payment records an approved online payment without card data', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.NODE_ENV;
+  db.prototypePaymentBooking = {
+    id: 501,
+    customerId: 42,
+    venueId: 7,
+    totalAmount: 270,
+    paymentMethod: 'online',
+    paymentStatus: 'unpaid',
+    status: 'approved',
+    paymentDueAt: '2026-10-15 10:00:00',
+    paymentDeadlineActive: 1,
+    merchantId: 88,
+    venueName: 'Test Court',
+    businessType: 'Sports',
+  };
+  try {
+    const response = await request('/api/bookings/501/prototype-payment', {
+      method: 'POST',
+      body: { paymentMethod: 'prototype_card', provider: 'card' },
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.received, true);
+    assert.equal(body.prototype, true);
+    assert.equal(body.bookingId, 501);
+    assert.equal(body.amount, 270);
+    assert.equal(body.transactionId, 'TP-TXN-00000501');
+    const paymentUpdate = db.calls.find(({ sql }) =>
+      sql.includes('SET payment_status = ?, paid_amount = ?'),
+    );
+    assert.ok(paymentUpdate);
+    assert.equal(paymentUpdate.params[0], 'paid');
+    assert.equal(paymentUpdate.params[1], 270);
+    assert.match(paymentUpdate.params[2], /^PROTOTYPE-501-/);
+    const receiptMessage = db.calls.find(({ sql, params }) =>
+      sql.includes('INSERT INTO messages') &&
+      JSON.parse(params[3]).type === 'booking_payment_ticket',
+    );
+    assert.ok(receiptMessage);
+    assert.match(receiptMessage.params[2], /no real payment was processed/i);
+    assert.equal(
+      JSON.parse(receiptMessage.params[3]).paymentProvider,
+      'card',
+    );
+    assert.equal(
+      db.calls.filter(({ sql }) => sql.includes('INSERT INTO user_activity_logs')).length,
+      2,
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test('prototype payment rejects an unsupported payment provider', async () => {
+  const response = await request('/api/bookings/501/prototype-payment', {
+    method: 'POST',
+    body: { paymentMethod: 'prototype_card', provider: 'bank_transfer' },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'A valid booking and prototype payment method are required.',
+  });
+});
+
+test('prototype payment records only the approved COA downpayment', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.NODE_ENV;
+  db.prototypePaymentBooking = {
+    id: 502,
+    customerId: 42,
+    venueId: 7,
+    totalAmount: 500,
+    downpaymentAmount: 250,
+    paymentMethod: 'cash_on_arrival',
+    paymentStatus: 'unpaid',
+    status: 'approved',
+    paymentDueAt: '2026-10-15 10:00:00',
+    paymentDeadlineActive: 1,
+    merchantId: 88,
+    venueName: 'Test Court',
+    businessType: 'Sports',
+  };
+  try {
+    const response = await request('/api/bookings/502/prototype-payment', {
+      method: 'POST',
+      body: { paymentMethod: 'prototype_card', provider: 'maya' },
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.amount, 250);
+    const paymentUpdate = db.calls.find(({ sql }) =>
+      sql.includes('SET payment_status = ?, paid_amount = ?'),
+    );
+    assert.ok(paymentUpdate);
+    assert.equal(paymentUpdate.params[0], 'partial');
+    assert.equal(paymentUpdate.params[1], 250);
+    assert.equal(
+      db.calls.some(({ sql, params }) =>
+        sql.includes('INSERT INTO messages') &&
+        JSON.parse(params[3]).type === 'booking_payment_ticket',
+      ),
+      false,
+    );
+    const approvalTicketUpdate = db.calls.find(({ sql }) =>
+      sql.includes('UPDATE messages m') &&
+      sql.includes("'$.paymentStatus', ?"),
+    );
+    assert.ok(approvalTicketUpdate);
+    assert.equal(approvalTicketUpdate.params[0], 'partial');
+    assert.equal(approvalTicketUpdate.params[1], 250);
+    assert.equal(approvalTicketUpdate.params[3], 'maya');
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test('prototype payment is disabled in production', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    const response = await request('/api/bookings/501/prototype-payment', {
+      method: 'POST',
+      body: { paymentMethod: 'prototype_card' },
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: 'Prototype payments are disabled in production.',
+    });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test('verified PayMongo payment records payment for an approved booking', async () => {
   const originalSecret = process.env.PAYMONGO_WEBHOOK_SECRET;
   const originalPaymongoSecret = process.env.PAYMONGO_SECRET_KEY;
   const originalFetchImpl = global.fetch;
@@ -3429,7 +3691,9 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     paidAmount: 0,
     paymentMethod: 'online',
     paymentStatus: 'unpaid',
-    status: 'pending',
+    status: 'approved',
+    paymentDueAt: '2026-10-15 10:00:00',
+    paymentDeadlineExpired: 0,
     venueName: 'Test Court',
     sportType: 'Basketball',
     businessType: 'Sports',
@@ -3485,7 +3749,7 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     assert.equal(ticket.transactionId, 'TP-TXN-00000501');
     assert.equal(ticket.businessType, 'Sports');
     assert.equal(ticket.status, 'payment_received');
-    assert.equal(ticket.approvalStatus, 'pending');
+    assert.equal(ticket.approvalStatus, 'approved');
     assert.equal(ticket.venueName, 'Test Court');
     assert.equal(ticket.sportType, 'Basketball');
     assert.equal(ticket.amount, 270);
@@ -3517,7 +3781,9 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
       paymentStatus: 'unpaid',
       paidAmount: 0,
       status: 'cancelled',
-      paymentRefundStatus: 'pending',
+      paymentRefundStatus: 'not_requested',
+      paymentExpiredAt: '2026-10-15T09:00:00',
+      paymentDeadlineExpired: 0,
       paymentCheckoutSessionId: 'cs_test_cancelled',
     };
     const cancelledPayload = {
@@ -3548,6 +3814,7 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
       .createHmac('sha256', process.env.PAYMONGO_WEBHOOK_SECRET)
       .update(`${timestamp}.${cancelledBody}`)
       .digest('hex');
+    const lateWebhookCallIndex = db.calls.length;
     const latePayment = await request('/api/payments/paymongo/webhook', {
       method: 'POST',
       headers: {
@@ -3565,6 +3832,23 @@ test('verified PayMongo payment adds one pending-approval ticket to booking chat
     assert.equal(refundRequests.length, 1);
     assert.equal(db.webhookBooking.paymentRefundStatus, 'succeeded');
     assert.equal(db.webhookBooking.paymentRefundId, 'ref_test_late');
+    const lateWebhookCalls = db.calls.slice(lateWebhookCallIndex);
+    assert.equal(
+      lateWebhookCalls.some(({ sql }) =>
+        sql.trimStart().startsWith('UPDATE messages'),
+      ),
+      false,
+    );
+    const lateExpiryTickets = lateWebhookCalls
+      .filter(({ sql }) =>
+        sql.includes('INSERT INTO messages') && sql.includes('attachment_json'),
+      )
+      .map(({ params }) => JSON.parse(params[3]))
+      .filter((attachment) =>
+        attachment.type === 'booking_ticket' &&
+        attachment.status === 'payment_expired',
+      );
+    assert.equal(lateExpiryTickets.length, 1);
     db.webhookBooking.paymentStatus = 'paid';
     db.webhookBooking.paidAmount = 270;
     const duplicateLatePayment = await request('/api/payments/paymongo/webhook', {

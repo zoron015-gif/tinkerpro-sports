@@ -63,7 +63,7 @@ void main() {
     final action = tester.widget<FilledButton>(
       find.widgetWithText(
         FilledButton,
-        'Continue · \u{20B1} 250.00 downpayment',
+        'Request booking',
       ),
     );
     expect(action.style!.backgroundColor!.resolve({}), AppPalette.blue.color);
@@ -152,7 +152,7 @@ void main() {
       expect(find.textContaining('Monthly · \u{20B1} 1200.00'), findsOneWidget);
       expect(find.textContaining('Yearly · \u{20B1} 10800.00'), findsOneWidget);
       expect(
-        find.textContaining('Continue · \u{20B1} 250.00 downpayment'),
+        find.textContaining('Request booking'),
         findsOneWidget,
       );
       final monthlyPlan = find.textContaining('Monthly · \u{20B1} 1200.00');
@@ -261,7 +261,7 @@ void main() {
 
       final submitButton = find.widgetWithText(
         FilledButton,
-        'Continue · \u{20B1} 250.00 downpayment',
+        'Request booking',
       );
       await tester.ensureVisible(submitButton);
       await tester.tap(submitButton);
@@ -372,7 +372,7 @@ void main() {
       await tester.pumpAndSettle();
       final continueButton = find.widgetWithText(
         FilledButton,
-        'Continue · \u{20B1} 250.00 downpayment',
+        'Request booking',
       );
       await tester.ensureVisible(continueButton);
       await tester.tap(continueButton);

@@ -201,12 +201,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(
-        'Pay \u{20B1} 5000.00 cash as a downpayment at the venue and \u{20B1} 5000.00 cash as the remaining balance.',
+        'After approval, pay \u{20B1} 5000.00 cash as a downpayment at the venue and \u{20B1} 5000.00 cash as the remaining balance.',
       ),
       findsOneWidget,
     );
     expect(find.text('Event total'), findsOneWidget);
-    expect(find.text('Cash downpayment due at venue'), findsOneWidget);
+    expect(find.text('Cash downpayment after approval'), findsOneWidget);
     await tester.ensureVisible(find.text('Schedule'));
     await tester.pumpAndSettle();
     expect(find.textContaining('8:00 AM - 12:00 AM'), findsWidgets);
@@ -260,7 +260,7 @@ void main() {
   });
 
   testWidgets(
-    'offline COA booking works when online payments are unavailable',
+    'online event request does not start payment before approval',
     (tester) async {
       tester.view.physicalSize = const Size(320, 800);
       tester.view.devicePixelRatio = 1;
@@ -271,12 +271,15 @@ void main() {
         'session_api_token': 'test-token',
       });
       var bookingRequests = 0;
+      var checkoutRequests = 0;
+      var configRequests = 0;
       final api = AuthApi(
         client: MockClient((request) async {
           if (request.method == 'GET' && request.url.path == '/api/bookings') {
             return http.Response(jsonEncode({'bookings': []}), 200);
           }
           if (request.url.path == '/api/payments/paymongo/config') {
+            configRequests++;
             return http.Response(
               jsonEncode({'onlinePaymentsEnabled': false}),
               200,
@@ -293,6 +296,9 @@ void main() {
               }),
               201,
             );
+          }
+          if (request.url.path == '/api/payments/paymongo/checkout') {
+            checkoutRequests++;
           }
           return http.Response('{}', 404);
         }),
@@ -328,7 +334,7 @@ void main() {
       await tester.ensureVisible(submitButton);
       expect(find.text('Online'), findsOneWidget);
       expect(
-        find.textContaining('Continue · \u{20B1} 5000.00'),
+        find.text('Request booking'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -336,42 +342,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(submitButton);
       await tester.pumpAndSettle();
-      expect(find.text('Choose online payment'), findsOneWidget);
-
-      await tester.tap(find.text('PayMaya'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Online payments are unavailable right now'),
-        findsOneWidget,
-      );
-      tester
-          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger).first)
-          .hideCurrentSnackBar();
-      await tester.pumpAndSettle();
-      expect(bookingRequests, 0);
-      expect(find.text('Use Cash on Arrival'), findsNothing);
-
-      final coaOption = find.text('COA');
-      await tester.scrollUntilVisible(
-        coaOption,
-        120,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(coaOption);
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        submitButton,
-        120,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
-      await tester.pumpAndSettle();
-      await tester.tap(submitButton);
-      await tester.pumpAndSettle();
       expect(find.text('Confirm event booking'), findsOneWidget);
       await tester.tap(find.text('Confirm booking'));
       await tester.pumpAndSettle();
       expect(bookingRequests, 1);
+      expect(configRequests, 0);
+      expect(checkoutRequests, 0);
     },
   );
 }

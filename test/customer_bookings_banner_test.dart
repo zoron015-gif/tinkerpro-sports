@@ -262,6 +262,283 @@ void main() {
     );
   });
 
+  testWidgets('approved online bookings notify and accept prototype payment', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final booking = <String, dynamic>{
+      ..._approvedBooking,
+      'paymentMethod': 'online',
+      'paymentStatus': 'unpaid',
+      'paidAmount': 0,
+      'paymentDueAt': '2026-10-15T10:00:00',
+      'total': 500,
+      'downpayment': 500,
+    };
+    Map<String, dynamic>? paymentPayload;
+    var prototypePaymentRequested = false;
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [booking],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        if (request.url.path == '/api/bookings/12/prototype-payment' &&
+            request.method == 'POST') {
+          prototypePaymentRequested = true;
+          paymentPayload = jsonDecode(request.body) as Map<String, dynamic>;
+          booking['paymentStatus'] = 'paid';
+          booking['paidAmount'] = 500;
+          return http.Response(
+            jsonEncode({
+              'received': true,
+              'prototype': true,
+              'bookingId': 12,
+              'amount': 500,
+            }),
+            200,
+          );
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Approved · payment due'), findsOneWidget);
+    expect(
+      find.textContaining('The venue approved this booking.'),
+      findsOneWidget,
+    );
+
+    final details = find.byKey(const ValueKey('customer-booking-details-12'));
+    await tester.drag(find.byType(ListView).last, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(details);
+    await tester.tap(details);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('customer-booking-delete-12')),
+      findsNothing,
+    );
+    final payButton = find.byKey(const ValueKey('customer-booking-pay-12'));
+    await tester.ensureVisible(payButton);
+    await tester.tap(payButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(
+      const ValueKey('prototype-payment-provider'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Credit/debit card').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('prototype-payment-cardholder')),
+      'Test Customer',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('prototype-payment-card-number')),
+      '4242 4242 4242 4242',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('prototype-payment-expiry')),
+      '12/30',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('prototype-payment-security-code')),
+      '123',
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('prototype-payment-confirm')),
+    );
+    await tester.tap(find.byKey(const ValueKey('prototype-payment-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(prototypePaymentRequested, isTrue);
+    expect(paymentPayload, {
+      'paymentMethod': 'prototype_card',
+      'provider': 'card',
+    });
+    expect(
+      find.textContaining('No real payment was processed'),
+      findsOneWidget,
+    );
+    expect(find.text('Approved (1)'), findsOneWidget);
+  });
+
+  testWidgets(
+    'approved COA booking shows payment alert and downpayment action',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final booking = <String, dynamic>{
+        ..._approvedBooking,
+        'id': 58,
+        'paymentMethod': 'cash_on_arrival',
+        'paymentStatus': 'unpaid',
+        'paidAmount': 0,
+        'total': 500,
+        'downpayment': 250,
+        'paymentDueAt': DateTime.now()
+            .add(const Duration(minutes: 10))
+            .toIso8601String(),
+      };
+      Map<String, dynamic>? paymentPayload;
+      final api = AuthApi(
+        client: MockClient((request) async {
+          if (request.url.path == '/api/bookings') {
+            return http.Response(
+              jsonEncode({
+                'bookings': [booking],
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/api/messages/conversations') {
+            return http.Response(jsonEncode({'conversations': []}), 200);
+          }
+          if (request.url.path == '/api/bookings/58/prototype-payment' &&
+              request.method == 'POST') {
+            paymentPayload = jsonDecode(request.body) as Map<String, dynamic>;
+            booking['paymentStatus'] = 'partial';
+            booking['paidAmount'] = 250;
+            return http.Response(
+              jsonEncode({
+                'received': true,
+                'prototype': true,
+                'bookingId': 58,
+                'amount': 250,
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({'error': 'Unexpected request'}),
+            404,
+          );
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: CustomerBookingsPage(api: api)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Approved (1)'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(
+          'Pay the required amount of ₱ 250.00 within 15 minutes',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Approved · payment due'), findsOneWidget);
+      expect(find.text('Payment due: ₱ 250.00'), findsOneWidget);
+      final details = find.byKey(const ValueKey('customer-booking-details-58'));
+      await tester.ensureVisible(details);
+      await tester.tap(details);
+      await tester.pumpAndSettle();
+      final pay = find.byKey(const ValueKey('customer-booking-pay-58'));
+      await tester.ensureVisible(pay);
+      await tester.tap(pay);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Test amount: ₱ 250.00'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('customer-booking-delete-58')),
+        findsNothing,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('prototype-payment-mobile')),
+        '09171234567',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('prototype-payment-verification-code')),
+        '123456',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('prototype-payment-confirm')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('prototype-payment-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(paymentPayload, {
+        'paymentMethod': 'prototype_card',
+        'provider': 'gcash',
+      });
+      expect(paymentPayload!.containsKey('mobileNumber'), isFalse);
+      expect(paymentPayload!.containsKey('verificationCode'), isFalse);
+    },
+  );
+
+  testWidgets('booking page refreshes to show approval notifications', (
+    tester,
+  ) async {
+    var bookingStatus = 'pending';
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {
+                  ..._approvedBooking,
+                  'status': bookingStatus,
+                  'paymentMethod': 'online',
+                  'paymentStatus': 'unpaid',
+                  'paymentDueAt': '2026-10-15T10:00:00',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('booking-status-banner-content')),
+      findsNothing,
+    );
+
+    bookingStatus = 'approved';
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(
+        'The venue approved your booking. Pay the required amount',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('TP-TXN-00000012'), findsOneWidget);
+    expect(find.text('BK-12'), findsOneWidget);
+  });
+
   testWidgets('Event booking details show venue hours without duration', (
     tester,
   ) async {
@@ -747,6 +1024,94 @@ void main() {
       find.text('Confirmed by the venue. Your booking is ready.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('approved bookings prioritize and filter unpaid obligations', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = AuthApi(
+      client: MockClient((request) async {
+        if (request.url.path == '/api/bookings') {
+          return http.Response(
+            jsonEncode({
+              'bookings': [
+                {
+                  ..._approvedBooking,
+                  'id': 31,
+                  'venueName': 'Paid Booking',
+                  'paymentMethod': 'online',
+                  'paymentStatus': 'paid',
+                  'paidAmount': 250,
+                  'total': 250,
+                },
+                {
+                  ..._approvedBooking,
+                  'id': 32,
+                  'venueName': 'Payable Booking',
+                  'paymentMethod': 'online',
+                  'paymentStatus': 'unpaid',
+                  'paidAmount': 0,
+                  'total': 500,
+                  'paymentDueAt': DateTime.now()
+                      .add(const Duration(minutes: 10))
+                      .toIso8601String(),
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/messages/conversations') {
+          return http.Response(jsonEncode({'conversations': []}), 200);
+        }
+        return http.Response(jsonEncode({'error': 'Unexpected request'}), 404);
+      }),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: CustomerBookingsPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('booking-status-banner-dismiss')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approved (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payable Booking'), findsOneWidget);
+    expect(find.text('Paid Booking'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Payable Booking')).dy,
+      lessThan(tester.getTopLeft(find.text('Paid Booking')).dy),
+    );
+    expect(find.byKey(const ValueKey('customer-booking-pay-32')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('customer-booking-details-32')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('customer-booking-pay-32')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customer-booking-delete-32')),
+      findsNothing,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('approved-payment-filter-payable')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Payable Booking'), findsOneWidget);
+    expect(find.text('Paid Booking'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('approved-payment-filter-paid')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Paid Booking'), findsOneWidget);
+    expect(find.text('Payable Booking'), findsNothing);
   });
 
   testWidgets('refreshing from the banner dismisses it', (tester) async {

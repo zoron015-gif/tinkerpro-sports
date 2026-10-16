@@ -46,7 +46,7 @@ void main() {
     expect(find.text('TOTAL PAID'), findsOneWidget);
     expect(find.text('Payment ref: pay_test_501'), findsOneWidget);
     expect(find.text('Online'), findsOneWidget);
-    expect(find.text('Request expires in 15 min'), findsOneWidget);
+    expect(find.text('Request expires in 15 min'), findsNothing);
   });
 
   testWidgets('approved ticket displays its access code', (tester) async {
@@ -85,7 +85,128 @@ void main() {
     );
   });
 
-  testWidgets('request ticket reflects approval and expiry status', (
+  testWidgets('approved online ticket shows amount and payment deadline', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking_ticket',
+            'bookingId': 506,
+            'transactionId': 'TP-TXN-00000506',
+            'status': 'approved',
+            'approvalStatus': 'approved',
+            'paymentMethod': 'online',
+            'paymentStatus': 'unpaid',
+            'totalAmount': 500,
+            'payableAmount': 500,
+            'paymentDueAt': '2026-10-15T10:00:00',
+            'ticketCode': 'TP-ACCESS-506',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('PAY ONLINE · 15 MIN'), findsOneWidget);
+    expect(find.text('APPROVED · PAYMENT DUE'), findsOneWidget);
+    expect(find.text('PAYMENT REQUIRED'), findsOneWidget);
+    expect(find.text('PAYMENT DUE'), findsOneWidget);
+    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.textContaining('Pay by '), findsOneWidget);
+  });
+
+  testWidgets('approved COA ticket shows downpayment deadline and receipt state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking_ticket',
+            'bookingId': 508,
+            'transactionId': 'TP-TXN-00000508',
+            'status': 'approved',
+            'paymentMethod': 'cash_on_arrival',
+            'paymentStatus': 'unpaid',
+            'totalAmount': 500,
+            'payableAmount': 250,
+            'paymentDueAt': '2026-10-15T10:00:00',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('DOWNPAYMENT DUE · 15 MIN'), findsOneWidget);
+    expect(find.text('APPROVED · PAYMENT DUE'), findsOneWidget);
+    expect(find.text('\u{20B1} 250.00'), findsOneWidget);
+    expect(find.textContaining('Pay by '), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking_ticket',
+            'bookingId': 508,
+            'status': 'approved',
+            'approvalStatus': 'approved',
+            'paymentMethod': 'cash_on_arrival',
+            'paymentStatus': 'partial',
+            'paymentProvider': 'maya',
+            'totalAmount': 500,
+            'payableAmount': 250,
+            'paymentReference': 'PROTOTYPE-508-123',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+    expect(find.text('DOWNPAYMENT RECEIPT'), findsNothing);
+    expect(find.text('DOWNPAYMENT RECEIVED'), findsWidgets);
+    expect(find.text('APPROVED · DOWNPAYMENT RECEIVED'), findsOneWidget);
+    expect(find.text('APPROVED'), findsOneWidget);
+    expect(find.text('Demo payment method: Maya'), findsOneWidget);
+    expect(find.text('Request expires in 15 min'), findsNothing);
+    expect(find.text('COA AFTER APPROVAL'), findsNothing);
+    expect(find.text('Payment ref: PROTOTYPE-508-123'), findsOneWidget);
+  });
+
+  testWidgets('expired online payment renders an identifiable expired ticket', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking_ticket',
+            'bookingId': 507,
+            'transactionId': 'TP-TXN-00000507',
+            'status': 'payment_expired',
+            'approvalStatus': 'payment_expired',
+            'paymentMethod': 'online',
+            'paymentStatus': 'unpaid',
+            'totalAmount': 500,
+            'payableAmount': 500,
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('PAYMENT WINDOW ENDED'), findsWidgets);
+    expect(
+      find.text(
+        'The reservation expired because payment was not received within 15 minutes after approval.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('TP-TXN-00000507'), findsOneWidget);
+    expect(find.text('BK-507'), findsOneWidget);
+  });
+
+  testWidgets('request ticket remains separate from the approval ticket', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -94,7 +215,7 @@ void main() {
           body: MessagesBookingTicket({
             'type': 'booking',
             'bookingId': 505,
-            'status': 'approved',
+            'status': 'pending',
             'paymentMethod': 'cash_on_arrival',
             'venueName': 'Test Court',
           }),
@@ -102,15 +223,17 @@ void main() {
       ),
     );
 
-    expect(find.text('BOOKING CONFIRMED'), findsWidgets);
-    expect(find.text('Request expires in 15 min'), findsNothing);
+    expect(find.text('BOOKING SUBMITTED'), findsOneWidget);
+    expect(find.text('BOOKING CONFIRMED'), findsNothing);
+    expect(find.text('PENDING REVIEW'), findsOneWidget);
+    expect(find.text('Request expires in 15 min'), findsOneWidget);
     expect(
       tester
           .widget<Container>(
             find.byKey(const ValueKey('messages-booking-ticket-header')),
           )
           .color,
-      const Color(0xFF237A43),
+      const Color(0xFFB45309),
     );
 
     await tester.pumpWidget(
@@ -144,6 +267,31 @@ void main() {
     );
   });
 
+  testWidgets('legacy request ticket never renders as an approval ticket', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MessagesBookingTicket({
+            'type': 'booking',
+            'bookingId': 505,
+            'status': 'approved',
+            'approvalStatus': 'approved',
+            'paymentMethod': 'cash_on_arrival',
+            'venueName': 'Test Court',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('BOOKING REQUEST'), findsOneWidget);
+    expect(find.text('BOOKING SUBMITTED'), findsOneWidget);
+    expect(find.text('PENDING REVIEW'), findsOneWidget);
+    expect(find.text('BOOKING CONFIRMED'), findsNothing);
+    expect(find.text('APPROVED'), findsNothing);
+  });
+
   testWidgets('booking request ticket shows its transaction and unique token', (
     tester,
   ) async {
@@ -165,9 +313,10 @@ void main() {
             'players': 2,
             'slotNumbers': [2, 3],
             'total': 500,
+            'payableAmount': 250,
             'downpayment': 250,
-            'paymentMethod': 'online',
-            'paymentStatus': 'paid',
+            'paymentMethod': 'cash_on_arrival',
+            'paymentStatus': 'unpaid',
           }),
         ),
       ),
@@ -182,7 +331,8 @@ void main() {
     expect(find.text('TP-TXN-00000504'), findsOneWidget);
     expect(find.text('TP-BOOKING-TOKEN-504'), findsOneWidget);
     expect(find.text('Slots 2, 3'), findsOneWidget);
-    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 250.00'), findsOneWidget);
+    expect(find.text('COA AFTER APPROVAL'), findsOneWidget);
     expect(find.text('Downpayment: \u{20B1} 250.00'), findsOneWidget);
     expect(find.text('Request expires in 15 min'), findsOneWidget);
     expect(

@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'app_session.dart';
 import 'auth_api.dart';
@@ -294,25 +293,10 @@ class _EventBookingPageState extends State<EventBookingPage> {
       if (token == null || token.isEmpty) {
         throw const AuthApiException('Please sign in before booking.', 401);
       }
-      final onlineProvider = _paymentMethod == 'online'
-          ? await _chooseOnlineProvider()
-          : null;
-      if (_paymentMethod == 'online' && onlineProvider == null) return;
-      if (_paymentMethod == 'online' &&
-          !await _api.payMongoPaymentsEnabled(token)) {
-        _showError(
-          'Online payments are unavailable right now. No booking has been created.',
-        );
-        return;
-      }
       if (!mounted) return;
       final paymentLabel = _paymentMethod == 'cash_on_arrival'
-          ? 'Cash on Arrival · 50% cash downpayment at venue'
-          : _paymentMethod == 'online'
-          ? onlineProvider == 'gcash'
-                ? 'Online payment · GCash'
-                : 'Online payment · PayMaya'
-          : 'Cash on Arrival (COA)';
+          ? 'Cash on Arrival · 50% cash downpayment after approval'
+          : 'Online payment · due after approval';
       final bookingStart = DateTime(
         _date.year,
         _date.month,
@@ -361,10 +345,15 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 _confirmationRow('Payment', paymentLabel),
                 _confirmationRow(
                   _paymentMethod == 'cash_on_arrival'
-                      ? 'Cash downpayment due at venue'
-                      : 'Total',
+                      ? 'Cash downpayment due after approval'
+                      : 'Online amount due after approval',
                   '\u{20B1} ${(_paymentMethod == 'cash_on_arrival' ? _cashOnArrivalAmount : _eventFee).toStringAsFixed(2)}',
                 ),
+                if (_paymentMethod == 'online')
+                  const AppText(
+                    'Pay the full amount within 15 minutes after venue approval.',
+                    localize: true,
+                  ),
                 const SizedBox(height: 12),
                 const BookingCancellationNotice(),
                 if (_paymentMethod == 'cash_on_arrival')
@@ -389,7 +378,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
       );
       if (confirmed != true || !mounted) return;
       setState(() => _submitting = true);
-      final bookingResponse = await _api.createBooking(
+      await _api.createBooking(
         token: token,
         idempotencyKey: _bookingIdempotencyKey,
         venueId: _number(widget.business['id']),
@@ -400,38 +389,6 @@ class _EventBookingPageState extends State<EventBookingPage> {
         paymentMethod: _paymentMethod,
         eventType: _eventType!,
       );
-      final booking = bookingResponse['booking'] as Map<String, dynamic>?;
-      if (booking == null) {
-        throw const AuthApiException(
-          'The server did not return the event booking details.',
-          502,
-        );
-      }
-
-      if (_paymentMethod == 'online') {
-        final checkout = await _api.createPayMongoCheckout(
-          token: token,
-          bookingId: _number(booking['id']),
-          paymentMethod: onlineProvider!,
-        );
-        final checkoutUrl = checkout['checkoutUrl'] as String?;
-        if (checkoutUrl == null || checkoutUrl.isEmpty) {
-          throw const AuthApiException(
-            'PayMongo did not return a checkout link.',
-            502,
-          );
-        }
-        final launched = await launchUrl(
-          Uri.parse(checkoutUrl),
-          mode: LaunchMode.externalApplication,
-        );
-        if (!launched) {
-          throw const AuthApiException(
-            'Could not open the PayMongo checkout page.',
-            0,
-          );
-        }
-      }
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -441,29 +398,6 @@ class _EventBookingPageState extends State<EventBookingPage> {
       if (mounted) setState(() => _submitting = false);
     }
   }
-
-  Future<String?> _chooseOnlineProvider() => showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const AppText('Choose online payment', localize: true),
-      content: const AppText(
-        'Select a payment provider to continue securely.',
-        localize: true,
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () => Navigator.pop(dialogContext, 'gcash'),
-          icon: const Icon(Icons.account_balance_wallet_rounded),
-          label: const AppText('GCash', localize: true),
-        ),
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
-          icon: const Icon(Icons.payments_rounded),
-          label: const AppText('PayMaya', localize: true),
-        ),
-      ],
-    ),
-  );
 
   void _showError(String message) {
     ScaffoldMessenger.of(context)
@@ -850,8 +784,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 const SizedBox(height: 6),
                 AppText(
                   _paymentMethod == 'cash_on_arrival'
-                      ? 'Pay \u{20B1} ${_cashOnArrivalAmount.toStringAsFixed(2)} cash as a downpayment at the venue and \u{20B1} ${(_eventFee - _cashOnArrivalAmount).toStringAsFixed(2)} cash as the remaining balance.'
-                      : 'Pay securely online. Amount due: \u{20B1} ${_eventFee.toStringAsFixed(2)}.',
+                      ? 'After approval, pay \u{20B1} ${_cashOnArrivalAmount.toStringAsFixed(2)} cash as a downpayment at the venue and \u{20B1} ${(_eventFee - _cashOnArrivalAmount).toStringAsFixed(2)} cash as the remaining balance.'
+                      : 'No payment is taken with this request. After approval, pay \u{20B1} ${_eventFee.toStringAsFixed(2)} online within 15 minutes.',
                   style: TextStyle(color: AppColors.muted),
                 ),
                 const Divider(height: 24),
@@ -867,8 +801,8 @@ class _EventBookingPageState extends State<EventBookingPage> {
                 ),
                 _paymentSummaryRow(
                   _paymentMethod == 'cash_on_arrival'
-                      ? 'Cash downpayment due at venue'
-                      : 'Amount due',
+                      ? 'Cash downpayment after approval'
+                      : 'Online amount after approval',
                   '\u{20B1} ${(_paymentMethod == 'cash_on_arrival' ? _cashOnArrivalAmount : _eventFee).toStringAsFixed(2)}',
                   strong: true,
                 ),
@@ -899,9 +833,7 @@ class _EventBookingPageState extends State<EventBookingPage> {
                   label: AppText(
                     _submitting
                         ? 'Submitting...'
-                        : _paymentMethod == 'online'
-                        ? 'Pay · \u{20B1} ${_eventFee.toStringAsFixed(2)}'
-                        : 'Continue · \u{20B1} ${_cashOnArrivalAmount.toStringAsFixed(2)}',
+                        : 'Request booking',
                   ),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.accent,

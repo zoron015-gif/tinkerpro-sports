@@ -604,8 +604,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Data analytics'), findsOneWidget);
-    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
-    expect(find.text('\u{20B1} 0.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 0.00'), findsWidgets);
+    expect(find.text('\u{20B1} 500.00'), findsNothing);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('merchant-analytics-revenue-value')),
+          )
+          .data,
+      '\u{20B1} 0.00',
+    );
     expect(find.text('2'), findsWidgets);
     expect(
       find.byKey(const ValueKey('merchant-analytics-date-filter')),
@@ -645,10 +653,7 @@ void main() {
       300,
       scrollable: analyticsScrollable,
     );
-    expect(
-      find.text('\u{20B1} 0.00 confirmed sales · \u{20B1} 0.00 collected'),
-      findsOneWidget,
-    );
+    expect(find.text('\u{20B1} 0.00 in payments received'), findsOneWidget);
     await tester.scrollUntilVisible(
       analyticsTypeFilter,
       -300,
@@ -660,10 +665,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('All booking types').last);
     await tester.pumpAndSettle();
-    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(find.text('\u{20B1} 0.00'), findsWidgets);
 
     final salesPlot = find.byKey(
-      const ValueKey('merchant-chart-plot-Confirmed sales'),
+      const ValueKey('merchant-chart-plot-Payments received'),
     );
     await tester.drag(find.byType(ListView).first, const Offset(0, -420));
     await tester.pumpAndSettle();
@@ -682,9 +687,9 @@ void main() {
     expect(
       find.descendant(
         of: selectedSalesPoint,
-        matching: find.text('\u{20B1} 500.00'),
+        matching: find.text('\u{20B1} 0.00'),
       ),
-      findsNWidgets(2),
+      findsNWidgets(3),
     );
     for (final detail in [
       'Collected payments',
@@ -692,20 +697,13 @@ void main() {
       'Confirmed bookings',
       'Players',
       'Unique customers',
-      'Avg. confirmed booking',
+      'Avg. payment received',
     ]) {
       expect(
         find.descendant(of: selectedSalesPoint, matching: find.text(detail)),
         findsOneWidget,
       );
     }
-    expect(
-      find.descendant(
-        of: selectedSalesPoint,
-        matching: find.text('\u{20B1} 0.00'),
-      ),
-      findsOneWidget,
-    );
     expect(
       find.descendant(
         of: selectedSalesPoint,
@@ -861,7 +859,16 @@ void main() {
         .onSelectionChanged!({'Sales'});
     await tester.pumpAndSettle();
     expect(find.text('Sales by venue'), findsOneWidget);
-    expect(find.text('\u{20B1} 500.00'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(
+              const ValueKey('merchant-venue-comparison-value-Sample Court'),
+            ),
+          )
+          .data,
+      '\u{20B1} 0.00',
+    );
     expect(find.text('\u{20B1} 300.00'), findsWidgets);
     expect(
       find.byKey(const ValueKey('merchant-venue-contribution-chart')),
@@ -875,8 +882,14 @@ void main() {
       find.byKey(const ValueKey('merchant-venue-share-Sample Court')),
       findsOneWidget,
     );
-    expect(find.text('62.5%'), findsOneWidget);
-    expect(find.text('37.5%'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('merchant-venue-share-Sample Court')),
+          )
+          .data,
+      '0.0%',
+    );
     tester
         .widget<SegmentedButton<String>>(venueMetricFilter)
         .onSelectionChanged!({'Players'});

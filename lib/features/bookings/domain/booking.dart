@@ -112,6 +112,8 @@ class Booking {
     this.status = 'pending',
     this.createdAt = '',
     this.approvalExpiresAt = '',
+    this.paymentDueAt = '',
+    this.paymentExpiredAt = '',
     this.transactionId = '',
     this.checkedInAt,
     this.reviewId,
@@ -146,6 +148,8 @@ class Booking {
   final String status;
   final String createdAt;
   final String approvalExpiresAt;
+  final String paymentDueAt;
+  final String paymentExpiredAt;
   final String transactionId;
   final String? checkedInAt;
   final int? reviewId;
@@ -184,6 +188,8 @@ class Booking {
     status: _text(json['status'], fallback: 'pending').toLowerCase(),
     createdAt: _text(json['createdAt']),
     approvalExpiresAt: _text(json['approvalExpiresAt']),
+    paymentDueAt: _text(json['paymentDueAt']),
+    paymentExpiredAt: _text(json['paymentExpiredAt']),
     transactionId: _text(
       json['transactionId'],
       fallback: _bookingTransactionId(json['id']),
@@ -246,6 +252,8 @@ class Booking {
     'status' => status,
     'createdAt' => createdAt,
     'approvalExpiresAt' => approvalExpiresAt,
+    'paymentDueAt' => paymentDueAt,
+    'paymentExpiredAt' => paymentExpiredAt,
     'transactionId' => transactionId,
     'checkedInAt' => checkedInAt,
     'reviewId' => reviewId,
