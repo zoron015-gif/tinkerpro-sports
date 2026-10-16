@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_text.dart';
 
 class PrototypePaymentDialog extends StatefulWidget {
-  const PrototypePaymentDialog({Key? key, required this.amount})
-    : super(key: key);
+  const PrototypePaymentDialog({super.key, required this.amount});
 
   final double amount;
 
@@ -72,7 +71,10 @@ class _PrototypePaymentDialogState extends State<PrototypePaymentDialog> {
                 DropdownMenuItem(value: 'gcash', child: Text('GCash')),
                 DropdownMenuItem(value: 'maya', child: Text('Maya')),
                 DropdownMenuItem(value: 'atome', child: Text('Atome')),
-                DropdownMenuItem(value: 'card', child: Text('Credit/debit card')),
+                DropdownMenuItem(
+                  value: 'card',
+                  child: Text('Credit/debit card'),
+                ),
               ],
               onChanged: (provider) {
                 if (provider != null) setState(() => _provider = provider);
@@ -92,8 +94,8 @@ class _PrototypePaymentDialogState extends State<PrototypePaymentDialog> {
                 decoration: const InputDecoration(
                   labelText: 'Demo cardholder name',
                 ),
-                validator: (value) => _usesCard &&
-                        (value == null || value.trim().isEmpty)
+                validator: (value) =>
+                    _usesCard && (value == null || value.trim().isEmpty)
                     ? 'Enter a demo name.'
                     : null,
               ),
@@ -124,10 +126,10 @@ class _PrototypePaymentDialogState extends State<PrototypePaymentDialog> {
                       decoration: const InputDecoration(labelText: 'MM/YY'),
                       validator: (value) =>
                           !_usesCard ||
-                                  RegExp(r'^(0[1-9]|1[0-2])\/\d{2}$')
-                                      .hasMatch(value?.trim() ?? '')
-                              ? null
-                              : 'Use MM/YY.',
+                              RegExp(r'^(0[1-9]|1[0-2])\/\d{2}$')
+                                  .hasMatch(value?.trim() ?? '')
+                          ? null
+                          : 'Use MM/YY.',
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -137,14 +139,12 @@ class _PrototypePaymentDialogState extends State<PrototypePaymentDialog> {
                       controller: _securityCode,
                       keyboardType: TextInputType.number,
                       obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Demo CVC',
-                      ),
+                      decoration: const InputDecoration(labelText: 'Demo CVC'),
                       validator: (value) =>
                           !_usesCard ||
-                                  RegExp(r'^\d{3}$').hasMatch(value?.trim() ?? '')
-                              ? null
-                              : 'Enter 3 digits.',
+                              RegExp(r'^\d{3}$').hasMatch(value?.trim() ?? '')
+                          ? null
+                          : 'Enter 3 digits.',
                     ),
                   ),
                 ],
@@ -174,7 +174,8 @@ class _PrototypePaymentDialogState extends State<PrototypePaymentDialog> {
                   labelText: 'Demo verification code',
                   hintText: '123456',
                 ),
-                validator: (value) => _usesCard ||
+                validator: (value) =>
+                    _usesCard ||
                         RegExp(r'^\d{6}$').hasMatch(value?.trim() ?? '')
                     ? null
                     : 'Enter the demo code 123456.',
