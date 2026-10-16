@@ -1899,7 +1899,7 @@ class PrototypePaymentDialog extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           ElevatedButton(
-            onPressed: () => print('Payment successful'),
+            onPressed: () => debugPrint('Payment successful'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _orange,
               foregroundColor: Colors.white,
