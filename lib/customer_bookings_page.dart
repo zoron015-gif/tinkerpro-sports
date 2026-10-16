@@ -8,7 +8,6 @@ import 'package:image_picker/image_picker.dart';
 
 import 'app_session.dart';
 import 'app_design_system.dart';
-import 'app_localization.dart';
 import 'auth_api.dart';
 import 'core/business_type.dart';
 import 'core/booking_approval_deadline.dart';
@@ -221,8 +220,9 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage>
       bookings
           .where(_isBookingStatusNotification)
           .where(
-            (booking) =>
-                !session.bookingStatusBannerDismissed(_bookingStatusKey(booking)),
+            (booking) => !session.bookingStatusBannerDismissed(
+              _bookingStatusKey(booking),
+            ),
           )
           .toList(),
     );
@@ -509,9 +509,8 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage>
                       hintText: appLanguageText(
                         'Search venue, transaction ID, or booking reference',
                         'Maghanap ng venue, transaction ID, o booking reference',
-                        languageCode: Localizations.localeOf(
-                          context,
-                        ).languageCode,
+                        languageCode: Localizations.localeOf(context)
+                            .languageCode,
                       ),
                       prefixIcon: const Icon(Icons.search_rounded),
                       suffixIcon: _bookingSearchQuery.isEmpty
@@ -700,15 +699,14 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage>
     return (requiredAmount - paidAmount).clamp(0, requiredAmount).toDouble();
   }
 
-  bool _isBookingStatusNotification(Booking booking) =>
-      const {
-        'approved',
-        'finished',
-        'done',
-        'completed',
-        'expired',
-        'cancelled',
-      }.contains(_bookingStatus(booking));
+  bool _isBookingStatusNotification(Booking booking) => const {
+    'approved',
+    'finished',
+    'done',
+    'completed',
+    'expired',
+    'cancelled',
+  }.contains(_bookingStatus(booking));
 
   int _compareBookingStatusNotifications(Booking first, Booking second) {
     int priority(Booking booking) {
@@ -730,20 +728,24 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage>
   }
 
   Booking? _bookingStatusBannerBooking(List<Booking> bookings) {
-    final notifications = bookings
-        .where(_isBookingStatusNotification)
-        .toList()
+    final notifications = bookings.where(_isBookingStatusNotification).toList()
       ..sort((first, second) {
         final firstStatus = _bookingStatus(first);
         final secondStatus = _bookingStatus(second);
         if (firstStatus == 'expired' && secondStatus != 'expired') return -1;
         if (secondStatus == 'expired' && firstStatus != 'expired') return 1;
-        final firstIsInactive = {'finished', 'done', 'completed', 'cancelled'}
-            .contains(firstStatus);
-        final secondIsInactive =
-            {'finished', 'done', 'completed', 'cancelled'}.contains(
-              secondStatus,
-            );
+        final firstIsInactive = {
+          'finished',
+          'done',
+          'completed',
+          'cancelled',
+        }.contains(firstStatus);
+        final secondIsInactive = {
+          'finished',
+          'done',
+          'completed',
+          'cancelled',
+        }.contains(secondStatus);
         if (firstIsInactive != secondIsInactive) {
           return firstIsInactive ? -1 : 1;
         }
@@ -925,9 +927,7 @@ class _CustomerBookingsPageState extends State<CustomerBookingsPage>
       booking.transactionId,
       'BK-${booking.id ?? ''}',
     ];
-    return searchableValues.any(
-      (value) => value.toLowerCase().contains(query),
-    );
+    return searchableValues.any((value) => value.toLowerCase().contains(query));
   }
 
   String _bookingEmptyMessage(String defaultMessage) =>
@@ -2257,6 +2257,7 @@ class _BookingRatingDialogState extends State<_BookingRatingDialog> {
     }
 
   }
+
   void _removeImage() {
     setState(() {
       _imageBytes = null;

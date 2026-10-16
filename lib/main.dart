@@ -16,7 +16,6 @@ import 'merchant_dashboard.dart';
 import 'app_session.dart';
 import 'message_notification_host.dart';
 import 'messages_dashboard.dart';
-import 'scroll_to_top_overlay.dart';
 
 import 'dart:async';
 
@@ -50,19 +49,12 @@ class MyApp extends StatelessWidget {
 
   AppPreferences get _preferences => _dependencies.preferences;
 
-  static final _scrollToTopController = ScrollToTopOverlayController();
-  static final ScrollToTopNavigatorObserver _scrollObserver =
-      ScrollToTopNavigatorObserver(
-        onNavigationChanged: _scrollToTopController.reset,
-      );
-
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _preferences,
     builder: (context, _) {
       return MaterialApp(
         navigatorKey: _rootNavigatorKey,
-        navigatorObservers: [MyApp._scrollObserver],
         title: 'TinkerPro',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.configured(
@@ -86,20 +78,17 @@ class MyApp extends StatelessWidget {
                 _preferences.textScale,
               ),
             ),
-            child: ScrollToTopOverlay(
-              controller: MyApp._scrollToTopController,
-              child: MessageNotificationHost(
-                child: child ?? const SizedBox.shrink(),
-                onOpenConversation: (conversationId) {
-                  _rootNavigatorKey.currentState?.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MessagesDashboardPage(
-                        initialConversationId: conversationId,
-                      ),
+            child: MessageNotificationHost(
+              child: child ?? const SizedBox.shrink(),
+              onOpenConversation: (conversationId) {
+                _rootNavigatorKey.currentState?.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MessagesDashboardPage(
+                      initialConversationId: conversationId,
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           );
         },
@@ -187,8 +176,17 @@ class _OverviewPageState extends State<OverviewPage> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     await AppPreferences.instance.load();
+    try {
+      await AppSession.load().then((session) => session.clear());
+    } on Exception {
+      if (context.mounted) {
+        _showMessage(context, 'Could not log out. Please try again.');
+      }
+      return;
+    }
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const OverviewPage()),
       (_) => false,
@@ -197,9 +195,17 @@ class _OverviewPageState extends State<OverviewPage> {
       Future.wait<void>([
         FirebaseAuth.instance.signOut(),
         GoogleSignIn.instance.signOut(),
-        AppSession.load().then((session) => session.clear()),
       ]).then<void>((_) {}, onError: (_, _) {}),
     );
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: AppText('You have been logged out successfully.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: _navy,
+        ),
+      );
   }
 
   void _showMessage(BuildContext context, String message) {
@@ -1849,6 +1855,60 @@ class _BottomCallout extends StatelessWidget {
               foregroundColor: Colors.white,
             ),
             icon: const Icon(Icons.arrow_forward_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PrototypePaymentDialog extends StatelessWidget {
+  const PrototypePaymentDialog({super.key, required this.amount});
+
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(
+            'Payment',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          AppText(
+            'Pay $amount',
+            style: TextStyle(
+              color: _orange,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+            localize: true,
+          ),
+          const SizedBox(height: 6),
+          ElevatedButton(
+            onPressed: () => debugPrint('Payment successful'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.all(12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const AppText('Pay now'),
           ),
         ],
       ),

@@ -274,6 +274,10 @@ class _AuthDashboardPageState extends State<AuthDashboardPage> {
       }
     } on AuthApiException catch (error) {
       if (mounted) _showMessage(error.userMessage);
+    } on GoogleSignInException catch (error) {
+      if (error.code != GoogleSignInExceptionCode.canceled && mounted) {
+        _showMessage('Google sign-in failed: $error');
+      }
     } on FirebaseAuthException catch (error) {
       if (mounted) {
         final message =

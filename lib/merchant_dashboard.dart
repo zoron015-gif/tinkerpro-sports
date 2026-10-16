@@ -685,9 +685,9 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
   Widget _managementFilters() => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Expanded(flex: 2, child: _payoutTypeFilter()),
+      Expanded(child: _payoutTypeFilter()),
       const SizedBox(width: 8),
-      Expanded(flex: 3, child: _payoutSearchBar()),
+      Expanded(child: _payoutSearchBar()),
     ],
   );
 
@@ -1842,11 +1842,12 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       () => _payoutSearchQuery = value.trim().toLowerCase(),
     ),
     textInputAction: TextInputAction.search,
+    style: TextStyle(color: _merchantInk, fontSize: 12),
     decoration: InputDecoration(
       hintText: appLanguageText('Search bookings', 'Search bookings'),
-      hintStyle: const TextStyle(fontSize: 12),
-      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-      prefixIconConstraints: const BoxConstraints(minWidth: 36),
+      hintStyle: TextStyle(color: _merchantMuted, fontSize: 11),
+      prefixIcon: const Icon(Icons.search_rounded, size: 16),
+      prefixIconConstraints: const BoxConstraints(minWidth: 30),
       suffixIcon: _payoutSearchQuery.isEmpty
           ? null
           : IconButton(
@@ -1859,7 +1860,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
               visualDensity: VisualDensity.compact,
             ),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(12)),
@@ -1881,17 +1882,23 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
       key: const ValueKey('merchant-payout-type-filter'),
       initialValue: _payoutBookingType,
       isExpanded: true,
+      menuMaxHeight: (MediaQuery.sizeOf(context).height * .3)
+          .clamp(180.0, 220.0)
+          .toDouble(),
+      dropdownColor: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
       style: TextStyle(
         color: _merchantInk,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: FontWeight.w700,
       ),
-      iconSize: 18,
+      iconSize: 16,
       decoration: InputDecoration(
         hintText: appLanguageText('All booking types', 'All booking types'),
-        prefixIcon: Icon(Icons.filter_list_rounded, size: 18),
+        prefixIcon: Icon(Icons.filter_list_rounded, size: 16),
+        prefixIconConstraints: BoxConstraints(minWidth: 30),
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         constraints: BoxConstraints(minHeight: 40, maxHeight: 40),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(12)),
