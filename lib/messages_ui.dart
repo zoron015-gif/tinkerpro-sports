@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_design_system.dart';
 import 'app_preferences.dart';
+import 'core/booking_approval_deadline.dart';
 import 'core/booking_ticket_view_model.dart';
 
 Color get messageBackground => AppColors.page;
@@ -16,6 +17,11 @@ String safeString(Object? value, [String fallback = '']) {
   if (value == null) return fallback;
   if (value is String) return value;
   return value.toString();
+}
+
+String _ticketDeadlineLabel(String value) {
+  final deadline = parseBookingApprovalDeadline(value);
+  return deadline == null ? value : formatBookingApprovalDeadline(deadline);
 }
 
 int? asInt(Object? value) {
@@ -185,11 +191,23 @@ class MessagesBookingTicket extends StatelessWidget {
     final ticketCode = ticket.ticketCode;
     final bookingToken = ticket.bookingToken;
     final paymentReference = ticket.paymentReference;
+    final paymentProvider = switch (ticket.paymentProvider) {
+      'gcash' => 'GCash',
+      'maya' => 'Maya',
+      'atome' => 'Atome',
+      'card' => 'Credit/debit card',
+      _ => '',
+    };
     final transactionId = ticket.transactionId;
     final paymentMethod = ticket.paymentMethod;
     final isPaid = ticket.isPaid;
+    final paymentExpired = ticket.paymentExpired;
+    final awaitingOnlinePayment = ticket.awaitingOnlinePayment;
+    final isDownpaymentReceived = ticket.isDownpaymentReceived;
     final ticketHighlight = expired
         ? const Color(0xFFB42318)
+        : awaitingOnlinePayment
+        ? const Color(0xFFB85C00)
         : approved
         ? const Color(0xFF237A43)
         : isBookingRequest
@@ -246,11 +264,17 @@ class MessagesBookingTicket extends StatelessWidget {
                         const SizedBox(height: 6),
                         AppText(
                           expired
-                              ? 'BOOKING REQUEST EXPIRED'
+                              ? paymentExpired
+                                    ? 'PAYMENT WINDOW ENDED'
+                                    : 'BOOKING REQUEST EXPIRED'
                               : isBookingRequest
                               ? approved
                                     ? 'BOOKING CONFIRMED'
                                     : 'BOOKING REQUEST'
+                              : awaitingOnlinePayment
+                              ? 'APPROVED · PAYMENT DUE'
+                              : isDownpaymentReceived
+                              ? 'APPROVED · DOWNPAYMENT RECEIVED'
                               : isPaid
                               ? 'PAYMENT RECEIPT'
                               : 'BOOKING CONFIRMATION',
@@ -282,7 +306,13 @@ class MessagesBookingTicket extends StatelessWidget {
                       Expanded(
                         child: AppText(
                           expired
-                              ? 'BOOKING REQUEST EXPIRED'
+                              ? paymentExpired
+                                    ? 'PAYMENT WINDOW ENDED'
+                                    : 'BOOKING REQUEST EXPIRED'
+                              : awaitingOnlinePayment
+                              ? 'PAYMENT REQUIRED'
+                              : isDownpaymentReceived
+                              ? 'DOWNPAYMENT RECEIVED'
                               : approved
                               ? 'BOOKING CONFIRMED'
                               : isBookingRequest
@@ -298,9 +328,15 @@ class MessagesBookingTicket extends StatelessWidget {
                       ),
                       _TicketStatusPill(
                         label: expired
-                            ? 'EXPIRED'
+                            ? paymentExpired
+                                  ? 'WINDOW ENDED'
+                                  : 'EXPIRED'
+                            : awaitingOnlinePayment
+                            ? 'PAYMENT DUE'
                             : approved
                             ? 'APPROVED'
+                            : isDownpaymentReceived
+                            ? 'DOWNPAYMENT RECEIVED'
                             : isBookingRequest
                             ? 'PENDING REVIEW'
                             : 'PENDING APPROVAL',
@@ -320,6 +356,32 @@ class MessagesBookingTicket extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
+                  if (paymentExpired) ...[
+                    const SizedBox(height: 6),
+                    const AppText(
+                      'The reservation expired because payment was not received within 15 minutes after approval.',
+                      key: ValueKey('messages-booking-payment-expiry-reason'),
+                      localize: true,
+                      style: TextStyle(
+                        color: Color(0xFFB42318),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (awaitingOnlinePayment) ...[
+                    const SizedBox(height: 6),
+                    const AppText(
+                      'Complete the prototype payment within 15 minutes to keep this reservation.',
+                      key: ValueKey('messages-booking-payment-required'),
+                      localize: true,
+                      style: TextStyle(
+                        color: Color(0xFFB85C00),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                   if (isFitnessBooking) ...[
                     const SizedBox(height: 6),
                     AppText(
@@ -546,7 +608,7 @@ class MessagesBookingTicket extends StatelessWidget {
                             ),
                           ),
                         ],
-                        if (!approved && !expired)
+                        if (isBookingRequest && !approved && !expired)
                           Padding(
                             padding: EdgeInsets.only(top: 4),
                             child: AppText(
@@ -558,6 +620,22 @@ class MessagesBookingTicket extends StatelessWidget {
                               localize: true,
                             ),
                           ),
+                        if (approved &&
+                            ticket.paymentStatus == 'unpaid' &&
+                            ticket.paymentDueAt.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          AppText(
+                            'Pay by ${_ticketDeadlineLabel(ticket.paymentDueAt)}',
+                            key: const ValueKey(
+                              'messages-booking-payment-deadline',
+                            ),
+                            style: TextStyle(
+                              color: messageOrange,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                         if (paymentReference.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           AppText(
@@ -566,6 +644,20 @@ class MessagesBookingTicket extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(color: messageMuted, fontSize: 9),
                             localize: true,
+                          ),
+                        ],
+                        if (paymentProvider.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          AppText(
+                            'Demo payment method: $paymentProvider',
+                            key: const ValueKey(
+                              'messages-booking-payment-provider',
+                            ),
+                            style: TextStyle(
+                              color: messageMuted,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ],
                       ],
@@ -578,9 +670,20 @@ class MessagesBookingTicket extends StatelessWidget {
                         AppText(
                           isPaid
                               ? 'TOTAL PAID'
+                              : paymentExpired
+                              ? 'PAYMENT WINDOW ENDED'
+                              : awaitingOnlinePayment &&
+                                    paymentMethod == 'cash_on_arrival'
+                              ? 'DOWNPAYMENT DUE · 15 MIN'
+                              : awaitingOnlinePayment
+                              ? 'PAY ONLINE · 15 MIN'
                               : paymentMethod == 'cash_on_arrival'
-                              ? 'DUE AT VENUE'
-                              : 'BOOKING TOTAL',
+                              ? approved
+                                    ? 'COA DUE AT VENUE'
+                                    : 'COA AFTER APPROVAL'
+                              : approved
+                              ? 'PAYABLE NOW'
+                              : 'DUE AFTER APPROVAL',
                           style: TextStyle(
                             color: messageMuted,
                             fontSize: 9,
@@ -597,7 +700,8 @@ class MessagesBookingTicket extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        if (downpayment != null)
+                        if (downpayment != null &&
+                            paymentMethod == 'cash_on_arrival')
                           AppText(
                             'Downpayment: \u{20B1} ${downpayment.toStringAsFixed(2)}',
                             style: TextStyle(

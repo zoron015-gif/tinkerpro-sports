@@ -1441,7 +1441,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           final total =
               rate * hours * selectedSlotList.length + extraPlayerCharge;
           final cashOnArrival = double.parse((total * 0.5).toStringAsFixed(2));
-          final dueNow = payment == 'cash_on_arrival' ? cashOnArrival : total;
           final selectedSlotBooked =
               selectedSlotList.isNotEmpty && !selectedSlotsAvailable;
           final bookingStartsAt = DateTime(
@@ -1454,7 +1453,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
           final bookingStartsInFuture = bookingStartsAt.isAfter(DateTime.now());
           final validPayment =
               payment == 'online' || payment == 'cash_on_arrival';
-          final validTotal = total.isFinite && total > 0 && dueNow.isFinite;
+          final validTotal = total.isFinite && total > 0;
           final bookingReady =
               !availabilityLoading &&
               !availabilityError &&
@@ -2119,10 +2118,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     const SizedBox(height: 6),
                     AppText(
                       payment == 'cash_on_arrival'
-                          ? 'Pay \u{20B1} ${cashOnArrival.toStringAsFixed(2)} cash as a downpayment at the venue. '
+                          ? 'After approval, pay \u{20B1} ${cashOnArrival.toStringAsFixed(2)} cash as a 50% downpayment at the venue. '
                                 'Remaining cash balance: \u{20B1} ${(total - cashOnArrival).toStringAsFixed(2)}.'
-                          : 'Pay securely online. Amount due: '
-                                '\u{20B1} ${total.toStringAsFixed(2)}.',
+                          : 'No payment is taken with this request. After approval, pay the full \u{20B1} ${total.toStringAsFixed(2)} online within 15 minutes.',
                       style: TextStyle(color: _sportsMuted),
                     ),
                     Divider(height: 20, color: AppColors.borderSubtle),
@@ -2155,9 +2153,9 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                     _bookingAmountRow('Booking total', total, ''),
                     _bookingAmountRow(
                       payment == 'cash_on_arrival'
-                          ? 'Cash downpayment due at venue'
-                          : 'Amount due',
-                      dueNow,
+                          ? 'Cash downpayment after approval'
+                          : 'Online amount after approval',
+                      payment == 'cash_on_arrival' ? cashOnArrival : total,
                       '',
                       strong: true,
                     ),
@@ -2237,10 +2235,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                             : const Icon(Icons.lock_outline_rounded),
                         label: AppText(
                           bookingSubmitting
-                              ? 'Processing payment…'
-                              : payment == 'cash_on_arrival'
-                              ? 'Continue · \u{20B1} ${dueNow.toStringAsFixed(2)}'
-                              : 'Pay · \u{20B1} ${dueNow.toStringAsFixed(2)}',
+                              ? 'Submitting request…'
+                              : 'Request booking',
                         ),
                       ),
                     ),
@@ -3029,16 +3025,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         '${bookingTime.minute.toString().padLeft(2, '0')}:00';
     onSubmittingChanged(true);
     try {
-      if (payment == 'online' && !await _api.payMongoPaymentsEnabled(token)) {
-        _showMessage(
-          'Online payments are unavailable right now. No booking has been created.',
-        );
-        return;
-      }
-      final onlineProvider = payment == 'online'
-          ? await _chooseOnlineProvider(amount: total)
-          : null;
-      if (payment == 'online' && onlineProvider == null) return;
       final latestBookings = await _api.bookingAvailability(
         token: token,
         venueId: venue.id,
@@ -3055,7 +3041,7 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       );
       if (slotConflict) {
         _showMessage(
-          'This slot was just booked. Choose another available time before paying.',
+          'This slot was just booked. Choose another available time before requesting.',
         );
         return;
       }
@@ -3085,12 +3071,11 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
         slotNumbers: slotNumbers,
         fullStudio: fullStudio,
         payment: payment,
-        onlineProvider: onlineProvider,
         total: total,
         extraPlayerCharge: extraPlayerCharge,
       );
       if (!confirmed) return;
-      final response = await _api.createBooking(
+      await _api.createBooking(
         token: token,
         idempotencyKey: idempotencyKey,
         venueId: venue.id,
@@ -3104,43 +3089,8 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       );
       if (!mounted || !modalContext.mounted) return;
       Navigator.of(modalContext).pop();
-      final booking = response['booking'] as Map<String, dynamic>? ?? {};
-      if (payment == 'online') {
-        final checkout = await _api.createPayMongoCheckout(
-          token: token,
-          bookingId: int.tryParse('${booking['id']}') ?? 0,
-          paymentMethod: onlineProvider!,
-        );
-        final checkoutUrl = checkout['checkoutUrl'] as String?;
-        final checkoutUri = checkoutUrl == null
-            ? null
-            : Uri.tryParse(checkoutUrl);
-        if (checkoutUri == null ||
-            checkoutUri.scheme != 'https' ||
-            checkoutUri.host.isEmpty) {
-          throw const AuthApiException(
-            'PayMongo did not return a checkout link.',
-            502,
-          );
-        }
-        final launched = await launchUrl(
-          checkoutUri,
-          mode: LaunchMode.externalApplication,
-        );
-        if (!launched) {
-          throw const AuthApiException(
-            'Could not open the PayMongo checkout page.',
-            0,
-          );
-        }
-        _showMessage('Complete your GCash or PayMaya payment to continue.');
-        return;
-      }
-      final downpayment =
-          booking['downpayment'] ?? (venue.maxPrice * hours / 2);
       _showMessage(
-        'Booking request sent to ${venue.ownerName}. '
-        'Cash downpayment due at venue: \u{20B1} $downpayment. Waiting for approval.',
+        'Booking request sent to ${venue.ownerName}. Payment is due only after venue approval.',
       );
     } on Exception catch (error) {
       _showMessage('Could not submit booking: $error');
@@ -3148,41 +3098,6 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
       onSubmittingChanged(false);
     }
   }
-
-  Future<String?> _chooseOnlineProvider({required double amount}) =>
-      showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const AppText('Secure online payment', localize: true),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const AppText(
-                'Choose a payment provider. You will review and complete payment on its secure checkout page.',
-                localize: true,
-              ),
-              const SizedBox(height: 12),
-              _confirmationRow(
-                'Amount to pay',
-                '\u{20B1} ${amount.toStringAsFixed(2)}',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () => Navigator.pop(dialogContext, 'gcash'),
-              icon: const Icon(Icons.account_balance_wallet_rounded),
-              label: const AppText('GCash', localize: true),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(dialogContext, 'paymaya'),
-              icon: const Icon(Icons.payments_rounded),
-              label: const AppText('PayMaya', localize: true),
-            ),
-          ],
-        ),
-      );
 
   Future<bool> _confirmBookingDetails({
     required SportsVenue venue,
@@ -3194,17 +3109,12 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
     required List<int> slotNumbers,
     required bool fullStudio,
     required String payment,
-    required String? onlineProvider,
     required double total,
     required double extraPlayerCharge,
   }) async {
     final paymentLabel = payment == 'cash_on_arrival'
-        ? 'Cash on Arrival · 50% cash downpayment at venue'
-        : payment == 'online'
-        ? onlineProvider == 'gcash'
-              ? 'Online payment · GCash'
-              : 'Online payment · PayMaya'
-        : 'Cash on Arrival (COA)';
+        ? 'Cash on Arrival · 50% cash downpayment after approval'
+        : 'Online payment · due after approval';
     final coaDownpayment = double.parse((total * 0.5).toStringAsFixed(2));
     final coaRemaining = total - coaDownpayment;
     final bookingStart = DateTime(
@@ -3263,6 +3173,17 @@ class _SportsDashboardPageState extends State<SportsDashboardPage> {
                 'Booking total',
                 '\u{20B1} ${total.toStringAsFixed(2)}',
               ),
+              _confirmationRow(
+                payment == 'cash_on_arrival'
+                    ? 'Cash downpayment due after approval'
+                    : 'Online payment due after approval',
+                '\u{20B1} ${(payment == 'cash_on_arrival' ? coaDownpayment : total).toStringAsFixed(2)}',
+              ),
+              if (payment == 'online')
+                const AppText(
+                  'Pay the full amount within 15 minutes after venue approval.',
+                  localize: true,
+                ),
               if (payment == 'cash_on_arrival') ...[
                 _confirmationRow(
                   'Cash downpayment due at venue',

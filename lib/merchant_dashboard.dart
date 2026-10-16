@@ -1148,7 +1148,10 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
         .clamp(0, grossCollected)
         .toDouble();
     final outstanding = bookings.fold<double>(0, (sum, booking) {
-      if (BookingStatusParser.isCancelled(booking['status'])) return sum;
+      final status = '${booking['status'] ?? ''}'.toLowerCase();
+      if (BookingStatusParser.isCancelled(status) || status == 'pending') {
+        return sum;
+      }
       final due =
           _bookingAmount(booking['total']) - _bookingAmountReceived(booking);
       return sum + due.clamp(0, double.infinity).toDouble();
@@ -1467,26 +1470,53 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final isEvent = '${booking['businessType'] ?? ''}'.toLowerCase() == 'event';
     final isCashOnArrival = booking['paymentMethod'] == 'cash_on_arrival';
     final isCancelled = BookingStatusParser.isCancelled(booking['status']);
+    final isPendingApproval =
+        '${booking['status'] ?? ''}'.toLowerCase() == 'pending';
     final paymentStatus = '${booking['paymentStatus'] ?? ''}'.toLowerCase();
+    final isOnlinePaymentDue =
+        !isCancelled &&
+        !isPendingApproval &&
+        booking['paymentMethod'] == 'online' &&
+        paymentStatus != 'paid';
     final paid = paymentStatus == 'paid';
     final received = _bookingAmountReceived(booking);
     final total = _bookingAmount(booking['total']);
     final downpayment = _bookingAmount(booking['downpayment']);
     final balance = (total - received).clamp(0, total).toDouble();
-    final paymentStatusLabel = paid
+    final paymentStatusLabel = isCancelled
+        ? 'Cancelled'
+        : isPendingApproval
+        ? 'Awaiting approval'
+        : isOnlinePaymentDue
+        ? 'Awaiting customer payment'
+        : paid
         ? 'Fully paid'
         : paymentStatus == 'partial'
         ? 'Downpayment received'
         : 'Unpaid';
-    final statusColor = paid
+    final statusColor = isCancelled
+        ? AppColors.muted
+        : isPendingApproval
+        ? AppColors.warning
+        : isOnlinePaymentDue
+        ? AppColors.warning
+        : paid
         ? AppColors.success
         : paymentStatus == 'partial'
         ? AppColors.warning
         : _merchantOrange;
-    final dueLabel = isCashOnArrival && paymentStatus == 'unpaid'
+    final dueLabel = isCancelled
+        ? 'No balance due'
+        : isPendingApproval
+        ? 'Payment after approval'
+        : isOnlinePaymentDue
+        ? 'Online payment due'
+        : isCashOnArrival && paymentStatus == 'unpaid'
         ? 'Cash downpayment due'
         : 'Balance due';
-    final dueAmount = isCashOnArrival && paymentStatus == 'unpaid'
+    final dueAmount = isCancelled
+        ? 0.0
+        : isCashOnArrival && paymentStatus == 'unpaid'
         ? downpayment
         : balance;
     return Card(
@@ -1977,6 +2007,7 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
     final balance = (total - received).clamp(0, total).toDouble();
     final playersLabel = isEvent ? 'Guests' : 'Players';
     final status = '${booking['status'] ?? 'pending'}';
+    final isPendingApproval = _isPendingBooking(booking);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -2091,7 +2122,14 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   'Payment method',
                   _payoutPaymentLabel(booking['paymentMethod']),
                 ),
-                _payoutDetailRow('Payment status', paymentStatus),
+                _payoutDetailRow(
+                  'Payment status',
+                  booking['paymentMethod'] == 'online' &&
+                          paymentStatus != 'paid' &&
+                          booking['status'] == 'approved'
+                      ? 'Awaiting customer payment'
+                      : paymentStatus,
+                ),
                 _payoutDetailRow(
                   'Payment reference',
                   booking['paymentReference'],
@@ -2126,10 +2164,24 @@ class _MerchantDashboardPageState extends State<MerchantDashboardPage> {
                   'Total',
                   '\u{20B1} ${total.toStringAsFixed(2)}',
                 ),
-                if (isCashOnArrival && paymentStatus == 'unpaid')
+                if (isCashOnArrival &&
+                    paymentStatus == 'unpaid' &&
+                    isPendingApproval)
+                  _payoutDetailRow(
+                    'Cash downpayment after approval',
+                    '\u{20B1} ${downpayment.toStringAsFixed(2)}',
+                  )
+                else if (isCashOnArrival && paymentStatus == 'unpaid')
                   _payoutDetailRow(
                     'Cash downpayment due at venue',
                     '\u{20B1} ${downpayment.toStringAsFixed(2)}',
+                  )
+                else if (!isCashOnArrival &&
+                    paymentStatus != 'paid' &&
+                    isPendingApproval)
+                  _payoutDetailRow(
+                    'Online payment due after approval',
+                    '\u{20B1} ${balance.toStringAsFixed(2)}',
                   )
                 else
                   _payoutDetailRow(

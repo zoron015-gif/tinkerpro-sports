@@ -294,3 +294,105 @@ test('migration 11 adds the booking approval reminder marker', async () => {
     params[1] === 'booking-approval-deadlines',
   ));
 });
+
+test('migration 12 adds the post-approval online payment deadline', async () => {
+  const poolCalls = [];
+  const connectionCalls = [];
+  const connection = {
+    async execute(sql, params) {
+      connectionCalls.push({ sql, params });
+      if (sql.includes('GET_LOCK')) return [[{ acquired: 1 }], []];
+      if (sql.includes('SELECT version FROM schema_migrations')) {
+        return [[
+          { version: 1 },
+          { version: 2 },
+          { version: 3 },
+          { version: 4 },
+          { version: 5 },
+          { version: 6 },
+          { version: 7 },
+          { version: 8 },
+          { version: 9 },
+          { version: 10 },
+          { version: 11 },
+        ], []];
+      }
+      return [[], []];
+    },
+    release() {},
+  };
+  const pool = {
+    async execute(sql, params) {
+      poolCalls.push({ sql, params });
+      return [[], []];
+    },
+    async getConnection() {
+      return connection;
+    },
+  };
+
+  await runSchemaMigrations(pool);
+
+  assert.ok(poolCalls.some(({ sql }) =>
+    sql.includes('ALTER TABLE `bookings` ADD COLUMN `payment_due_at` DATETIME NULL'),
+  ));
+  assert.ok(poolCalls.some(({ sql }) =>
+    sql.includes('ALTER TABLE `bookings` ADD COLUMN `payment_expired_at` DATETIME NULL'),
+  ));
+  assert.ok(connectionCalls.some(({ sql, params }) =>
+    sql.includes('INSERT INTO schema_migrations (version, name)') &&
+    params[0] === 12 &&
+    params[1] === 'approval-first-online-booking-payments',
+  ));
+});
+
+test('migration 13 restores only earlier duplicate payment-expiry approval tickets', async () => {
+  const connectionCalls = [];
+  const connection = {
+    async execute(sql, params) {
+      connectionCalls.push({ sql, params });
+      if (sql.includes('GET_LOCK')) return [[{ acquired: 1 }], []];
+      if (sql.includes('SELECT version FROM schema_migrations')) {
+        return [[
+          { version: 1 },
+          { version: 2 },
+          { version: 3 },
+          { version: 4 },
+          { version: 5 },
+          { version: 6 },
+          { version: 7 },
+          { version: 8 },
+          { version: 9 },
+          { version: 10 },
+          { version: 11 },
+          { version: 12 },
+        ], []];
+      }
+      return [[], []];
+    },
+    release() {},
+  };
+  const pool = {
+    async execute() {
+      return [[], []];
+    },
+    async getConnection() {
+      return connection;
+    },
+  };
+
+  await runSchemaMigrations(pool);
+
+  const repair = connectionCalls.find(({ sql }) =>
+    sql.includes('UPDATE messages approval_message'),
+  );
+  assert.ok(repair);
+  assert.match(repair.sql, /expiry_message\.created_at > approval_message\.created_at/);
+  assert.match(repair.sql, /'\$\.status', 'approved'/);
+  assert.match(repair.sql, /'\$\.paymentExpiredAt'/);
+  assert.ok(connectionCalls.some(({ sql, params }) =>
+    sql.includes('INSERT INTO schema_migrations (version, name)') &&
+    params[0] === 13 &&
+    params[1] === 'keep-approval-ticket-separate-from-payment-expiry-ticket',
+  ));
+});

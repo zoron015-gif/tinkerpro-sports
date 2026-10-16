@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'app_session.dart';
 import 'booking_cancellation_notice.dart';
@@ -340,19 +339,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       return;
     }
     final payment = _payment;
-    String? provider;
     try {
-      if (payment == 'online') {
-        provider = await _chooseProvider();
-        if (provider == null) return;
-      }
-      if (payment == 'online' &&
-          !await widget.api.payMongoPaymentsEnabled(token)) {
-        _message(
-          'Online payments are unavailable right now. No booking has been created.',
-        );
-        return;
-      }
       if (!mounted) return;
       final coaDownpayment = double.parse((_total * 0.5).toStringAsFixed(2));
       final coaRemaining = _total - coaDownpayment;
@@ -399,7 +386,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                   '${_dateString(_date)} · ${_isSessionPlan ? '${time.format(context)}–${_sessionHours!.closingTime.format(context)}' : time.format(context)}\n'
                   '${_coachName == null ? 'No coach selected' : 'Coach: $_coachName'}\n'
                   '${_coachName == null ? '' : 'Coach duration: ${_coachDurationLabel(_coachDurationMonths)}\n'}'
-                  '${_payment == 'cash_on_arrival' ? 'Cash on arrival · Pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'One-time plan total: \u{20B1} ${_total.toStringAsFixed(2)}'}',
+                  '${_payment == 'cash_on_arrival' ? 'Cash on arrival · After approval, pay the 50% downpayment of \u{20B1} ${coaDownpayment.toStringAsFixed(2)} at the venue. Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.' : 'Online payment after approval: \u{20B1} ${_total.toStringAsFixed(2)}. Pay within 15 minutes.'}',
                   localize: true,
                 ),
                 if (startsWithin24Hours) ...[
@@ -423,7 +410,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       );
       if (confirmed != true || !mounted) return;
       setState(() => _submitting = true);
-      final response = await widget.api.createBooking(
+      await widget.api.createBooking(
         token: token,
         idempotencyKey: _bookingIdempotencyKey,
         venueId: _businessId,
@@ -441,34 +428,7 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
             ? 0
             : _coachDurationMonths,
       );
-      final booking = response['booking'] as Map<String, dynamic>? ?? const {};
-      if (payment == 'online') {
-        final checkout = await widget.api.createPayMongoCheckout(
-          token: token,
-          bookingId: int.tryParse('${booking['id']}') ?? 0,
-          paymentMethod: provider!,
-        );
-        final checkoutUrl = checkout['checkoutUrl'] as String?;
-        if (checkoutUrl == null || checkoutUrl.isEmpty) {
-          throw const AuthApiException(
-            'PayMongo did not return a checkout link.',
-            502,
-          );
-        }
-        final launched = await launchUrl(
-          Uri.parse(checkoutUrl),
-          mode: LaunchMode.externalApplication,
-        );
-        if (!launched) {
-          throw const AuthApiException(
-            'Could not open the PayMongo checkout page.',
-            0,
-          );
-        }
-        _message('Complete your one-time Fitness plan payment to continue.');
-      } else {
-        _message('Fitness booking request sent. Waiting for venue approval.');
-      }
+      _message('Fitness booking request sent. Waiting for venue approval.');
       if (mounted) Navigator.of(context).pop();
     } on Exception catch (error) {
       _message('Could not submit Fitness booking: $error');
@@ -476,29 +436,6 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
       if (mounted) setState(() => _submitting = false);
     }
   }
-
-  Future<String?> _chooseProvider() => showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const AppText('Choose online payment', localize: true),
-      content: const AppText(
-        'The selected term is charged once at checkout.',
-        localize: true,
-      ),
-      actions: [
-        TextButton.icon(
-          onPressed: () => Navigator.pop(context, 'gcash'),
-          icon: const Icon(Icons.account_balance_wallet_rounded),
-          label: const AppText('GCash', localize: true),
-        ),
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(context, 'paymaya'),
-          icon: const Icon(Icons.payments_rounded),
-          label: const AppText('PayMaya', localize: true),
-        ),
-      ],
-    ),
-  );
 
   void _message(String text) {
     if (!mounted) return;
@@ -944,11 +881,11 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
               const SizedBox(height: 6),
               AppText(
                 _payment == 'cash_on_arrival'
-                    ? 'Pay a 50% cash downpayment at the venue: '
+                    ? 'After approval, pay a 50% cash downpayment at the venue: '
                           '\u{20B1} ${coaDownpayment.toStringAsFixed(2)}. '
                           'Remaining cash balance: \u{20B1} ${coaRemaining.toStringAsFixed(2)}.'
-                    : 'One-time payment for the selected plan: '
-                          '\u{20B1} ${_total.toStringAsFixed(2)}.',
+                    : 'No payment is taken with this request. After approval, pay '
+                          '\u{20B1} ${_total.toStringAsFixed(2)} within 15 minutes.',
                 style: TextStyle(color: AppColors.muted),
               ),
               const Divider(height: 24),
@@ -983,6 +920,12 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                 suffix: _firstVisitScheduleLabel(context),
               ),
               _summaryRow('One-time plan total', _total, strong: true),
+              _summaryRow(
+                _payment == 'cash_on_arrival'
+                    ? 'Cash downpayment after approval'
+                    : 'Online amount after approval',
+                _payment == 'cash_on_arrival' ? coaDownpayment : _total,
+              ),
               if (_payment == 'cash_on_arrival') ...[
                 _summaryRow('Cash downpayment (50%)', coaDownpayment),
                 _summaryRow('Remaining cash balance', coaRemaining),
@@ -1009,13 +952,11 @@ class _FitnessBookingPageState extends State<FitnessBookingPage> {
                     elevation: 5,
                     shadowColor: AppColors.accent.withValues(alpha: .34),
                   ),
-                  icon: const Icon(Icons.lock_outline_rounded),
+                  icon: const Icon(Icons.event_available_outlined),
                   label: AppText(
                     _submitting
                         ? 'Submitting...'
-                        : _payment == 'cash_on_arrival'
-                        ? 'Continue · \u{20B1} ${coaDownpayment.toStringAsFixed(2)} downpayment'
-                        : 'Pay · \u{20B1} ${_total.toStringAsFixed(2)}',
+                        : 'Request booking',
                   ),
                 ),
               ),
