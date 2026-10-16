@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'app_text.dart';
 
 class PrototypePaymentDialog extends StatefulWidget {
-  const PrototypePaymentDialog({required this.amount});
+  const PrototypePaymentDialog({Key? key, required this.amount})
+    : super(key: key);
 
   final double amount;
 
